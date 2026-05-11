@@ -1,0 +1,16 @@
+services:
+  openclaw-bot:
+    build:
+      context: .
+      dockerfile: openclaw/Dockerfile
+    container_name: asian-health-hub-openclaw
+    restart: unless-stopped
+    env_file:
+      - openclaw/.env
+    working_dir: /app/openclaw
+    volumes:
+      # Mount source for easy local iteration. Rebuild only when requirements/Dockerfile changes.
+      - ./openclaw:/app/openclaw
+      # Persist generated article images so the local Next app can serve them.
+      - ./public/generated-insights:/app/public/generated-insights
+    command: ["python", "telegram_bot.py"]

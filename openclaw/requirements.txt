@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+playwright
+playwright-stealth
+openai
+supabase
+pydantic
+beautifulsoup4
+duckduckgo-search
+python-dotenv

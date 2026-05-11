@@ -1,0 +1,23 @@
+# Keep Vercel deployments focused on the Next.js web app.
+# OpenClaw is operated separately as a local/server-side Python bot pipeline.
+openclaw/
+
+# Local/generated runtime state
+.env*
+.next/
+node_modules/
+*.pyc
+__pycache__/
+
+# Local utility scripts and database setup files are not needed at runtime on Vercel.
+check_*.py
+migrate_slugs.py
+test_service.py
+update_article_image.py
+supabase/
+
+# Local docs/planning artifacts
+ARCHITECTURE.md
+PIPELINE.md
+implementation_plan.md
+CLAUDE.md

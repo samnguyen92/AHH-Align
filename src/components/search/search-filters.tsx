@@ -1,0 +1,199 @@
+'use client';
+
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useState } from 'react';
+import Link from 'next/link';
+
+const SPECIALTIES = [
+  { value: 'All Specialties', count: null },
+  { value: 'Family Medicine', count: 240 },
+  { value: 'Dentistry', count: 185 },
+  { value: 'Cardiology', count: 78 },
+  { value: 'Pharmacy', count: 120 },
+  { value: 'Ophthalmology', count: 92 },
+  { value: 'Lab Testing', count: 56 },
+  { value: 'Urgent Care', count: 45 },
+  { value: 'Dermatology', count: 64 },
+  { value: 'Pediatrics', count: 130 },
+] as const;
+
+const LANGUAGES = [
+  { value: 'Vietnamese', count: 512 },
+  { value: 'Korean', count: 321 },
+  { value: 'Chinese (Mandarin)', count: 189 },
+] as const;
+
+const CITIES = [
+  { value: 'Los Angeles', state: 'CA' },
+  { value: 'Houston', state: 'TX' },
+  { value: 'San Jose', state: 'CA' },
+  { value: 'San Francisco', state: 'CA' },
+  { value: 'Dallas', state: 'TX' },
+  { value: 'Seattle', state: 'WA' },
+  { value: 'Washington D.C.', state: 'MD' },
+  { value: 'San Diego', state: 'CA' },
+  { value: 'Atlanta', state: 'GA' },
+  { value: 'Sacramento', state: 'CA' },
+] as const;
+
+export function SearchFilters() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [selectedSpecialty, setSelectedSpecialty] = useState(searchParams.get('specialty') ?? '');
+  const [selectedLanguage, setSelectedLanguage] = useState(searchParams.get('language') ?? '');
+  const [selectedCity, setSelectedCity] = useState(searchParams.get('city') ?? '');
+
+  const applyFilter = useCallback((key: string, value: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+    params.delete('page');
+    router.push(`/search?${params.toString()}`);
+  }, [searchParams, router]);
+
+  return (
+    <aside className="w-full lg:w-60 shrink-0 space-y-6">
+      {/* Filter by Specialty */}
+      <div>
+        <button className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-3">
+          Filter by Specialty
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div className="space-y-1.5 max-h-72 overflow-y-auto">
+          {SPECIALTIES.map((spec) => {
+            const isAll = spec.value === 'All Specialties';
+            const isSelected = isAll
+              ? selectedSpecialty === ''
+              : selectedSpecialty === spec.value;
+
+            return (
+              <label
+                key={spec.value}
+                className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm transition-colors ${
+                  isSelected ? 'bg-[var(--ahh-blue)] text-white' : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="specialty"
+                  checked={isSelected}
+                  onChange={() => {
+                    const val = isAll ? '' : spec.value;
+                    setSelectedSpecialty(val);
+                    applyFilter('specialty', val);
+                  }}
+                  className="sr-only"
+                />
+                <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                  isSelected ? 'border-white bg-white' : 'border-gray-300'
+                }`}>
+                  {isSelected && (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-blue)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  )}
+                </span>
+                <span className="flex-1">{spec.value}</span>
+                {spec.count != null && (
+                  <span className={`text-xs ${isSelected ? 'text-blue-100' : 'text-gray-400'}`}>
+                    ({spec.count})
+                  </span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Filter by Language */}
+      <div>
+        <button className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-3">
+          Filter by Language
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div className="space-y-1.5">
+          {LANGUAGES.map((lang) => {
+            const isSelected = selectedLanguage === lang.value;
+            return (
+              <label
+                key={lang.value}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => {
+                    const val = isSelected ? '' : lang.value;
+                    setSelectedLanguage(val);
+                    applyFilter('language', val);
+                  }}
+                  className="sr-only"
+                />
+                <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                  isSelected ? 'border-[var(--ahh-blue)] bg-[var(--ahh-blue)]' : 'border-gray-300'
+                }`}>
+                  {isSelected && (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  )}
+                </span>
+                <span className="flex-1">{lang.value}</span>
+                <span className="text-xs text-gray-400">({lang.count})</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Filter by City */}
+      <div>
+        <button className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-3">
+          Filter by City
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div className="space-y-1.5 max-h-72 overflow-y-auto">
+          {CITIES.map((c) => {
+            const isSelected = selectedCity === c.value;
+            return (
+              <label
+                key={c.value}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <input
+                  type="radio"
+                  name="city"
+                  checked={isSelected}
+                  onChange={() => {
+                    const val = isSelected ? '' : c.value;
+                    setSelectedCity(val);
+                    applyFilter('city', val);
+                  }}
+                  className="sr-only"
+                />
+                <span className={`w-3 h-3 rounded-full border-2 shrink-0 ${
+                  isSelected ? 'border-[var(--ahh-blue)] bg-[var(--ahh-blue)]' : 'border-gray-300'
+                }`} />
+                <span className="flex-1">{c.value}, {c.state}</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Provider CTA */}
+      <div className="rounded-xl bg-[var(--ahh-blue)] p-4 text-center">
+        <p className="text-sm font-bold text-white mb-1">Are You a Provider?</p>
+        <p className="text-xs text-blue-100 mb-3">
+          Claim your free profile to show patients your language capabilities.
+        </p>
+        <Link
+          href="/claim"
+          className="inline-flex items-center px-4 py-2 text-xs font-semibold rounded-lg bg-white text-[var(--ahh-blue)] hover:bg-blue-50 transition-colors"
+        >
+          Claim Your Profile →
+        </Link>
+      </div>
+    </aside>
+  );
+}
