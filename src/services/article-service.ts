@@ -2,7 +2,7 @@
  * Article Service — Quản lý dữ liệu bài viết (Insights & Guides)
  */
 
-import { createServerAnonClient } from '@/lib/supabase/server';
+import { createServerAnonClient } from '../lib/supabase/server';
 import type { Article, PaginatedResponse } from '@/types/database';
 
 const DEFAULT_PAGE_SIZE = 12;

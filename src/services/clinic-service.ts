@@ -3,7 +3,7 @@
  * Dùng cho Server Components & Route Handlers
  */
 
-import { createServerAnonClient } from '@/lib/supabase/server';
+import { createServerAnonClient } from '../lib/supabase/server';
 import type {
   Clinic,
   ClinicSearchParams,
