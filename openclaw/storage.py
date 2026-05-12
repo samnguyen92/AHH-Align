@@ -1,6 +1,8 @@
 import base64
 import mimetypes
 import os
+import re
+import unicodedata
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -12,6 +14,17 @@ load_dotenv(".env")
 load_dotenv("../.env.local")
 
 DEFAULT_BUCKET = "generated-images"
+
+
+def safe_storage_name(value: str) -> str:
+    text = value.replace("Đ", "D").replace("đ", "d")
+    text = unicodedata.normalize("NFKD", text)
+    text = text.encode("ascii", "ignore").decode("ascii")
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9\s._-]", "", text)
+    text = re.sub(r"[\s_]+", "-", text)
+    text = re.sub(r"-+", "-", text)
+    return text.strip(".-") or "image"
 
 
 def get_storage_bucket() -> str:
@@ -116,5 +129,5 @@ def upload_image_value(image_value: Optional[str], folder: str, filename_base: s
 
     image_bytes, content_type, extension = parsed
     safe_extension = extension.lower().replace("jpeg", "jpg")
-    storage_path = f"{folder.strip('/')}/{filename_base}.{safe_extension}"
+    storage_path = f"{folder.strip('/')}/{safe_storage_name(filename_base)}.{safe_extension}"
     return upload_image_bytes(image_bytes, storage_path, content_type)
