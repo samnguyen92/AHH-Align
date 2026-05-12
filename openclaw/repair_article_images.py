@@ -5,6 +5,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 from supabase import Client, create_client
+from storage import upload_image_value
 
 load_dotenv(".env")
 load_dotenv("../.env.local")
@@ -40,6 +41,10 @@ def extract_image_value(message) -> Optional[str]:
 def save_generated_image(image_value: Optional[str], slug: str) -> Optional[str]:
     if not image_value:
         return None
+
+    cloud_url = upload_image_value(image_value, "generated-insights", slug)
+    if cloud_url:
+        return cloud_url
 
     if image_value.startswith("http"):
         return image_value

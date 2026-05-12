@@ -19,6 +19,7 @@ NEXT_PUBLIC_SITE_URL=https://your-domain.com
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-or-anon-key
 SUPABASE_SECRET_KEY=your-service-role-or-secret-key
+SUPABASE_STORAGE_BUCKET=generated-images
 ```
 
 Supported alternatives:
@@ -74,8 +75,10 @@ vercel env add SUPABASE_SECRET_KEY preview
 
 - Open `/insights` and one article detail page.
 - Open `/search` and test clinic search.
+- Open `/api/health/supabase` to confirm Vercel can read Supabase env variables and table counts.
 - Check Vercel deployment logs if Supabase env variables are missing.
 - Update `NEXT_PUBLIC_SITE_URL` to the final Vercel or custom domain, then redeploy.
+- In Supabase Storage, create a public bucket named `generated-images` so OpenClaw can upload generated article and clinic images without committing image files to Git.
 
 ## 6. OpenClaw / Telegram Bot
 
@@ -104,6 +107,7 @@ Minimum variables:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SECRET_KEY=your-service-role-or-secret-key
+SUPABASE_STORAGE_BUCKET=generated-images
 OPENROUTER_API_KEY=sk-or-...
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_ALLOWED_USER_IDS=123456789
@@ -143,4 +147,4 @@ docker compose down
 The compose file mounts:
 
 - `./openclaw` to `/app/openclaw` for local code iteration
-- `./public/generated-insights` to `/app/public/generated-insights` so generated images remain available to the local Next app
+- `./public/generated-insights` to `/app/public/generated-insights` as a fallback only. Generated images should normally be uploaded to Supabase Storage.

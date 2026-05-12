@@ -4,6 +4,7 @@ import re
 from typing import Optional
 
 from openai import OpenAI
+from storage import upload_image_value
 
 IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
 
@@ -35,6 +36,10 @@ def extract_image_value(message) -> Optional[str]:
 def save_generated_image(image_value: Optional[str], slug: str) -> Optional[str]:
     if not image_value:
         return None
+
+    cloud_url = upload_image_value(image_value, "generated-clinics", slug)
+    if cloud_url:
+        return cloud_url
 
     if image_value.startswith("http"):
         return image_value

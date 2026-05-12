@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+!.env.local.example
+!openclaw/.env.example
 
 # python / openclaw local runtime
 openclaw/venv/
@@ -39,6 +42,8 @@ openclaw/__pycache__/
 openclaw/*.pyc
 openclaw/openclaw.log
 openclaw/telegram_memory.json
+public/generated-insights/
+public/generated-clinics/
 
 # vercel
 .vercel

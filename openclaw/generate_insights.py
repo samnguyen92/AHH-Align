@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from openai import OpenAI
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from storage import upload_image_value
 
 # Load env vars
 load_dotenv(".env")
@@ -73,6 +74,11 @@ def save_generated_image(image_value: Optional[str], slug: str, suffix: str = "h
     if not image_value:
         return ""
 
+    safe_suffix = generate_slug(suffix) or "image"
+    cloud_url = upload_image_value(image_value, "generated-insights", f"{slug}-{safe_suffix}")
+    if cloud_url:
+        return cloud_url
+
     if image_value.startswith("http"):
         return image_value
 
@@ -81,7 +87,6 @@ def save_generated_image(image_value: Optional[str], slug: str, suffix: str = "h
         extension = header.split(";")[0].split("/")[-1] or "png"
         output_dir = os.path.join("..", "public", "generated-insights")
         os.makedirs(output_dir, exist_ok=True)
-        safe_suffix = generate_slug(suffix) or "image"
         filename = f"{slug}-{safe_suffix}.{extension}"
         output_path = os.path.join(output_dir, filename)
 
