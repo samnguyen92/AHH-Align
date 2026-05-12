@@ -35,6 +35,8 @@ def insert_clinic(clinic_data: dict):
     }
     if clinic_data.get("images"):
         incoming_metadata["images"] = clinic_data.get("images")
+    if clinic_data.get("google_metadata"):
+        incoming_metadata.update(clinic_data.get("google_metadata") or {})
 
     db_payload = {
         "id": str(uuid.uuid4()),

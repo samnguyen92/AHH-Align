@@ -27,11 +27,22 @@ export interface ClinicMetadata {
   images?: string[];
   insurance_accepted?: string[];
   npi_number?: string;
+  google_place_id?: string;
+  google_maps_url?: string;
+  google_website_url?: string;
+  google_formatted_address?: string;
+  google_business_status?: string;
+  google_photo_attributions?: unknown[];
+  location?: {
+    latitude?: number;
+    longitude?: number;
+  };
 }
 
 export interface Review {
   source: 'google' | 'yelp' | 'internal';
   author: string;
+  author_url?: string;
   rating: number;
   text: string;
   date: string;

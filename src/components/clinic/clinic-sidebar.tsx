@@ -9,6 +9,7 @@ export function ClinicSidebar({ clinic }: ClinicSidebarProps) {
   const addressString = [clinic.address, clinic.city, clinic.state, clinic.zip_code]
     .filter(Boolean)
     .join(', ');
+  const googleMapsUrl = clinic.metadata?.google_maps_url;
 
   const hours = clinic.metadata?.working_hours || {
     monday: '8:00 AM - 5:00 PM',
@@ -83,11 +84,22 @@ export function ClinicSidebar({ clinic }: ClinicSidebarProps) {
         </div>
       </div>
 
-      {/* Map Placeholder */}
+      {/* Map */}
       <div className="bg-blue-50 rounded-xl overflow-hidden aspect-[4/3] flex items-center justify-center border border-blue-100">
         <div className="text-center">
           <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-blue)" strokeWidth="1.5" className="mx-auto mb-2 opacity-50"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-          <span className="text-xs font-medium text-[var(--ahh-blue)]/60">Map View Available</span>
+          {googleMapsUrl ? (
+            <Link
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs font-semibold text-[var(--ahh-blue)] hover:underline"
+            >
+              Open in Google Maps
+            </Link>
+          ) : (
+            <span className="text-xs font-medium text-[var(--ahh-blue)]/60">Map View Available</span>
+          )}
         </div>
       </div>
 

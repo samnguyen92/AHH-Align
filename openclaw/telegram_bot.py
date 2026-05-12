@@ -22,6 +22,7 @@ from jobs import (
     generate_insight_from_context_job,
     generate_insight_from_url_job,
     generate_insight_job,
+    enrich_clinics_google_job,
     repair_article_images_job,
     repair_clinic_images_job,
     repair_article_slugs_job,
@@ -236,6 +237,7 @@ class TelegramBot:
             "Commands\n"
             "/status - check env, Supabase counts, and log path\n"
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
+            "/enrich_clinics_google - add Google Places photos, rating, reviews, and Maps links to existing clinics\n"
             "/repair_clinic_images - generate missing clinic directory images\n"
             "/repair_article_images - generate missing article images\n"
             "/repair_article_slugs - convert non-ASCII article slugs to URL-safe ASCII\n"
@@ -560,6 +562,7 @@ Allowed actions:
 - generate_insight_from_memory
 - generate_guide_from_memory
 - repair_clinic_images
+- enrich_clinics_google
 - repair_article_images
 - repair_article_slugs
 - delete_article
@@ -584,6 +587,7 @@ Rules:
 - If the user asks to rewrite, revise, update, edit, regenerate, improve, or "viết lại" an existing article/blog/insight, action is rewrite_article.
 - For rewrite_article, target must be the article id, slug, or title. rewrite_instruction must include all requested edits.
 - If the user asks to fix/repair slugs or URL 404 caused by Vietnamese/non-ASCII slugs, action is repair_article_slugs.
+- If the user asks to add Google reviews, Google Maps location, Google rating, or Google photos to clinics, action is enrich_clinics_google.
 - If the user says "based on this", "dựa trên thông tin này", "dựa trên research/báo cáo", or similar, and memory is available, use generate_insight_from_memory or generate_guide_from_memory.
 - Examples:
   - "viết lại bài Navigating Seasonal Flu and COVID-19 Vaccines..., loại bỏ table content ở đầu bài blog, thêm 2 reference và thêm bản so sánh với American culture" => rewrite_article, target "Navigating Seasonal Flu and COVID-19 Vaccines...", rewrite_instruction includes removing opening table, adding 2 references, adding comparison with American culture.
@@ -743,6 +747,18 @@ Return JSON:
                     "Nếu approve, OpenClaw sẽ quét bảng clinics, generate ảnh thiếu bằng Gemini image-preview, "
                     "và cập nhật `clinics.metadata.images` trên Supabase.\n\n"
                     "Việc này có thể tốn quota OpenRouter/Gemini. Nếu đúng, trả lời `approve`."
+                ),
+            }
+        if action == "enrich_clinics_google":
+            return {
+                "type": "enrich_clinics_google",
+                "name": "enrich_clinics_google",
+                "summary": (
+                    "Bạn muốn OpenClaw enrich clinic bằng Google Places phải không?\n\n"
+                    "Nếu approve, OpenClaw sẽ quét bảng clinics, gọi Google Places API để lấy ảnh, rating, "
+                    "review snippets, Google Maps URL, tọa độ và giờ mở cửa, upload ảnh lên Supabase Storage, "
+                    "rồi cập nhật `clinics.metadata` trên Supabase.\n\n"
+                    "Việc này cần `GOOGLE_PLACES_API_KEY` và có thể tốn Google Maps quota. Nếu đúng, trả lời `approve`."
                 ),
             }
         if action == "repair_article_images":
@@ -969,6 +985,33 @@ Return JSON:
                 ),
             }
 
+        if (
+            ("google" in normalized or "maps" in normalized)
+            and ("clinic" in normalized or "directory" in normalized or "phòng khám" in normalized or "phong kham" in normalized)
+            and (
+                "review" in normalized
+                or "rating" in normalized
+                or "image" in normalized
+                or "hình" in normalized
+                or "hinh" in normalized
+                or "location" in normalized
+                or "map" in normalized
+                or "địa điểm" in normalized
+                or "dia diem" in normalized
+            )
+        ):
+            return {
+                "type": "enrich_clinics_google",
+                "name": "enrich_clinics_google",
+                "summary": (
+                    "Bạn muốn OpenClaw enrich clinic bằng Google Places phải không?\n\n"
+                    "Nếu approve, OpenClaw sẽ quét bảng clinics, gọi Google Places API để lấy ảnh, rating, "
+                    "review snippets, Google Maps URL, tọa độ và giờ mở cửa, upload ảnh lên Supabase Storage, "
+                    "rồi cập nhật `clinics.metadata` trên Supabase.\n\n"
+                    "Việc này cần `GOOGLE_PLACES_API_KEY` và có thể tốn Google Maps quota. Nếu đúng, trả lời `approve`."
+                ),
+            }
+
         if "repair" in normalized and ("article" in normalized or "insight" in normalized or "blog" in normalized) and "image" in normalized:
             return {
                 "type": "repair_article_images",
@@ -1070,6 +1113,8 @@ Return JSON:
             )
         elif action_type == "repair_clinic_images":
             self.run_job(chat_id, action["name"], repair_clinic_images_job, action_type=action_type)
+        elif action_type == "enrich_clinics_google":
+            self.run_job(chat_id, action["name"], enrich_clinics_google_job, action_type=action_type)
         elif action_type == "repair_article_images":
             self.run_job(chat_id, action["name"], repair_article_images_job, action_type=action_type)
         elif action_type == "repair_article_slugs":
@@ -1123,6 +1168,8 @@ Return JSON:
             self.run_job(chat_id, "run_batch", run_batch_job, action_type="run_batch")
         elif command == "/repair_clinic_images":
             self.run_job(chat_id, "repair_clinic_images", repair_clinic_images_job, action_type="repair_clinic_images")
+        elif command == "/enrich_clinics_google":
+            self.run_job(chat_id, "enrich_clinics_google", enrich_clinics_google_job, action_type="enrich_clinics_google")
         elif command == "/repair_article_images":
             self.run_job(chat_id, "repair_article_images", repair_article_images_job, action_type="repair_article_images")
         elif command == "/repair_article_slugs":

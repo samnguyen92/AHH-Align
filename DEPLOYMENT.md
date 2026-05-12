@@ -108,11 +108,14 @@ Minimum variables:
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SECRET_KEY=your-service-role-or-secret-key
 SUPABASE_STORAGE_BUCKET=generated-images
+GOOGLE_PLACES_API_KEY=your-google-places-api-key
 OPENROUTER_API_KEY=sk-or-...
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_ALLOWED_USER_IDS=123456789
 TELEGRAM_MAX_JOB_OUTPUT_CHUNKS=12
 ```
+
+`GOOGLE_PLACES_API_KEY` is optional, but required if you want OpenClaw to enrich clinic records with Google rating, review snippets, Maps URL, latitude/longitude, opening hours, and Google place photos. Enable Places API (New) in Google Cloud for that key.
 
 Build and start:
 

@@ -11,6 +11,7 @@ from scraper import scrape_content_from_url
 from extractor import extract_clinic_data
 from db import insert_clinic
 from image_generator import generate_clinic_image
+from google_places import enrich_clinic_with_google_places
 
 # Targets provided by user
 TARGETS = [
@@ -65,7 +66,12 @@ def main():
         source_images = content.get("images", [])
         if source_images:
             data["images"] = source_images
-        else:
+
+        data = enrich_clinic_with_google_places(data)
+
+        # Prefer Google Places photos when available; otherwise keep website images
+        # or generate a fallback image.
+        if not data.get("images"):
             generated_image = generate_clinic_image(data)
             if generated_image:
                 data["images"] = [generated_image]

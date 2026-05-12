@@ -51,6 +51,12 @@ def repair_clinic_images_job() -> str:
     return _run_with_captured_output("repair_clinic_images", main)
 
 
+def enrich_clinics_google_job() -> str:
+    from enrich_clinics_google import main
+
+    return _run_with_captured_output("enrich_clinics_google", main)
+
+
 def repair_article_images_job() -> str:
     from repair_article_images import main
 
