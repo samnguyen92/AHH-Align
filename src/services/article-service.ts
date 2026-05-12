@@ -18,6 +18,10 @@ export async function getPublishedArticles(
   const supabase = createServerAnonClient();
   const offset = (page - 1) * limit;
 
+  if (!supabase) {
+    return { data: [], total: 0, page, limit, hasMore: false };
+  }
+
   try {
     let query = supabase
       .from('articles')
@@ -53,6 +57,10 @@ export async function getPublishedArticles(
 export async function getArticleBySlug(slug: string): Promise<Article | null> {
   const supabase = createServerAnonClient();
   const decodedSlug = decodeURIComponent(slug);
+
+  if (!supabase) {
+    return null;
+  }
 
   try {
     const { data, error } = await supabase
@@ -96,6 +104,10 @@ export async function getArticleBySlug(slug: string): Promise<Article | null> {
 export async function getPublishedArticleSlugs(limit = 100): Promise<string[]> {
   const supabase = createServerAnonClient();
 
+  if (!supabase) {
+    return [];
+  }
+
   try {
     const { data, error } = await supabase
       .from('articles')
@@ -123,6 +135,10 @@ export async function getRelatedArticles(
   limit = 3
 ): Promise<Article[]> {
   const supabase = createServerAnonClient();
+
+  if (!supabase) {
+    return [];
+  }
 
   try {
     let query = supabase
@@ -154,6 +170,10 @@ export async function getRelatedArticles(
  */
 export async function getArticleCategories(): Promise<string[]> {
   const supabase = createServerAnonClient();
+
+  if (!supabase) {
+    return [];
+  }
 
   try {
     const { data, error } = await supabase

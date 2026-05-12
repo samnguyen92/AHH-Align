@@ -24,6 +24,10 @@ export async function searchClinics(
   const limit = params.limit ?? DEFAULT_PAGE_SIZE;
   const offset = (page - 1) * limit;
 
+  if (!supabase) {
+    return { data: [], total: 0, page, limit, hasMore: false };
+  }
+
   try {
     // Xây dựng query cơ bản
     let query = supabase
@@ -79,6 +83,10 @@ export async function searchClinics(
 export async function getClinicById(id: string): Promise<Clinic | null> {
   const supabase = createServerAnonClient();
 
+  if (!supabase) {
+    return null;
+  }
+
   try {
     const { data, error } = await supabase
       .from('clinics')
@@ -103,6 +111,10 @@ export async function getClinicById(id: string): Promise<Clinic | null> {
 export async function getClinicBySlug(slug: string): Promise<Clinic | null> {
   const supabase = createServerAnonClient();
 
+  if (!supabase) {
+    return null;
+  }
+
   try {
     const { data, error } = await supabase
       .from('clinics')
@@ -126,6 +138,10 @@ export async function getClinicBySlug(slug: string): Promise<Clinic | null> {
  */
 export async function getAvailableLanguages(): Promise<string[]> {
   const supabase = createServerAnonClient();
+
+  if (!supabase) {
+    return [];
+  }
 
   try {
     const { data, error } = await supabase

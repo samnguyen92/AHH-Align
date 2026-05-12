@@ -7,9 +7,10 @@ export function createServerAnonClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error(
-      'Missing Supabase environment variables. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY).'
+    console.warn(
+      '[supabase-server] Missing Supabase environment variables. Public data queries will return empty results until NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY) are configured.'
     );
+    return null;
   }
 
   return createClient(supabaseUrl, supabaseAnonKey, {
