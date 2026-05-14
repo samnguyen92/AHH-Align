@@ -11,22 +11,17 @@ import { ArticleImage } from '@/components/insights/article-image';
 import { getSafeArticleImageSrc } from '@/lib/article-image';
 import {
   getArticleBySlug,
-  getPublishedArticleSlugs,
   getRelatedArticles,
 } from '@/services/article-service';
 import type { Article } from '@/types/database';
 import Link from 'next/link';
 
+export const dynamic = 'force-dynamic';
+
 interface ArticlePageProps {
   params: Promise<{
     slug: string;
   }>;
-}
-
-export async function generateStaticParams() {
-  const slugs = await getPublishedArticleSlugs();
-
-  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: ArticlePageProps): Promise<Metadata> {

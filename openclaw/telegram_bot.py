@@ -154,7 +154,7 @@ class TelegramBot:
         if split_at > limit // 2:
             trimmed = trimmed[:split_at].rstrip()
 
-        return trimmed + "\n\n[Đã rút gọn để vừa một tin nhắn Telegram. Xem full log bằng /tail.]"
+        return trimmed + "\n\n[Trimmed to fit one Telegram message. Use /tail for the full log.]"
 
     def format_research_status_message(self, output: str) -> str:
         captures = len(re.findall(r"^\[\*\] Capture \d+/\d+:", output, flags=re.MULTILINE))
@@ -172,7 +172,7 @@ class TelegramBot:
             "✅ Role 4.2 Final Editor: complete",
         ]
         if errors:
-            status.append(f"⚠️ Notes: {errors} warnings/errors were logged. Xem chi tiết bằng /tail.")
+            status.append(f"⚠️ Notes: {errors} warnings/errors were logged. Use /tail for details.")
         else:
             status.append("📄 Full technical log available with /tail.")
 
@@ -188,7 +188,7 @@ class TelegramBot:
         report = re.sub(r"^\[\*\] Finished job: multi_agent_research\s*", "", report, flags=re.MULTILINE).strip()
         report = report.replace("[*] Finished job: multi_agent_research", "").strip()
         if not report:
-            report = "Role 4.2 không trả về báo cáo tổng hợp. Xem chi tiết bằng /tail."
+            report = "Role 4.2 did not return a final report. Use /tail for details."
 
         return self.trim_message(report)
 
@@ -233,7 +233,7 @@ class TelegramBot:
     def help_text(self) -> str:
         return (
             "OpenClaw AI Agent\n"
-            "Bạn có thể chat tự nhiên. Bot sẽ phân tích yêu cầu, hỏi xác nhận, rồi chỉ chạy job sau khi bạn trả lời `approve`.\n\n"
+            "You can chat naturally. The bot will analyze your request, summarize the planned action, and only run the job after you reply `approve`.\n\n"
             "Commands\n"
             "/status - check env, Supabase counts, and log path\n"
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
@@ -667,8 +667,8 @@ Return JSON:
         is_guide = mode == "guide"
         action_type = "generate_guide_from_memory" if is_guide else "generate_insight_from_memory"
         action_name = "generate_guide_from_memory" if is_guide else "generate_insight_from_memory"
-        content_label = "Pillar Guide chuyên sâu khoảng 2000 words" if is_guide else "Insight SEO khoảng 1200-1500 words"
-        memory_name = memory.get("name") or "kết quả gần nhất"
+        content_label = "in-depth Pillar Guide of about 2000 words" if is_guide else "SEO Insight of about 1200-1500 words"
+        memory_name = memory.get("name") or "latest saved result"
 
         return {
             "type": action_type,
@@ -677,17 +677,17 @@ Return JSON:
             "reference_label": memory_name,
             "reference_text": memory["text"],
             "summary": (
-                f"Bạn muốn OpenClaw tạo một bài {content_label} dựa trên memory/kết quả gần nhất phải không?\n\n"
-                f"Nguồn memory: {memory_name}\n"
-                f"Yêu cầu: {instruction}\n\n"
-                "Nếu approve, OpenClaw sẽ:\n"
-                "1. Dùng báo cáo/kết quả đã lưu trong chat memory làm nguồn chính.\n"
-                "2. Viết lại thành bài gốc cho Asian Health Hub, không copy nguyên văn.\n"
-                "3. Giữ lại các điểm chưa chắc chắn và nguồn quan trọng nếu phù hợp.\n"
-                "4. Generate 2 ảnh minh họa bằng Gemini image-preview.\n"
-                "5. Publish bài viết lên Supabase.\n\n"
-                "Việc này có thể gọi OpenRouter/Gemini và cập nhật Supabase thật.\n"
-                "Nếu đúng, vui lòng trả lời `approve`."
+                f"You want OpenClaw to create one {content_label} based on the latest saved memory/result, correct?\n\n"
+                f"Memory source: {memory_name}\n"
+                f"Request: {instruction}\n\n"
+                "If you approve, OpenClaw will:\n"
+                "1. Use the saved report/result from chat memory as the primary source.\n"
+                "2. Rewrite it into original Asian Health Hub content without copying the source text.\n"
+                "3. Preserve important uncertainties and source notes where relevant.\n"
+                "4. Generate 2 supporting images with Gemini image-preview.\n"
+                "5. Publish the article to Supabase.\n\n"
+                "This may call OpenRouter/Gemini and update Supabase data.\n"
+                "Reply `approve` to continue."
             ),
         }
 
@@ -733,9 +733,9 @@ Return JSON:
                 "type": "run_batch",
                 "name": "run_batch",
                 "summary": (
-                    "Bạn muốn chạy batch pipeline cho các target clinics cấu hình trong `run_batch.py` phải không?\n\n"
-                    "Nếu approve, OpenClaw sẽ search URL, scrape website, extract dữ liệu, lưu clinics, và gắn ảnh nếu có.\n"
-                    "Việc này có thể mất thời gian và cập nhật Supabase thật. Nếu đúng, trả lời `approve`."
+                    "You want to run the batch pipeline for the clinic targets configured in `run_batch.py`, correct?\n\n"
+                    "If you approve, OpenClaw will search URLs, scrape websites, extract data, save clinics, and attach images when available.\n"
+                    "This may take time and will update Supabase data. Reply `approve` to continue."
                 ),
             }
         if action == "repair_clinic_images":
@@ -743,10 +743,10 @@ Return JSON:
                 "type": "repair_clinic_images",
                 "name": "repair_clinic_images",
                 "summary": (
-                    "Bạn muốn OpenClaw sửa/generate ảnh còn thiếu cho clinic directory phải không?\n\n"
-                    "Nếu approve, OpenClaw sẽ quét bảng clinics, generate ảnh thiếu bằng Gemini image-preview, "
-                    "và cập nhật `clinics.metadata.images` trên Supabase.\n\n"
-                    "Việc này có thể tốn quota OpenRouter/Gemini. Nếu đúng, trả lời `approve`."
+                    "You want OpenClaw to repair/generate missing images for clinic directory profiles, correct?\n\n"
+                    "If you approve, OpenClaw will scan the clinics table, generate missing images with Gemini image-preview, "
+                    "and update `clinics.metadata.images` in Supabase.\n\n"
+                    "This may use OpenRouter/Gemini quota. Reply `approve` to continue."
                 ),
             }
         if action == "enrich_clinics_google":
@@ -754,11 +754,11 @@ Return JSON:
                 "type": "enrich_clinics_google",
                 "name": "enrich_clinics_google",
                 "summary": (
-                    "Bạn muốn OpenClaw enrich clinic bằng Google Places phải không?\n\n"
-                    "Nếu approve, OpenClaw sẽ quét bảng clinics, gọi Google Places API để lấy ảnh, rating, "
-                    "review snippets, Google Maps URL, tọa độ và giờ mở cửa, upload ảnh lên Supabase Storage, "
-                    "rồi cập nhật `clinics.metadata` trên Supabase.\n\n"
-                    "Việc này cần `GOOGLE_PLACES_API_KEY` và có thể tốn Google Maps quota. Nếu đúng, trả lời `approve`."
+                    "You want OpenClaw to enrich clinic profiles with Google Places data, correct?\n\n"
+                    "If you approve, OpenClaw will scan the clinics table, call Google Places API for photos, ratings, "
+                    "review snippets, Google Maps URLs, coordinates, and opening hours, upload photos to Supabase Storage, "
+                    "then update `clinics.metadata` in Supabase.\n\n"
+                    "This requires `GOOGLE_PLACES_API_KEY` and may use Google Maps quota. Reply `approve` to continue."
                 ),
             }
         if action == "repair_article_images":
@@ -766,10 +766,10 @@ Return JSON:
                 "type": "repair_article_images",
                 "name": "repair_article_images",
                 "summary": (
-                    "Bạn muốn OpenClaw sửa/generate ảnh còn thiếu cho article/insight phải không?\n\n"
-                    "Nếu approve, OpenClaw sẽ quét bảng articles, generate ảnh thiếu bằng Gemini image-preview, "
-                    "và cập nhật `articles.seo_meta.og_image` trên Supabase.\n\n"
-                    "Nếu đúng, trả lời `approve`."
+                    "You want OpenClaw to repair/generate missing images for articles/insights, correct?\n\n"
+                    "If you approve, OpenClaw will scan the articles table, generate missing images with Gemini image-preview, "
+                    "and update `articles.seo_meta.og_image` in Supabase.\n\n"
+                    "Reply `approve` to continue."
                 ),
             }
         if action == "repair_article_slugs":
@@ -795,12 +795,12 @@ Return JSON:
             "type": "repair_article_slugs",
             "name": "repair_article_slugs",
             "summary": (
-                "Bạn muốn OpenClaw sửa các article slug có ký tự tiếng Việt/ký tự đặc biệt sang ASCII URL-safe phải không?\n\n"
-                "Nếu approve, OpenClaw sẽ:\n"
-                "1. Quét bảng articles.\n"
-                "2. Đổi slug không an toàn sang dạng ASCII như `suc-khoe-tam-than...`.\n"
-                "3. Lưu slug cũ vào `seo_meta.legacy_slugs`.\n\n"
-                "Việc này cập nhật Supabase thật. Nếu đúng, trả lời `approve`."
+                "You want OpenClaw to convert article slugs with Vietnamese/special characters into URL-safe ASCII slugs, correct?\n\n"
+                "If you approve, OpenClaw will:\n"
+                "1. Scan the articles table.\n"
+                "2. Convert unsafe slugs into ASCII format such as `suc-khoe-tam-than...`.\n"
+                "3. Save old slugs into `seo_meta.legacy_slugs`.\n\n"
+                "This will update Supabase data. Reply `approve` to continue."
             ),
         }
 
@@ -812,10 +812,10 @@ Return JSON:
             "name": f"{action_type}: {target[:48]}",
             "target": target,
             "summary": (
-                f"Bạn muốn xoá {label} này khỏi Supabase phải không?\n\n"
+                f"You want to delete this {label} from Supabase, correct?\n\n"
                 f"Target: {target}\n\n"
-                "Nếu approve, OpenClaw sẽ tìm đúng một record theo id, slug, hoặc tên/title rồi xoá record đó.\n"
-                "Đây là thao tác xoá dữ liệu thật. Nếu đúng, trả lời `approve`. Nếu không chắc, trả lời `cancel`."
+                "If you approve, OpenClaw will find exactly one record by id, slug, name, or title, then delete it.\n"
+                "This is a real destructive data operation. Reply `approve` to continue, or `cancel` if you are unsure."
             ),
         }
 
@@ -826,17 +826,17 @@ Return JSON:
             "target": target,
             "instruction": instruction,
             "summary": (
-                "Bạn muốn OpenClaw viết lại/cập nhật một bài blog/insight hiện có phải không?\n\n"
-                f"Bài cần rewrite: {target}\n\n"
-                f"Yêu cầu chỉnh sửa OpenClaw hiểu được:\n{instruction}\n\n"
-                "Nếu approve, OpenClaw sẽ:\n"
-                "1. Tìm bài theo id, slug, hoặc title.\n"
-                "2. Dùng nội dung hiện tại làm context.\n"
-                "3. Regenerate lại bài theo đúng yêu cầu chỉnh sửa ở trên.\n"
-                "4. Giữ nguyên slug/URL hiện tại.\n"
-                "5. Update content, excerpt, tags và SEO metadata trong Supabase.\n\n"
-                "Việc này có thể gọi OpenRouter và cập nhật Supabase thật.\n"
-                "Nếu đúng, vui lòng trả lời `approve`. Nếu muốn chỉnh yêu cầu, hãy nhắn lại yêu cầu mới."
+                "You want OpenClaw to rewrite/update an existing blog or insight article, correct?\n\n"
+                f"Article to rewrite: {target}\n\n"
+                f"Requested edits OpenClaw understood:\n{instruction}\n\n"
+                "If you approve, OpenClaw will:\n"
+                "1. Find the article by id, slug, or title.\n"
+                "2. Use the current article content as context.\n"
+                "3. Regenerate the article according to the requested edits above.\n"
+                "4. Keep the current slug/URL.\n"
+                "5. Update content, excerpt, tags, and SEO metadata in Supabase.\n\n"
+                "This may call OpenRouter and update Supabase data.\n"
+                "Reply `approve` to continue. Send a new request if you want to change the edit instructions."
             ),
         }
 
@@ -850,9 +850,9 @@ Return JSON:
         is_batch = len(url_list) > 1
         action_type = "generate_guide_from_urls" if is_guide and is_batch else "generate_guide_from_url" if is_guide else "generate_insight_from_urls" if is_batch else "generate_insight_from_url"
         action_name = action_type
-        content_label = "Pillar Guide chuyên sâu khoảng 2000 words" if is_guide else "Insight SEO khoảng 1200-1500 words"
+        content_label = "in-depth Pillar Guide of about 2000 words" if is_guide else "SEO Insight of about 1200-1500 words"
         url_lines = "\n".join(f"- {url}" for url in url_list)
-        count_label = f"{len(url_list)} bài" if is_batch else "một bài"
+        count_label = f"{len(url_list)} articles" if is_batch else "one article"
 
         return {
             "type": action_type,
@@ -860,17 +860,17 @@ Return JSON:
             "url": url_list[0],
             "urls": url_list,
             "summary": (
-                f"Bạn muốn OpenClaw tạo {count_label} {content_label} từ URL tham khảo này phải không?\n\n"
+                f"You want OpenClaw to create {count_label} {content_label} from the reference URL(s), correct?\n\n"
                 f"URLs:\n{url_lines}\n\n"
-                "Nếu approve, OpenClaw sẽ:\n"
-                "1. Chạy lần lượt từng URL để tránh quá tải/quota spike.\n"
-                "2. Scrape nội dung từng trang web tham khảo.\n"
-                "3. Dùng AI phân tích các ý y tế chính.\n"
-                "4. Viết bài gốc cho Asian Health Hub, không sao chép wording/heading/cấu trúc nguồn.\n"
-                "5. Generate 2 ảnh minh họa bằng Gemini image-preview.\n"
-                "6. Publish bài viết lên Supabase.\n\n"
-                "Việc này có thể gọi OpenRouter/Gemini và cập nhật Supabase thật.\n"
-                "Nếu đúng, vui lòng trả lời `approve`. Nếu muốn đổi yêu cầu, cứ nhắn yêu cầu mới."
+                "If you approve, OpenClaw will:\n"
+                "1. Process each URL sequentially to avoid overload/quota spikes.\n"
+                "2. Scrape each reference page.\n"
+                "3. Use AI to analyze the key healthcare concepts.\n"
+                "4. Write original Asian Health Hub content without copying wording, headings, or source structure.\n"
+                "5. Generate 2 supporting images with Gemini image-preview.\n"
+                "6. Publish the article(s) to Supabase.\n\n"
+                "This may call OpenRouter/Gemini and update Supabase data.\n"
+                "Reply `approve` to continue, or send a new request if you want changes."
             ),
         }
 
@@ -878,18 +878,18 @@ Return JSON:
         is_guide = mode == "guide"
         action_type = "generate_guide" if is_guide else "generate_insight"
         action_name = "generate_guide" if is_guide else "generate_insight"
-        content_label = "Pillar Guide chuyên sâu khoảng 2000 words" if is_guide else "Insight SEO khoảng 1200-1500 words"
-        topic_label = topic or "OpenClaw tự chọn chủ đề phù hợp"
+        content_label = "in-depth Pillar Guide of about 2000 words" if is_guide else "SEO Insight of about 1200-1500 words"
+        topic_label = topic or "OpenClaw will choose a suitable topic"
 
         return {
             "type": action_type,
             "name": action_name if not topic else f"{action_name}: {topic[:48]}",
             "topic": topic,
             "summary": (
-                f"Bạn muốn OpenClaw tạo một bài {content_label} phải không?\n\n"
+                f"You want OpenClaw to create one {content_label}, correct?\n\n"
                 f"Topic: {topic_label}\n\n"
-                "Nếu approve, OpenClaw sẽ generate content, generate 2 ảnh, tạo slug unique, và publish lên Supabase.\n"
-                "Nếu đúng, trả lời `approve`. Nếu muốn dùng URL tham khảo, hãy gửi URL trước khi approve."
+                "If you approve, OpenClaw will generate content, generate 2 images, create a unique slug, and publish it to Supabase.\n"
+                "Reply `approve` to continue. If you want to use reference URLs, send them before approving."
             ),
         }
 
@@ -899,16 +899,16 @@ Return JSON:
             "name": f"multi_agent_research: {user_request[:48]}",
             "request": user_request,
             "summary": (
-                "Bạn muốn OpenClaw chạy nghiên cứu tự động đa tác nhân cho yêu cầu này phải không?\n\n"
-                f"Yêu cầu: {user_request}\n\n"
-                "Nếu approve, OpenClaw sẽ chạy pipeline 5 role:\n"
-                "1. Search Planner: phân tích intent và tạo query tối ưu.\n"
-                "2. Batch Link Selector: chọn 10-12 nguồn tốt nhất từ pool kết quả.\n"
-                "3. Sub-link Extractor: đào link con từ các trang list/hub.\n"
-                "4. Fact Extractor: scrape từng trang detail và trích facts cuốn chiếu.\n"
-                "5. Final Editor: tổng hợp báo cáo cuối cùng có nguồn.\n\n"
-                "Việc này có thể gọi OpenRouter nhiều lần, search web, scrape nhiều website và mất vài phút.\n"
-                "Nếu đúng, vui lòng trả lời `approve`."
+                "You want OpenClaw to run the automated multi-agent research pipeline for this request, correct?\n\n"
+                f"Request: {user_request}\n\n"
+                "If you approve, OpenClaw will run the 5-role pipeline:\n"
+                "1. Search Planner: analyze intent and create optimized search queries.\n"
+                "2. Batch Link Selector: choose the strongest 10-12 sources from the result pool.\n"
+                "3. Sub-link Extractor: drill into list/hub pages for specific article links.\n"
+                "4. Fact Extractor: scrape detail pages and extract rolling fact sheets.\n"
+                "5. Final Editor: synthesize the final sourced report.\n\n"
+                "This may call OpenRouter multiple times, search the web, scrape websites, and take several minutes.\n"
+                "Reply `approve` to continue."
             ),
         }
 
@@ -978,10 +978,10 @@ Return JSON:
                 "type": "repair_clinic_images",
                 "name": "repair_clinic_images",
                 "summary": (
-                    "Bạn muốn OpenClaw sửa/generate ảnh còn thiếu cho clinic directory phải không?\n\n"
-                    "Nếu approve, OpenClaw sẽ quét bảng clinics, generate ảnh thiếu bằng Gemini image-preview, "
-                    "và cập nhật `clinics.metadata.images` trên Supabase.\n\n"
-                    "Việc này có thể tốn quota OpenRouter/Gemini. Nếu đúng, trả lời `approve`."
+                    "You want OpenClaw to repair/generate missing images for clinic directory profiles, correct?\n\n"
+                    "If you approve, OpenClaw will scan the clinics table, generate missing images with Gemini image-preview, "
+                    "and update `clinics.metadata.images` in Supabase.\n\n"
+                    "This may use OpenRouter/Gemini quota. Reply `approve` to continue."
                 ),
             }
 
@@ -1004,11 +1004,11 @@ Return JSON:
                 "type": "enrich_clinics_google",
                 "name": "enrich_clinics_google",
                 "summary": (
-                    "Bạn muốn OpenClaw enrich clinic bằng Google Places phải không?\n\n"
-                    "Nếu approve, OpenClaw sẽ quét bảng clinics, gọi Google Places API để lấy ảnh, rating, "
-                    "review snippets, Google Maps URL, tọa độ và giờ mở cửa, upload ảnh lên Supabase Storage, "
-                    "rồi cập nhật `clinics.metadata` trên Supabase.\n\n"
-                    "Việc này cần `GOOGLE_PLACES_API_KEY` và có thể tốn Google Maps quota. Nếu đúng, trả lời `approve`."
+                    "You want OpenClaw to enrich clinic profiles with Google Places data, correct?\n\n"
+                    "If you approve, OpenClaw will scan the clinics table, call Google Places API for photos, ratings, "
+                    "review snippets, Google Maps URLs, coordinates, and opening hours, upload photos to Supabase Storage, "
+                    "then update `clinics.metadata` in Supabase.\n\n"
+                    "This requires `GOOGLE_PLACES_API_KEY` and may use Google Maps quota. Reply `approve` to continue."
                 ),
             }
 
@@ -1017,10 +1017,10 @@ Return JSON:
                 "type": "repair_article_images",
                 "name": "repair_article_images",
                 "summary": (
-                    "Bạn muốn OpenClaw sửa/generate ảnh còn thiếu cho article/insight phải không?\n\n"
-                    "Nếu approve, OpenClaw sẽ quét bảng articles, generate ảnh thiếu bằng Gemini image-preview, "
-                    "và cập nhật `articles.seo_meta.og_image` trên Supabase.\n\n"
-                    "Nếu đúng, trả lời `approve`."
+                    "You want OpenClaw to repair/generate missing images for articles/insights, correct?\n\n"
+                    "If you approve, OpenClaw will scan the articles table, generate missing images with Gemini image-preview, "
+                    "and update `articles.seo_meta.og_image` in Supabase.\n\n"
+                    "Reply `approve` to continue."
                 ),
             }
 
@@ -1029,9 +1029,9 @@ Return JSON:
                 "type": "run_batch",
                 "name": "run_batch",
                 "summary": (
-                    "Bạn muốn chạy batch pipeline cho các target clinics cấu hình trong `run_batch.py` phải không?\n\n"
-                    "Nếu approve, OpenClaw sẽ search URL, scrape website, extract dữ liệu, lưu clinics, và gắn ảnh nếu có.\n"
-                    "Việc này có thể mất thời gian và cập nhật Supabase thật. Nếu đúng, trả lời `approve`."
+                    "You want to run the batch pipeline for the clinic targets configured in `run_batch.py`, correct?\n\n"
+                    "If you approve, OpenClaw will search URLs, scrape websites, extract data, save clinics, and attach images when available.\n"
+                    "This may take time and will update Supabase data. Reply `approve` to continue."
                 ),
             }
 
@@ -1139,7 +1139,7 @@ Return JSON:
         elif action_type == "multi_agent_research":
             self.run_job(chat_id, action["name"], lambda: research_job(action["request"]), action_type=action_type)
         else:
-            self.send_message(chat_id, "Mình chưa biết cách chạy action này. Hãy gửi lại yêu cầu rõ hơn nhé.")
+            self.send_message(chat_id, "I do not know how to run this action yet. Please send a clearer request.")
 
     def handle_command(self, chat_id: int, text: str) -> None:
         command = text.split()[0].split("@")[0].lower()
@@ -1155,13 +1155,13 @@ Return JSON:
         elif command == "/research":
             request = text.removeprefix("/research").strip()
             if not request:
-                self.send_message(chat_id, "Gửi dạng: /research Hanta virus symptoms and prevention latest")
+                self.send_message(chat_id, "Use: /research Hanta virus symptoms and prevention latest")
             else:
                 self.run_job(chat_id, f"multi_agent_research: {request[:48]}", lambda: research_job(request), action_type="multi_agent_research")
         elif command == "/ask":
             question = text.removeprefix("/ask").strip()
             if not question:
-                self.send_message(chat_id, "Gửi dạng: /ask Tôi nên chạy gì để sửa ảnh directory?")
+                self.send_message(chat_id, "Use: /ask What should I run to repair directory images?")
             else:
                 self.send_message(chat_id, ask_openclaw_agent(question))
         elif command == "/run_batch":
@@ -1177,25 +1177,25 @@ Return JSON:
         elif command == "/delete_article":
             target = text.removeprefix("/delete_article").strip()
             if not target:
-                self.send_message(chat_id, "Gửi dạng: /delete_article <id|slug|title>")
+                self.send_message(chat_id, "Use: /delete_article <id|slug|title>")
             else:
                 self.pending_actions[chat_id] = self.build_delete_action("article", target)
                 self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
         elif command == "/delete_clinic":
             target = text.removeprefix("/delete_clinic").strip()
             if not target:
-                self.send_message(chat_id, "Gửi dạng: /delete_clinic <id|slug|name>")
+                self.send_message(chat_id, "Use: /delete_clinic <id|slug|name>")
             else:
                 self.pending_actions[chat_id] = self.build_delete_action("clinic", target)
                 self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
         elif command == "/rewrite_article":
             payload = text.removeprefix("/rewrite_article").strip()
             if not payload or "|" not in payload:
-                self.send_message(chat_id, "Gửi dạng: /rewrite_article <id|slug|title> | <yêu cầu chỉnh sửa>")
+                self.send_message(chat_id, "Use: /rewrite_article <id|slug|title> | <edit instructions>")
             else:
                 target, instruction = [part.strip() for part in payload.split("|", 1)]
                 if not target or not instruction:
-                    self.send_message(chat_id, "Gửi dạng: /rewrite_article <id|slug|title> | <yêu cầu chỉnh sửa>")
+                    self.send_message(chat_id, "Use: /rewrite_article <id|slug|title> | <edit instructions>")
                 else:
                     self.pending_actions[chat_id] = self.build_rewrite_article_action(target, instruction)
                     self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
@@ -1206,7 +1206,7 @@ Return JSON:
         elif command == "/generate_insight_from_url":
             source_urls = self.extract_urls(text.removeprefix("/generate_insight_from_url").strip())
             if not source_urls:
-                self.send_message(chat_id, "Gửi dạng: /generate_insight_from_url https://example.com/article")
+                self.send_message(chat_id, "Use: /generate_insight_from_url https://example.com/article")
             elif len(source_urls) == 1:
                 source_url = source_urls[0]
                 self.run_job(
@@ -1229,7 +1229,7 @@ Return JSON:
         elif command == "/generate_guide_from_url":
             source_urls = self.extract_urls(text.removeprefix("/generate_guide_from_url").strip())
             if not source_urls:
-                self.send_message(chat_id, "Gửi dạng: /generate_guide_from_url https://example.com/article")
+                self.send_message(chat_id, "Use: /generate_guide_from_url https://example.com/article")
             elif len(source_urls) == 1:
                 source_url = source_urls[0]
                 self.run_job(
@@ -1252,19 +1252,19 @@ Return JSON:
         if self.is_approval(text):
             action = self.pending_actions.pop(chat_id, None)
             if not action:
-                self.send_message(chat_id, "Hiện không có tác vụ nào đang chờ approve.")
+                self.send_message(chat_id, "There is no pending action waiting for approval.")
                 return
 
-            self.send_message(chat_id, f"Đã nhận approve. Mình bắt đầu chạy: {action['name']}")
+            self.send_message(chat_id, f"Approval received. Starting: {action['name']}")
             self.run_pending_action(chat_id, action)
             return
 
         if self.is_rejection(text):
             action = self.pending_actions.pop(chat_id, None)
             if action:
-                self.send_message(chat_id, f"Đã hủy tác vụ đang chờ: {action['name']}")
+                self.send_message(chat_id, f"Pending action canceled: {action['name']}")
             else:
-                self.send_message(chat_id, "Không có tác vụ nào đang chờ để hủy.")
+                self.send_message(chat_id, "There is no pending action to cancel.")
             return
 
         action = self.analyze_request(text, self.pending_actions.get(chat_id), self.chat_memory.get(chat_id))

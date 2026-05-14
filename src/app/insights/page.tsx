@@ -4,6 +4,8 @@ import { ArticleImage } from '@/components/insights/article-image';
 import { getPublishedArticles, getArticleCategories } from '@/services/article-service';
 import type { Article } from '@/types/database';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Health Insights & Guides | Asian Health Hub',
   description: 'Expert medical guides, healthcare tips, and community health news for the Asian community.',
