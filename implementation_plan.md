@@ -498,6 +498,80 @@ CREATE INDEX ON clinic_embeddings USING ivfflat (embedding vector_cosine_ops);
 
 ---
 
+## Phase 8: Internal Admin Dashboard (CMS)
+
+> **Mục tiêu**: Xây dựng trung tâm điều hành (Control Center) để quản lý dữ liệu thủ công, biên tập nội dung AI và điều phối hệ thống. Áp dụng UI được generate từ v0.dev và refactor thành chuẩn Next.js App Router.
+
+### 8.1 Role-Based Access Control (RBAC) & Security
+
+#### [MODIFY] `supabase/schema.sql` — Thêm phân quyền
+```sql
+-- Tạo bảng quản lý role cho user (nếu không dùng raw metadata)
+CREATE TABLE user_roles (
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'provider', 'admin')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Cập nhật RLS Policies cho bảng clinics và articles
+-- Chỉ admin mới có quyền ghi đè, xóa hoặc duyệt dữ liệu toàn hệ thống
+CREATE POLICY "Admins have full access to clinics" ON clinics
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid() AND role = 'admin')
+  );
+```
+
+#### [NEW] `src/middleware.ts` (Cập nhật)
+- Bắt intercept các request có path bắt đầu bằng `/admin/:path*`.
+- Đọc session từ Supabase Auth. Nếu không có session hợp lệ hoặc `role !== 'admin'`, tự động redirect người dùng về trang `/auth/login`.
+
+### 8.2 Admin Layout & Routing Foundation
+
+#### [NEW] `src/app/admin/layout.tsx` (Server Component)
+- Bóc tách phần Sidebar menu và Top Header từ bộ code v0.dev.
+- Chuyển đổi logic chuyển tab bằng React State sang sử dụng component `<Link>` của Next.js.
+- Sử dụng hook `usePathname()` để xác định trạng thái active của các tab điều hướng.
+- Bọc toàn bộ `{children}` vào khu vực hiển thị nội dung chính.
+
+#### [NEW] `src/app/admin/page.tsx`
+- **Dashboard Overview:** Trích xuất giao diện View 1 từ v0.
+- Hiển thị 3 Summary Cards (Tổng phòng khám, Bài viết nháp, Yêu cầu chờ duyệt).
+- Tích hợp biểu đồ (Recharts) hiển thị tiến độ tăng trưởng database.
+
+### 8.3 Module: Clinics Management (Data CRUD)
+
+#### [NEW] `src/app/admin/clinics/page.tsx`
+- **Giao diện:** Tích hợp ShadcnUI `DataTable` từ thiết kế của v0.
+- **Tính năng:** Liệt kê phòng khám với đầy đủ trạng thái (Claimed/Unclaimed). Tích hợp Pagination và Search bar đẩy state lên URL `searchParams`.
+- **Thao tác:** Nút "Add New Clinic" (thêm thủ công) và các Action (Edit/Delete) cho từng dòng dữ liệu.
+
+### 8.4 Module: Content CMS (Human-in-the-loop)
+
+#### [NEW] `src/app/admin/articles/page.tsx`
+- Giao diện quản lý danh sách bài viết do OpenClaw AI sinh ra.
+- Tabs phân loại: `Drafts` (Cần review), `Published`, `Archived`.
+
+#### [NEW] `src/app/admin/articles/[id]/page.tsx`
+- **Editor UI:** Giao diện Split-view. Bên trái là trình soạn thảo Rich Text/Markdown (tích hợp TipTap hoặc MDXEditor). Bên phải là bảng điều khiển (Settings Panel).
+- **SEO & Metadata:** Chỉnh sửa Meta Title, Description và chuyên mục trước khi xuất bản.
+- **Server Actions:** Hàm `publishArticle()` chuyển trạng thái từ draft sang published và trigger ISR Revalidation của Next.js để cập nhật bài lên web.
+
+### 8.5 Module: Claim Review System
+
+#### [NEW] `src/app/admin/claims/page.tsx`
+- **Giao diện:** Sử dụng Card-based Grid layout từ v0 để hiển thị trực quan các yêu cầu claim profile từ bác sĩ.
+- **Tính năng:** Hiển thị bằng chứng xác thực (NPI khớp, Domain khớp hoặc ảnh chụp giấy phép).
+- **Thao tác:** - Nút **Approve**: Gắn `owner_id` cho phòng khám và cập nhật `is_claimed = true`.
+  - Nút **Reject**: Mở modal nhập lý do từ chối để gửi email thông báo tự động.
+
+### 8.6 Module: AI Pipeline Control (Agent Orchestration)
+
+#### [NEW] `src/app/admin/pipeline/page.tsx` (`'use client'`)
+- **Control Center:** Giao diện 3 thẻ điều khiển (NPI Seeder, Smart Scraper, Content Engine) từ v0.
+- **Tính năng:** Các nút bấm để gọi API thủ công sang backend Python FastAPI (ví dụ: `POST /pipeline/seed-npi`).
+- **Live Logs:** Khung Terminal giả lập kết nối qua WebSockets (hoặc HTTP Polling) để hiển thị log trực tiếp từ Python engine đang chạy ngầm, giúp giám sát tỷ lệ cào lỗi và lỗi vượt Anti-bot.
+
+
 ## Thứ tự Ưu tiên Triển khai
 
 ```mermaid

@@ -1,10 +1,11 @@
 -- ============================================
 -- Asian Health Hub — Database Schema
--- Current app state: Phase 5 (Insights & Guides)
+-- Current app state: Phase 8 (Admin Dashboard + RBAC)
 -- Run this in Supabase SQL Editor.
 -- ============================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ============================================
 -- Helpers
@@ -79,6 +80,8 @@ CREATE TABLE IF NOT EXISTS clinics (
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE;
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE clinics ADD COLUMN IF NOT EXISTS is_telehealth_available BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS claimed_by UUID REFERENCES auth.users(id);
+ALTER TABLE clinics ADD COLUMN IF NOT EXISTS is_claimed BOOLEAN NOT NULL DEFAULT false;
 
 UPDATE clinics
 SET slug = public.slugify(name)
@@ -147,13 +150,164 @@ COMMENT ON TABLE articles IS 'SEO articles and healthcare guides for Insights & 
 COMMENT ON TABLE article_facts IS 'Source facts collected for AI-generated healthcare content';
 
 -- ============================================
--- 4. Row Level Security
+-- 4. Claim Requests
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS claim_requests (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  clinic_id   UUID REFERENCES clinics(id) ON DELETE CASCADE,
+  user_id     UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  proof_type  TEXT CHECK (proof_type IN ('npi_verification', 'phone_verification', 'document')),
+  proof_data  JSONB DEFAULT '{}'::JSONB,
+  notes       TEXT,
+  reviewed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_claim_requests_clinic_id ON claim_requests (clinic_id);
+CREATE INDEX IF NOT EXISTS idx_claim_requests_user_id ON claim_requests (user_id);
+CREATE INDEX IF NOT EXISTS idx_claim_requests_status_created_at ON claim_requests (status, created_at DESC);
+
+COMMENT ON TABLE claim_requests IS 'Provider requests to claim ownership of clinic profiles';
+
+-- ============================================
+-- 5. User Roles
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_id    UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role       TEXT NOT NULL DEFAULT 'provider' CHECK (role IN ('user', 'provider', 'admin', 'superadmin')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE user_roles DROP CONSTRAINT IF EXISTS user_roles_role_check;
+ALTER TABLE user_roles
+  ADD CONSTRAINT user_roles_role_check
+  CHECK (role IN ('user', 'provider', 'admin', 'superadmin'));
+
+ALTER TABLE user_roles ALTER COLUMN role SET DEFAULT 'provider';
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles (role);
+
+COMMENT ON TABLE user_roles IS 'Application-level RBAC roles for providers and internal admins';
+
+CREATE OR REPLACE FUNCTION public.is_admin(user_uuid UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.user_roles
+    WHERE user_id = user_uuid
+      AND role IN ('admin', 'superadmin')
+  );
+$$ LANGUAGE SQL STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.is_superadmin(user_uuid UUID)
+RETURNS BOOLEAN AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.user_roles
+    WHERE user_id = user_uuid
+      AND role = 'superadmin'
+  );
+$$ LANGUAGE SQL STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user_role()
+RETURNS TRIGGER AS $$
+DECLARE
+  requested_role TEXT;
+BEGIN
+  requested_role := COALESCE(NEW.raw_user_meta_data->>'role', 'provider');
+
+  IF requested_role NOT IN ('user', 'provider') THEN
+    requested_role := 'provider';
+  END IF;
+
+  INSERT INTO public.user_roles (user_id, role)
+  VALUES (NEW.id, requested_role)
+  ON CONFLICT (user_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS on_auth_user_created_set_role ON auth.users;
+CREATE TRIGGER on_auth_user_created_set_role
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user_role();
+
+-- ============================================
+-- 6. Clinic Embeddings
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS clinic_embeddings (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  clinic_id   UUID REFERENCES clinics(id) ON DELETE CASCADE,
+  embedding   vector(1536),
+  content     TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_clinic_embeddings_clinic_id
+  ON clinic_embeddings (clinic_id);
+
+CREATE INDEX IF NOT EXISTS idx_clinic_embeddings_vector
+  ON clinic_embeddings USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
+
+CREATE OR REPLACE FUNCTION public.match_clinic_embeddings(
+  query_embedding vector(1536),
+  match_count INT DEFAULT 10
+)
+RETURNS TABLE (
+  clinic_id UUID,
+  content TEXT,
+  similarity FLOAT
+)
+LANGUAGE SQL STABLE
+AS $$
+  SELECT
+    clinic_embeddings.clinic_id,
+    clinic_embeddings.content,
+    1 - (clinic_embeddings.embedding <=> query_embedding) AS similarity
+  FROM clinic_embeddings
+  ORDER BY clinic_embeddings.embedding <=> query_embedding
+  LIMIT match_count;
+$$;
+
+COMMENT ON TABLE clinic_embeddings IS 'pgvector embeddings for natural-language clinic discovery';
+
+-- ============================================
+-- 7. Analytics Events
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS analytics_events (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  event_name  TEXT NOT NULL,
+  path        TEXT,
+  metadata    JSONB DEFAULT '{}'::JSONB,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_events_name_created_at
+  ON analytics_events (event_name, created_at DESC);
+
+COMMENT ON TABLE analytics_events IS 'Lightweight product analytics events for search, clinic clicks, and claim starts';
+
+-- ============================================
+-- 8. Row Level Security
 -- ============================================
 
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clinics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE article_facts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE claim_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE clinic_embeddings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE analytics_events ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "organizations_public_select" ON organizations;
 CREATE POLICY "organizations_public_select"
@@ -184,8 +338,14 @@ CREATE POLICY "clinics_auth_insert"
 DROP POLICY IF EXISTS "clinics_auth_update" ON clinics;
 CREATE POLICY "clinics_auth_update"
   ON clinics FOR UPDATE TO authenticated
-  USING (true)
-  WITH CHECK (true);
+  USING (claimed_by = auth.uid() OR public.is_admin(auth.uid()))
+  WITH CHECK (claimed_by = auth.uid() OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "clinics_admin_full_access" ON clinics;
+CREATE POLICY "clinics_admin_full_access"
+  ON clinics FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
 
 DROP POLICY IF EXISTS "articles_public_published_select" ON articles;
 CREATE POLICY "articles_public_published_select"
@@ -200,8 +360,14 @@ CREATE POLICY "articles_auth_insert"
 DROP POLICY IF EXISTS "articles_auth_update" ON articles;
 CREATE POLICY "articles_auth_update"
   ON articles FOR UPDATE TO authenticated
-  USING (true)
-  WITH CHECK (true);
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "articles_admin_full_access" ON articles;
+CREATE POLICY "articles_admin_full_access"
+  ON articles FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
 
 DROP POLICY IF EXISTS "article_facts_public_verified_select" ON article_facts;
 CREATE POLICY "article_facts_public_verified_select"
@@ -219,6 +385,54 @@ CREATE POLICY "article_facts_auth_update"
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "claim_requests_owner_select" ON claim_requests;
+CREATE POLICY "claim_requests_owner_select"
+  ON claim_requests FOR SELECT TO authenticated
+  USING (user_id = auth.uid() OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "claim_requests_owner_insert" ON claim_requests;
+CREATE POLICY "claim_requests_owner_insert"
+  ON claim_requests FOR INSERT TO authenticated
+  WITH CHECK (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "claim_requests_owner_update" ON claim_requests;
+CREATE POLICY "claim_requests_owner_update"
+  ON claim_requests FOR UPDATE TO authenticated
+  USING ((user_id = auth.uid() AND status = 'pending') OR public.is_admin(auth.uid()))
+  WITH CHECK ((user_id = auth.uid() AND status = 'pending') OR public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "claim_requests_admin_full_access" ON claim_requests;
+CREATE POLICY "claim_requests_admin_full_access"
+  ON claim_requests FOR ALL TO authenticated
+  USING (public.is_admin(auth.uid()))
+  WITH CHECK (public.is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "user_roles_self_select" ON user_roles;
+CREATE POLICY "user_roles_self_select"
+  ON user_roles FOR SELECT TO authenticated
+  USING (user_id = auth.uid() OR public.is_superadmin(auth.uid()));
+
+DROP POLICY IF EXISTS "user_roles_admin_full_access" ON user_roles;
+CREATE POLICY "user_roles_admin_full_access"
+  ON user_roles FOR ALL TO authenticated
+  USING (public.is_superadmin(auth.uid()))
+  WITH CHECK (public.is_superadmin(auth.uid()));
+
+DROP POLICY IF EXISTS "clinic_embeddings_auth_select" ON clinic_embeddings;
+CREATE POLICY "clinic_embeddings_auth_select"
+  ON clinic_embeddings FOR SELECT TO authenticated
+  USING (true);
+
+DROP POLICY IF EXISTS "clinic_embeddings_auth_insert" ON clinic_embeddings;
+CREATE POLICY "clinic_embeddings_auth_insert"
+  ON clinic_embeddings FOR INSERT TO authenticated
+  WITH CHECK (true);
+
+DROP POLICY IF EXISTS "analytics_events_no_public_select" ON analytics_events;
+CREATE POLICY "analytics_events_no_public_select"
+  ON analytics_events FOR SELECT TO authenticated
+  USING (false);
+
 -- ============================================
--- DONE — Schema synced through Phase 5
+-- DONE — Schema synced through Phase 8
 -- ============================================

@@ -1,7 +1,6 @@
 'use client';
 
-/* eslint-disable @next/next/no-img-element */
-
+import Image from 'next/image';
 import { useState } from 'react';
 import { getSafeClinicImageSrc } from '@/lib/clinic-image';
 
@@ -24,10 +23,12 @@ export function ClinicImage({
   return (
     <div className={`relative overflow-hidden bg-gray-200 ${className}`}>
       {safeSrc ? (
-        <img
+        <Image
           src={safeSrc}
           alt={alt}
-          className="h-full w-full object-cover"
+          fill
+          sizes="(max-width: 768px) 100vw, 384px"
+          className="object-cover"
           onError={() => setFailed(true)}
         />
       ) : (

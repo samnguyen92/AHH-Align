@@ -127,6 +127,36 @@ export async function getPublishedArticleSlugs(limit = 100): Promise<string[]> {
   }
 }
 
+export interface ArticleSitemapEntry {
+  slug: string;
+  updated_at: string;
+  published_at: string | null;
+}
+
+export async function getArticleSitemapEntries(limit = 50000): Promise<ArticleSitemapEntry[]> {
+  const supabase = createServerAnonClient();
+
+  if (!supabase) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('articles')
+      .select('slug,updated_at,published_at')
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+
+    return ((data ?? []) as ArticleSitemapEntry[]).filter((article) => article.slug);
+  } catch (err) {
+    console.error('[article-service] getArticleSitemapEntries error:', err);
+    return [];
+  }
+}
+
 /**
  * Lấy bài viết liên quan dựa trên tags, fallback theo category nếu chưa có tag overlap.
  */

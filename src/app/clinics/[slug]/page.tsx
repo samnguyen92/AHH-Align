@@ -5,6 +5,8 @@ import { ClinicHero } from '@/components/clinic/clinic-hero';
 import { ClinicMainContent } from '@/components/clinic/clinic-main-content';
 import { ClinicSidebar } from '@/components/clinic/clinic-sidebar';
 
+export const revalidate = 3600;
+
 interface ClinicPageProps {
   params: Promise<{
     slug: string;

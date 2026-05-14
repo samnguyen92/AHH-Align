@@ -1,7 +1,6 @@
 'use client';
 
-/* eslint-disable @next/next/no-img-element */
-
+import Image from 'next/image';
 import { useState } from 'react';
 import { getSafeArticleImageSrc } from '@/lib/article-image';
 
@@ -22,12 +21,14 @@ export function ArticleImage({
   const safeSrc = failed ? null : getSafeArticleImageSrc(src);
 
   return (
-    <div className={`overflow-hidden bg-gray-100 ${className}`}>
+    <div className={`relative overflow-hidden bg-gray-100 ${className}`}>
       {safeSrc ? (
-        <img
+        <Image
           src={safeSrc}
           alt={alt}
-          className="h-full w-full object-cover"
+          fill
+          sizes="(max-width: 768px) 100vw, 760px"
+          className="object-cover"
           onError={() => setFailed(true)}
         />
       ) : (

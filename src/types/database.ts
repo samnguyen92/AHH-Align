@@ -72,6 +72,8 @@ export interface Clinic {
   languages: string[];
   specialty: string | null;
   is_telehealth_available: boolean;
+  claimed_by: string | null;
+  is_claimed: boolean;
   metadata: ClinicMetadata;
   created_at: string;
 }
@@ -133,5 +135,23 @@ export interface ArticleFact {
   source_url: string | null;
   source_name: string | null;
   verified: boolean;
+  created_at: string;
+}
+
+// ---- Claim Requests (Phase 6) ----
+
+export type ClaimRequestStatus = 'pending' | 'approved' | 'rejected';
+export type ClaimProofType = 'npi_verification' | 'phone_verification' | 'document';
+
+export interface ClaimRequest {
+  id: string;
+  clinic_id: string;
+  user_id: string;
+  status: ClaimRequestStatus;
+  proof_type: ClaimProofType | null;
+  proof_data: Record<string, unknown>;
+  notes: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
   created_at: string;
 }

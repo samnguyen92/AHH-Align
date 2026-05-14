@@ -136,9 +136,9 @@ npm run dev
 - [x] **Phase 2**: Landing Page UI + Search Page
 - [x] **Phase 3**: Clinic Detail Page + Map Integration scaffold
 - [x] **Phase 4**: Python AI Engine (OpenClaw) — search/scrape/extract/upsert scripts
-- [x] **Phase 5**: Insights & Guides (AI content generation) — in progress
-- [ ] **Phase 6**: Claim Profile + Auth flow
-- [ ] **Phase 7**: SEO optimization + Static Generation
+- [x] **Phase 5**: Insights & Guides (AI content generation)
+- [x] **Phase 6**: Claim Profile + Auth flow — login/signup, claim requests, provider dashboard
+- [x] **Phase 7**: SEO optimization + Static Generation — sitemap, robots, ISR, programmatic local pages
 
 ## License
 

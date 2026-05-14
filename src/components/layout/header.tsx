@@ -64,6 +64,13 @@ export function Header() {
             Search
           </Link>
 
+          <Link
+            href="/dashboard"
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Dashboard
+          </Link>
+
           <MobileNav links={navLinks} />
         </div>
       </div>

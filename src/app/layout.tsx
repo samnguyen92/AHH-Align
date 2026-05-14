@@ -1,8 +1,11 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-import { Header } from '@/components/layout/header';
-import { Footer } from '@/components/layout/footer';
-import { BottomCTA } from '@/components/layout/bottom-cta';
+import { PageViewTracker } from '@/components/layout/page-view-tracker';
+import { SiteChrome } from '@/components/layout/site-chrome';
+import { JsonLd } from '@/lib/json-ld';
+import { absoluteUrl, SITE_NAME, SITE_URL } from '@/lib/site';
+import '@uiw/react-md-editor/markdown-editor.css';
+import '@uiw/react-markdown-preview/markdown.css';
 import './globals.css';
 
 const inter = Inter({
@@ -12,7 +15,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: 'Asian Health Hub — Find Clinics That Speak Your Language',
     template: '%s | Asian Health Hub',
@@ -30,10 +33,19 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    siteName: 'Asian Health Hub',
+    siteName: SITE_NAME,
     title: 'Asian Health Hub — Find Clinics That Speak Your Language',
     description:
       'Find healthcare providers who speak Vietnamese, Korean, Chinese, and other Asian languages.',
+    url: SITE_URL,
+    images: [{ url: absoluteUrl('/opengraph-image'), width: 1200, height: 630 }],
+  },
+  alternates: {
+    canonical: '/',
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
@@ -42,13 +54,32 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const organizationJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: SITE_NAME,
+    url: SITE_URL,
+    logo: absoluteUrl('/favicon.ico'),
+  };
+
+  const websiteJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: SITE_NAME,
+    url: SITE_URL,
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: `${SITE_URL}/search?query={search_term_string}`,
+      'query-input': 'required name=search_term_string',
+    },
+  };
+
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans">
-        <Header />
-        <main className="flex-1">{children}</main>
-        <BottomCTA />
-        <Footer />
+        <JsonLd data={[organizationJsonLd, websiteJsonLd]} />
+        <PageViewTracker />
+        <SiteChrome>{children}</SiteChrome>
       </body>
     </html>
   );

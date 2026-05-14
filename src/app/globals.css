@@ -39,6 +39,11 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-orange: var(--orange);
+  --color-purple: var(--purple);
+  --color-teal: var(--teal);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -143,6 +148,11 @@
   --ahh-blue-900: #1E3A5F;
   --ahh-accent: #F59E0B;
   --ahh-gradient: linear-gradient(135deg, var(--ahh-blue) 0%, var(--ahh-blue-dark) 100%);
+  --success: oklch(0.65 0.20 145);
+  --warning: oklch(0.70 0.18 65);
+  --orange: oklch(0.70 0.18 50);
+  --purple: oklch(0.55 0.20 300);
+  --teal: oklch(0.60 0.15 175);
 }
 
 /* Animations */
