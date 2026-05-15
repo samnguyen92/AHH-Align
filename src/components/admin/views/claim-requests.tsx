@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { supabase } from "@/lib/supabase/client"
+import { supabase } from "@/services/supabase-client"
 import { persistAuthToken } from "@/lib/auth/session-cookie"
 import type { AdminClaimRow } from "@/services/admin-service"
 

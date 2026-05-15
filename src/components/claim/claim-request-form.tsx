@@ -4,7 +4,7 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase/client';
+import { supabase } from '@/services/supabase-client';
 import { persistAuthToken } from '@/lib/auth/session-cookie';
 import type { Clinic } from '@/types/database';
 

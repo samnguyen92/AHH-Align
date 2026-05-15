@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Loader2, ShieldCheck, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase/client';
+import { supabase } from '@/services/supabase-client';
 import { persistAuthToken } from '@/lib/auth/session-cookie';
 import type { AdminUserRole, AdminUserRow } from '@/services/admin-service';
 

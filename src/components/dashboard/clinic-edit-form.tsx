@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import { Loader2, Save } from 'lucide-react';
-import { supabase } from '@/lib/supabase/client';
+import { supabase } from '@/services/supabase-client';
 import { persistAuthToken } from '@/lib/auth/session-cookie';
 import type { Clinic } from '@/types/database';
 
