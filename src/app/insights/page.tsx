@@ -1,7 +1,11 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
 import { ArticleImage } from '@/components/insights/article-image';
-import { getPublishedArticles, getArticleCategories } from '@/services/article-service';
+import {
+  getArticleCategories,
+  getPublishedArticlesByMode,
+  slugifyArticleCategory,
+} from '@/services/article-service';
 import type { Article } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +24,10 @@ const DEFAULT_TOPICS = [
   'Children Care',
   'Korean',
 ];
+
+function categoryHref(categorySlug: string) {
+  return `/insights?category=${categorySlug}`;
+}
 
 function formatDate(date: string | null) {
   if (!date) return 'Recently';
@@ -59,14 +67,14 @@ function FeaturedArticleCard({ article }: { article?: Article }) {
   return (
     <Link
       href={`/insights/${article.slug}`}
-      className="group block overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg shadow-gray-200/70 transition-all hover:-translate-y-0.5 hover:shadow-xl"
+      className="group flex h-full min-h-[440px] flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-lg shadow-gray-200/70 transition-all hover:-translate-y-0.5 hover:shadow-xl"
     >
       <ArticleImage
         src={article.seo_meta.og_image}
         alt={article.title}
-        className="aspect-[5/3]"
+        className="h-64 w-full shrink-0 sm:h-72"
       />
-      <div className="space-y-4 p-6">
+      <div className="flex flex-1 flex-col justify-end space-y-4 p-6 sm:p-7">
         <ArticleMeta article={article} />
         <h3 className="text-lg font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
           {article.title}
@@ -106,13 +114,17 @@ function ArticleSection({
   title,
   description,
   articles,
+  viewAllHref,
+  showAll = false,
 }: {
   title: string;
   description: string;
   articles: Article[];
+  viewAllHref: string;
+  showAll?: boolean;
 }) {
   const [featured, ...rest] = articles;
-  const compact = rest.slice(0, 4);
+  const compact = showAll ? rest : rest.slice(0, 4);
 
   return (
     <section className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
@@ -121,12 +133,14 @@ function ArticleSection({
           <h2 className="text-2xl font-semibold tracking-tight text-gray-950">{title}</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">{description}</p>
         </div>
-        <Link href="/insights" className="hidden text-sm text-gray-700 hover:text-[var(--ahh-blue)] sm:inline-flex">
-          View all &rarr;
-        </Link>
+        {!showAll && (
+          <Link href={viewAllHref} className="hidden text-sm text-gray-700 hover:text-[var(--ahh-blue)] sm:inline-flex">
+            View all &rarr;
+          </Link>
+        )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.05fr_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
         <FeaturedArticleCard article={featured} />
         <div className="grid gap-x-6 gap-y-8 sm:grid-cols-2">
           {compact.map((article) => (
@@ -138,26 +152,41 @@ function ArticleSection({
   );
 }
 
+function isModeCategory(categorySlug?: string) {
+  return (
+    categorySlug === 'insight' ||
+    categorySlug === 'insights' ||
+    categorySlug === 'guide' ||
+    categorySlug === 'guides' ||
+    categorySlug === 'in-depth-guides'
+  );
+}
+
 export default async function InsightsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; page?: string }>;
+  searchParams: Promise<{ category?: string }>;
 }) {
-  const { category, page: pageStr } = await searchParams;
-  const page = parseInt(pageStr || '1', 10);
+  const { category } = await searchParams;
+  const categorySlug = category ? slugifyArticleCategory(category) : undefined;
+  const selectedMode = categorySlug === 'guide' || categorySlug === 'guides' || categorySlug === 'in-depth-guides'
+    ? 'guide'
+    : categorySlug === 'insight' || categorySlug === 'insights'
+      ? 'insight'
+      : null;
+  const articleLimit = categorySlug ? 60 : 5;
 
-  const [articlesData, categories] = await Promise.all([
-    getPublishedArticles(category, page, 10),
+  const [latestInsights, latestGuides, categories] = await Promise.all([
+    selectedMode === 'guide' ? Promise.resolve([]) : getPublishedArticlesByMode('insight', categorySlug, articleLimit),
+    selectedMode === 'insight' ? Promise.resolve([]) : getPublishedArticlesByMode('guide', categorySlug, articleLimit),
     getArticleCategories(),
   ]);
 
-  const articles = articlesData.data;
-  const guideArticles = articles.filter((article) => {
-    const text = `${article.category || ''} ${article.tags.join(' ')}`.toLowerCase();
-    return text.includes('guide') || text.includes('uscis') || text.includes('insurance');
-  });
-  const latestGuides = guideArticles.length > 0 ? guideArticles : articles;
-  const topics = [...new Set([...categories, ...DEFAULT_TOPICS])].slice(0, 8);
+  const heroArticle = latestInsights[0] ?? latestGuides[0];
+  const topics = [...new Set([...categories, ...DEFAULT_TOPICS])]
+    .map((topic) => ({ label: topic, slug: slugifyArticleCategory(topic) }))
+    .filter((topic) => topic.slug && !isModeCategory(topic.slug))
+    .slice(0, 8);
 
   return (
     <main className="bg-white">
@@ -183,11 +212,11 @@ export default async function InsightsPage({
                 ))}
               </div>
             </div>
-            <div className="hidden overflow-hidden rounded-xl bg-white/90 p-10 shadow-sm lg:block">
+            <div className="hidden overflow-hidden rounded-xl bg-white/90 p-4 shadow-sm lg:block">
               <ArticleImage
-                src={articles[0]?.seo_meta.og_image}
-                alt={articles[0]?.title || 'Health guide illustration'}
-                className="aspect-[16/9]"
+                src={heroArticle?.seo_meta.og_image}
+                alt={heroArticle?.title || 'Health guide illustration'}
+                className="h-48 w-full rounded-lg"
               />
             </div>
           </div>
@@ -201,22 +230,22 @@ export default async function InsightsPage({
             <Link
               href="/insights"
               className={`rounded-full px-4 py-2 text-xs font-medium ${
-                !category ? 'bg-[var(--ahh-blue)] text-white' : 'border border-gray-200 text-gray-600'
+                !categorySlug ? 'bg-[var(--ahh-blue)] text-white' : 'border border-gray-200 text-gray-600'
               }`}
             >
               All
             </Link>
             {topics.map((topic) => (
               <Link
-                key={topic}
-                href={`/insights?category=${encodeURIComponent(topic)}`}
+                key={topic.slug}
+                href={categoryHref(topic.slug)}
                 className={`rounded-full border px-4 py-2 text-xs font-medium capitalize transition ${
-                  category === topic
+                  categorySlug === topic.slug
                     ? 'border-[var(--ahh-blue)] bg-[var(--ahh-blue)] text-white'
                     : 'border-gray-200 text-gray-600 hover:border-[var(--ahh-blue)] hover:text-[var(--ahh-blue)]'
                 }`}
               >
-                {topic.replace('-', ' ')}
+                {topic.label}
               </Link>
             ))}
           </div>
@@ -224,39 +253,26 @@ export default async function InsightsPage({
       </section>
 
       <div className="space-y-20 py-12 sm:py-16">
-        <ArticleSection
-          title="Latest Insights"
-          description="Choose short articles for quick tips and detailed healthcare information."
-          articles={articles}
-        />
+        {selectedMode !== 'guide' && (
+          <ArticleSection
+            title="Latest Insights"
+            description="Choose short articles for quick tips and detailed healthcare information."
+            articles={latestInsights}
+            viewAllHref={categoryHref('insights')}
+            showAll={Boolean(categorySlug)}
+          />
+        )}
 
-        <ArticleSection
-          title="Latest In-Depth Guides"
-          description="Long-form healthcare guides that explain important topics in more detail, from finding the right clinic to preparing for care."
-          articles={latestGuides}
-        />
+        {selectedMode !== 'insight' && (
+          <ArticleSection
+            title="Latest In-Depth Guides"
+            description="Long-form healthcare guides that explain important topics in more detail, from finding the right clinic to preparing for care."
+            articles={latestGuides}
+            viewAllHref={categoryHref('guides')}
+            showAll={Boolean(categorySlug)}
+          />
+        )}
       </div>
-
-      {(articlesData.hasMore || page > 1) && (
-        <div className="mx-auto mb-16 flex max-w-6xl justify-center gap-4 px-4 sm:px-6 lg:px-8">
-          {page > 1 && (
-            <Link
-              href={`/insights?page=${page - 1}${category ? `&category=${category}` : ''}`}
-              className="rounded-lg border border-gray-200 bg-white px-6 py-2 text-sm font-medium hover:bg-gray-50"
-            >
-              Previous
-            </Link>
-          )}
-          {articlesData.hasMore && (
-            <Link
-              href={`/insights?page=${page + 1}${category ? `&category=${category}` : ''}`}
-              className="rounded-lg bg-[var(--ahh-blue)] px-6 py-2 text-sm font-medium text-white hover:bg-[var(--ahh-blue-dark)]"
-            >
-              Next Page
-            </Link>
-          )}
-        </div>
-      )}
     </main>
   );
 }

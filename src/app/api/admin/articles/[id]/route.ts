@@ -1,6 +1,6 @@
 import { revalidatePath } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/services/supabase-server';
 import { requireAdminFromRequest } from '@/services/auth-service';
 
 export const dynamic = 'force-dynamic';

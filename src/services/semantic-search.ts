@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/services/supabase-server';
 import type { Clinic } from '@/types/database';
 
 const EMBEDDING_MODEL =

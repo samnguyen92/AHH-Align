@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/services/supabase-server';
 import { getBearerToken, getUserFromAccessToken } from '@/services/auth-service';
 
 export const dynamic = 'force-dynamic';

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getCurrentUserWithRole } from '@/services/auth-service';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/services/supabase-server';
 import { ClinicEditForm } from '@/components/dashboard/clinic-edit-form';
 import { AccountSettingsForm } from '@/components/dashboard/account-settings-form';
 import type { Clinic } from '@/types/database';

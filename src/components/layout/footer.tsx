@@ -1,6 +1,38 @@
 import Link from 'next/link';
 import { NewsletterForm } from './newsletter-form';
 
+const socialLinks = [
+  {
+    href: '#facebook',
+    label: 'Facebook',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+        <path d="M14 8.25V6.5c0-.74.57-1.25 1.38-1.25H17V2.2A22 22 0 0 0 14.6 2C12.22 2 10.6 3.45 10.6 6.1v2.15H8v3.4h2.6V22H14V11.65h2.75l.45-3.4H14Z" />
+      </svg>
+    ),
+  },
+  {
+    href: '#instagram',
+    label: 'Instagram',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <rect x="4" y="4" width="16" height="16" rx="4" />
+        <circle cx="12" cy="12" r="3.2" />
+        <circle cx="17" cy="7" r="0.8" fill="currentColor" stroke="none" />
+      </svg>
+    ),
+  },
+  {
+    href: '#linkedin',
+    label: 'LinkedIn',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+        <path d="M6.94 8.98H3.62V20h3.32V8.98ZM5.28 7.48a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8ZM20.38 13.95c0-3.22-1.72-5.3-4.52-5.3a3.86 3.86 0 0 0-3.5 1.93v-1.6H9.18V20h3.32v-5.45c0-1.44.27-2.84 2.06-2.84 1.76 0 1.78 1.65 1.78 2.93V20h3.32v-6.05h.72Z" />
+      </svg>
+    ),
+  },
+];
+
 export function Footer() {
   return (
     <footer>
@@ -35,14 +67,14 @@ export function Footer() {
               </p>
               {/* Social Icons */}
               <div className="flex items-center gap-3">
-                {['facebook', 'instagram', 'linkedin'].map((social) => (
+                {socialLinks.map((social) => (
                   <a
-                    key={social}
-                    href={`#${social}`}
+                    key={social.label}
+                    href={social.href}
                     className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
-                    aria-label={social}
+                    aria-label={social.label}
                   >
-                    <span className="text-xs font-bold uppercase">{social[0]}</span>
+                    {social.icon}
                   </a>
                 ))}
               </div>

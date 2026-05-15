@@ -1,7 +1,6 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { createServerAnonClient } from './supabase-server';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerAnonClient, createServerSupabaseClient } from './supabase-server';
 import { AUTH_COOKIE_NAME } from '@/lib/auth/session-cookie';
 
 export interface CurrentUser {

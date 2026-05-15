@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { requireSuperAdminFromRequest } from '@/services/auth-service';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/services/supabase-server';
 import type { AdminUserRole } from '@/services/admin-service';
 
 const allowedRoles = new Set<AdminUserRole>(['user', 'provider', 'admin', 'superadmin']);

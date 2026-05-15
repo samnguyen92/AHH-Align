@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Building2, Clock3, CheckCircle2, XCircle } from 'lucide-react';
 import { getCurrentUserWithRole } from '@/services/auth-service';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/services/supabase-server';
 
 export const dynamic = 'force-dynamic';
 

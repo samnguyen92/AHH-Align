@@ -6,6 +6,60 @@ import { createServerAnonClient } from './supabase-server';
 import type { Article, PaginatedResponse } from '@/types/database';
 
 const DEFAULT_PAGE_SIZE = 12;
+const MODE_CATEGORY_SLUGS = {
+  insight: new Set(['insight', 'insights']),
+  guide: new Set(['guide', 'guides', 'in-depth-guides', 'in-depth-guide']),
+};
+
+export type ArticleContentMode = 'insight' | 'guide';
+
+export function slugifyArticleCategory(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export function getArticleContentMode(article: Article): ArticleContentMode {
+  const seoMode = article.seo_meta.content_mode?.toLowerCase();
+  if (seoMode === 'guide') return 'guide';
+  if (seoMode === 'insight') return 'insight';
+
+  const categorySlug = slugifyArticleCategory(article.category ?? '');
+  if (MODE_CATEGORY_SLUGS.guide.has(categorySlug)) return 'guide';
+
+  const text = `${article.title} ${article.category ?? ''} ${article.tags.join(' ')}`.toLowerCase();
+  if (
+    text.includes('guide') ||
+    text.includes('uscis') ||
+    text.includes('i-693') ||
+    text.includes('insurance')
+  ) {
+    return 'guide';
+  }
+
+  return 'insight';
+}
+
+function matchesCategorySlug(article: Article, categorySlug?: string) {
+  if (!categorySlug) return true;
+
+  if (MODE_CATEGORY_SLUGS.insight.has(categorySlug)) {
+    return getArticleContentMode(article) === 'insight';
+  }
+
+  if (MODE_CATEGORY_SLUGS.guide.has(categorySlug)) {
+    return getArticleContentMode(article) === 'guide';
+  }
+
+  const articleCategorySlug = slugifyArticleCategory(article.category ?? '');
+  const articleTagSlugs = article.tags.map(slugifyArticleCategory);
+
+  return articleCategorySlug === categorySlug || articleTagSlugs.includes(categorySlug);
+}
 
 /**
  * Lấy danh sách bài viết đã được publish.
@@ -48,6 +102,40 @@ export async function getPublishedArticles(
   } catch (err) {
     console.error('[article-service] getPublishedArticles error:', err);
     return { data: [], total: 0, page, limit, hasMore: false };
+  }
+}
+
+/**
+ * Lấy bài published theo mode riêng để Insights và Guides không bị trùng list.
+ */
+export async function getPublishedArticlesByMode(
+  mode: ArticleContentMode,
+  categorySlug?: string,
+  limit = 5
+): Promise<Article[]> {
+  const supabase = createServerAnonClient();
+
+  if (!supabase) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('articles')
+      .select('*')
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+      .limit(120);
+
+    if (error) throw error;
+
+    return ((data as Article[]) || [])
+      .filter((article) => getArticleContentMode(article) === mode)
+      .filter((article) => matchesCategorySlug(article, categorySlug))
+      .slice(0, limit);
+  } catch (err) {
+    console.error('[article-service] getPublishedArticlesByMode error:', err);
+    return [];
   }
 }
 

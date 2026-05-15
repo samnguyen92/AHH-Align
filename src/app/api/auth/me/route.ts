@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getBearerToken, getPostLoginPath, getUserFromAccessToken, getUserRole } from '@/services/auth-service';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServerSupabaseClient } from '@/services/supabase-server';
 
 function requestedNextPath(request: Request) {
   const url = new URL(request.url);
