@@ -243,10 +243,10 @@ class TelegramBot:
             "/repair_article_slugs - convert non-ASCII article slugs to URL-safe ASCII\n"
             "/delete_article <id|slug|title> - delete one article after confirmation\n"
             "/delete_clinic <id|slug|name> - delete one clinic after confirmation\n"
-            "/rewrite_article <id|slug|title> | <edit instruction> - rewrite/update an existing article after confirmation\n"
-            "/generate_insight [topic] - generate one SEO insight article, 1200-1500 words, plus 2 AI images\n"
-            "/generate_insight_from_url <url...> - analyze one or more reference URLs and publish original SEO insights, plus 2 AI images each\n"
-            "/generate_guide [topic] - generate one pillar guide, about 2000 words, plus 2 AI images\n"
+            "/rewrite_article <id|slug|title> | <edit instruction> - rewrite an article and save it as the next version\n"
+            "/generate_insight [topic] - generate one SEO insight article, 1200-1500 words, plus 3-5 AI images\n"
+            "/generate_insight_from_url <url...> - analyze one or more reference URLs and publish original SEO insights, plus 3-5 AI images each\n"
+            "/generate_guide [topic] - generate one pillar guide, about 2000 words, plus 3-5 AI images\n"
             "/generate_guide_from_url <url...> - analyze one or more reference URLs and publish original pillar guides\n"
             "/research <topic> - run multi-agent research and return a sourced report\n"
             "/ask <message> - ask the OpenClaw AI agent\n"
@@ -684,7 +684,7 @@ Return JSON:
                 "1. Use the saved report/result from chat memory as the primary source.\n"
                 "2. Rewrite it into original Asian Health Hub content without copying the source text.\n"
                 "3. Preserve important uncertainties and source notes where relevant.\n"
-                "4. Generate 2 supporting images with Gemini image-preview.\n"
+                "4. Generate 3-5 supporting images with Gemini image-preview.\n"
                 "5. Publish the article to Supabase.\n\n"
                 "This may call OpenRouter/Gemini and update Supabase data.\n"
                 "Reply `approve` to continue."
@@ -768,7 +768,7 @@ Return JSON:
                 "summary": (
                     "You want OpenClaw to repair/generate missing images for articles/insights, correct?\n\n"
                     "If you approve, OpenClaw will scan the articles table, generate missing images with Gemini image-preview, "
-                    "and update `articles.seo_meta.og_image` in Supabase.\n\n"
+                    "and update `articles.seo_meta.og_image` and `articles.seo_meta.images` in Supabase.\n\n"
                     "Reply `approve` to continue."
                 ),
             }
@@ -833,8 +833,9 @@ Return JSON:
                 "1. Find the article by id, slug, or title.\n"
                 "2. Use the current article content as context.\n"
                 "3. Regenerate the article according to the requested edits above.\n"
-                "4. Keep the current slug/URL.\n"
-                "5. Update content, excerpt, tags, and SEO metadata in Supabase.\n\n"
+                "4. Save the current article as a historical version in `seo_meta.versions`.\n"
+                "5. Keep the current slug/URL and publish the rewrite as the next version, such as v2 or v3.\n"
+                "6. Update content, excerpt, tags, and SEO metadata in Supabase.\n\n"
                 "This may call OpenRouter and update Supabase data.\n"
                 "Reply `approve` to continue. Send a new request if you want to change the edit instructions."
             ),
@@ -867,7 +868,7 @@ Return JSON:
                 "2. Scrape each reference page.\n"
                 "3. Use AI to analyze the key healthcare concepts.\n"
                 "4. Write original Asian Health Hub content without copying wording, headings, or source structure.\n"
-                "5. Generate 2 supporting images with Gemini image-preview.\n"
+                "5. Generate 3-5 supporting images with Gemini image-preview.\n"
                 "6. Publish the article(s) to Supabase.\n\n"
                 "This may call OpenRouter/Gemini and update Supabase data.\n"
                 "Reply `approve` to continue, or send a new request if you want changes."
@@ -888,7 +889,7 @@ Return JSON:
             "summary": (
                 f"You want OpenClaw to create one {content_label}, correct?\n\n"
                 f"Topic: {topic_label}\n\n"
-                "If you approve, OpenClaw will generate content, generate 2 images, create a unique slug, and publish it to Supabase.\n"
+                "If you approve, OpenClaw will generate content, generate 3-5 images, create a unique slug, and publish it to Supabase.\n"
                 "Reply `approve` to continue. If you want to use reference URLs, send them before approving."
             ),
         }
@@ -1019,7 +1020,7 @@ Return JSON:
                 "summary": (
                     "You want OpenClaw to repair/generate missing images for articles/insights, correct?\n\n"
                     "If you approve, OpenClaw will scan the articles table, generate missing images with Gemini image-preview, "
-                    "and update `articles.seo_meta.og_image` in Supabase.\n\n"
+                    "and update `articles.seo_meta.og_image` and `articles.seo_meta.images` in Supabase.\n\n"
                     "Reply `approve` to continue."
                 ),
             }

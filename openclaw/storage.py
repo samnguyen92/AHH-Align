@@ -3,6 +3,7 @@ import mimetypes
 import os
 import re
 import unicodedata
+from io import BytesIO
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -69,6 +70,27 @@ def download_image(image_url: str) -> Optional[Tuple[bytes, str, str]]:
     return body, content_type, extension.lstrip(".")
 
 
+def convert_image_to_webp(image_bytes: bytes) -> Optional[Tuple[bytes, str, str]]:
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        print("[!] Pillow is not installed; cannot convert image to WebP before upload.")
+        return None
+
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            image = ImageOps.exif_transpose(image)
+            if image.mode not in {"RGB", "RGBA"}:
+                image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+
+            output = BytesIO()
+            image.save(output, format="WEBP", quality=84, method=6)
+            return output.getvalue(), "image/webp", "webp"
+    except Exception as exc:
+        print(f"[!] WebP conversion failed; uploading original image instead: {exc}")
+        return None
+
+
 def get_public_url(supabase: Client, bucket: str, path: str) -> str:
     response = supabase.storage.from_(bucket).get_public_url(path)
     if isinstance(response, str):
@@ -127,7 +149,7 @@ def upload_image_value(image_value: Optional[str], folder: str, filename_base: s
     if not parsed:
         return None
 
-    image_bytes, content_type, extension = parsed
+    image_bytes, content_type, extension = convert_image_to_webp(parsed[0]) or parsed
     safe_extension = extension.lower().replace("jpeg", "jpg")
     storage_path = f"{folder.strip('/')}/{safe_storage_name(filename_base)}.{safe_extension}"
     return upload_image_bytes(image_bytes, storage_path, content_type)

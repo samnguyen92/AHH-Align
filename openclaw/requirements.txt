@@ -8,3 +8,4 @@ pydantic
 beautifulsoup4
 duckduckgo-search
 python-dotenv
+Pillow

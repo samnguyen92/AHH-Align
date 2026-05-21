@@ -2,9 +2,10 @@ import os
 import json
 import re
 import base64
+import copy
 import unicodedata
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 from openai import OpenAI
 from supabase import create_client, Client
@@ -22,6 +23,21 @@ CONTENT_WORD_TARGETS = {
 }
 MAX_LENGTH_RETRIES = 3
 MAX_SUPPLEMENT_RETRIES = 3
+ARTICLE_VERSIONS_KEY = "versions"
+ARTICLE_VERSION_META_KEYS = {
+    ARTICLE_VERSIONS_KEY,
+    "current_version",
+    "version_label",
+}
+TRUSTED_HEALTH_SOURCE_NAMES = [
+    "American Dental Association",
+    "National Institute of Dental and Craniofacial Research",
+    "CDC",
+    "NIH",
+    "Pew Research Center",
+    "U.S. Census Bureau",
+    "KFF",
+]
 DEFAULT_TOPICS = [
     "How to Prepare for an I-693 Medical Exam",
     "Understanding Dental Insurance for Asian American Families",
@@ -109,6 +125,139 @@ def make_unique_slug(supabase: Client, base_slug: str) -> str:
         slug = f"{base_slug}-{suffix}"
         suffix += 1
 
+def iso_now() -> str:
+    return datetime.now().isoformat()
+
+def get_article_current_version(seo_meta: dict) -> int:
+    raw_version = seo_meta.get("current_version")
+    try:
+        version = int(raw_version)
+    except (TypeError, ValueError):
+        version = 0
+
+    if version > 0:
+        return version
+
+    versions = seo_meta.get(ARTICLE_VERSIONS_KEY)
+    if not isinstance(versions, list):
+        return 1
+
+    historical_versions = []
+    for item in versions:
+        if not isinstance(item, dict):
+            continue
+        try:
+            historical_versions.append(int(item.get("version") or 0))
+        except (TypeError, ValueError):
+            continue
+
+    return max(historical_versions, default=0) + 1 if historical_versions else 1
+
+def coerce_version(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+def strip_version_meta(seo_meta: dict) -> dict:
+    return {
+        key: copy.deepcopy(value)
+        for key, value in (seo_meta or {}).items()
+        if key not in ARTICLE_VERSION_META_KEYS
+    }
+
+def build_article_version_snapshot(article: dict, version: int, saved_at: str) -> Dict[str, Any]:
+    seo_meta = article.get("seo_meta") or {}
+    return {
+        "version": version,
+        "label": f"v{version}",
+        "saved_at": saved_at,
+        "title": article.get("title"),
+        "slug": article.get("slug"),
+        "excerpt": article.get("excerpt"),
+        "content": article.get("content"),
+        "category": article.get("category"),
+        "tags": copy.deepcopy(article.get("tags") or []),
+        "status": article.get("status"),
+        "author": article.get("author"),
+        "published_at": article.get("published_at"),
+        "updated_at": article.get("updated_at"),
+        "word_count": count_markdown_words(article.get("content") or ""),
+        "rewrite_instruction": seo_meta.get("last_rewrite_instruction"),
+        "rewritten_at": seo_meta.get("last_rewritten_at"),
+        "seo_meta": strip_version_meta(seo_meta),
+    }
+
+def build_rewrite_version_meta(article: dict, data: dict, mode: str, instruction: str, rewritten_at: str) -> dict:
+    seo_meta = article.get("seo_meta") or {}
+    current_version = get_article_current_version(seo_meta)
+    next_version = current_version + 1
+    existing_versions = [
+        copy.deepcopy(item)
+        for item in (seo_meta.get(ARTICLE_VERSIONS_KEY) or [])
+        if isinstance(item, dict) and coerce_version(item.get("version")) != current_version
+    ]
+    existing_versions.append(build_article_version_snapshot(article, current_version, rewritten_at))
+    existing_versions.sort(key=lambda item: coerce_version(item.get("version")))
+
+    return {
+        **seo_meta,
+        "description": data.get("seo_description") or seo_meta.get("description"),
+        "keywords": data.get("tags") or article.get("tags") or [],
+        "primary_keyword": data.get("primary_keyword"),
+        "secondary_keywords": data.get("secondary_keywords", []),
+        "content_mode": mode,
+        "last_rewrite_instruction": instruction,
+        "last_rewritten_at": rewritten_at,
+        "current_version": next_version,
+        "version_label": f"v{next_version}",
+        ARTICLE_VERSIONS_KEY: existing_versions,
+    }
+
+def build_trust_and_culture_rules(mode: str = "insight") -> str:
+    content_label = "guide" if mode == "guide" else "insight"
+    source_names = ", ".join(TRUSTED_HEALTH_SOURCE_NAMES)
+
+    return f"""
+    Trust, evidence, and cultural authenticity requirements for this {content_label}:
+    - Add 2-4 brief human moments that feel real and specific. Use composite or anonymized examples; never imply a real patient story unless a real source is provided.
+    - Replace generic lines like "families face language barriers" with concrete scenes: a parent postponing care because insurance language is confusing, an older adult waiting until pain becomes severe, or a family asking a bilingual relative to call the clinic.
+    - Include culturally specific insight when relevant, especially for Vietnamese and Korean American families, without stereotyping or treating either community as monolithic.
+    - Explore practical cultural dynamics when relevant: immigrant mindset, healthcare distrust, saving face, financial fear, family hierarchy, traditional beliefs, indirect communication, and reliance on community recommendations.
+    - For Vietnamese families when relevant, consider themes like waiting until pain becomes severe, prioritizing children over personal care, fear of expensive treatment, and trust in community referrals.
+    - For Korean families when relevant, consider themes like appearance-focused orthodontics, caution around aggressive procedures, respect for authoritative doctors, and strong word-of-mouth trust networks.
+    - Include 2-4 evidence-backed statements or statistics when relevant. Prefer sources such as {source_names}.
+    - Do not invent exact percentages, study findings, or URLs. If you cannot support an exact number, write a careful qualitative statement and cite the source organization.
+    - Tie every statistic or factual claim to patient meaning: what it changes about prevention, timing, cost conversations, language access, or choosing a culturally responsive clinician.
+    - The finished article should feel medically credible, emotionally authentic, culturally insightful, and uniquely useful for Asian American patients.
+    """
+
+def build_authoritative_depth_rules(mode: str = "insight") -> str:
+    content_label = "guide" if mode == "guide" else "insight"
+
+    return f"""
+    Specificity and authority requirements for this {content_label}:
+    - Do not mention an important topic in only one sentence. If a point is important enough to include, develop it with context, why it matters, what patients should do, and when to ask a clinician or insurance plan.
+    - Each major H2 section must include at least 2 substantial paragraphs or one substantial paragraph plus a practical list/table. Avoid thin sections.
+    - Prefer specific patient-facing explanations over broad educational claims. Name the barrier, show how it appears in real life, explain the consequence, and give a concrete next step.
+    - When discussing cultural patterns, separate observation from medical advice. Explain how the pattern can affect timing, consent, cost conversations, follow-up, or trust.
+    - When discussing evidence, connect it to a clinical or practical decision instead of dropping a statistic without interpretation.
+    - Avoid filler transitions, generic wellness language, and one-line summaries that could apply to any healthcare article.
+    """
+
+def build_reference_style_rules() -> str:
+    return """
+    Reference style requirements:
+    - End with a "## References" section when using external evidence, clinical guidance, statistics, or source material.
+    - Format references as a numbered Markdown list, not bullet points.
+    - Each reference should read like a citation: author or organization, title in quotation marks, publication/source name when available, year or access date when available, and a short linked source label at the end.
+    - Use this style:
+      1. American Dental Association. "Oral Health Topics: Gum Disease." ADA. [ADA](https://example.com)
+      2. National Institute of Dental and Craniofacial Research. "Periodontal Disease in Adults." NIH/NIDCR. [NIDCR](https://example.com)
+    - Do not use bare URLs.
+    - Do not fabricate author names, publication years, DOI links, PMC links, or journal details. If only the organization and page title are known, cite those accurately.
+    """
+
 def pick_topic(supabase: Client) -> str:
     existing = supabase.table("articles").select("title").execute().data or []
     existing_titles = {row["title"].strip().lower() for row in existing if row.get("title")}
@@ -185,6 +334,10 @@ def create_clients():
     return client, supabase
 
 def build_topic_prompt(topic: str, mode: str = "insight") -> str:
+    trust_rules = build_trust_and_culture_rules(mode)
+    depth_quality_rules = build_authoritative_depth_rules(mode)
+    reference_style_rules = build_reference_style_rules()
+
     if mode == "guide":
         content_type = "pillar guide"
         word_count = CONTENT_WORD_TARGETS["guide"]["label"]
@@ -226,13 +379,18 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
     - Write an SEO description under 160 characters.
     - Use original phrasing and cautious medical language.
     - Do not make unsupported medical claims. Encourage readers to consult licensed healthcare professionals.
-    - If source links or source names are available, include a final "## References" section. Every URL must be written as a clickable Markdown link like "- [Source name](https://example.com/page)". If there are no external sources, skip References.
+    - Include a final "## References" section with credible source names and URLs when you use statistics, public health guidance, or research findings.
+    - Every URL must be written as a clickable Markdown link like "- [Source name](https://example.com/page)".
+    - If you cannot confidently provide a URL, cite the source organization in the relevant sentence but do not fabricate a URL.
     {depth_rules}
+    {trust_rules}
+    {depth_quality_rules}
+    {reference_style_rules}
     Image requirements:
-    - Provide exactly 2 image prompts in `image_prompts`.
+    - Provide 3-5 distinct image prompts in `image_prompts`, choosing the count based on the article depth and section variety.
     - First prompt is for the hero image.
-    - Second prompt is for an inline supporting image.
-    - Both prompts must say no text, no logos, no watermarks.
+    - Remaining prompts are for inline supporting images tied to different major sections of the article.
+    - Every prompt must be visually distinct and must say no text, no logos, no watermarks.
 
     Output ONLY valid JSON in this exact structure:
     {{
@@ -246,7 +404,8 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
       "secondary_keywords": ["keyword one", "keyword two"],
       "image_prompts": [
         "Hero image prompt for this exact article, no text, no logos, no watermarks",
-        "Inline supporting image prompt for this exact article, no text, no logos, no watermarks"
+        "Inline supporting image prompt for section one, no text, no logos, no watermarks",
+        "Inline supporting image prompt for section two, no text, no logos, no watermarks"
       ]
     }}
     """
@@ -254,6 +413,9 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
 def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insight") -> str:
     safe_text = source_text[:24000]
     is_guide = mode == "guide"
+    trust_rules = build_trust_and_culture_rules(mode)
+    depth_quality_rules = build_authoritative_depth_rules(mode)
+    reference_style_rules = build_reference_style_rules()
     content_type = "Pillar Content guide" if is_guide else "SEO healthcare insight article"
     word_count = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["label"]
     category = "guide" if is_guide else "insight"
@@ -280,9 +442,11 @@ def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insi
     - Hard length rule: do not return content shorter than {min_words} words.
     - SEO: choose one primary keyword and 4-7 secondary keywords; use the primary keyword naturally.
     - {depth_rules}
+    {trust_rules}
+    {depth_quality_rules}
+    {reference_style_rules}
     - Include a final "## References" section with the source URL and any other source names clearly supported by the reference text.
-    - Every reference URL must be written as a clickable Markdown link like "- [Source name](https://example.com/page)".
-    - Provide exactly 2 AI image prompts: one hero image and one inline supporting image. Both must specify no text, no logos, no watermarks.
+    - Provide 3-5 AI image prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections. All must specify no text, no logos, no watermarks.
     - The article should be in Markdown format.
     - Do not include a top-level H1 title inside `content`; the website already renders the title above the article.
     - Start `content` with the opening paragraph or the first H2 section.
@@ -303,7 +467,8 @@ def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insi
       "secondary_keywords": ["keyword one", "keyword two"],
       "image_prompts": [
         "Hero image prompt for this exact article, no text, no logos, no watermarks",
-        "Inline supporting image prompt for this exact article, no text, no logos, no watermarks"
+        "Inline supporting image prompt for section one, no text, no logos, no watermarks",
+        "Inline supporting image prompt for section two, no text, no logos, no watermarks"
       ]
     }}
     """
@@ -311,6 +476,9 @@ def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insi
 def build_context_prompt(reference_label: str, reference_text: str, instruction: str, mode: str = "insight") -> str:
     safe_text = reference_text[:32000]
     is_guide = mode == "guide"
+    trust_rules = build_trust_and_culture_rules(mode)
+    depth_quality_rules = build_authoritative_depth_rules(mode)
+    reference_style_rules = build_reference_style_rules()
     content_type = "Pillar Content guide" if is_guide else "SEO healthcare insight article"
     word_count = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["label"]
     category = "guide" if is_guide else "insight"
@@ -340,9 +508,11 @@ def build_context_prompt(reference_label: str, reference_text: str, instruction:
     - Hard length rule: do not return content shorter than {min_words} words.
     - SEO: choose one primary keyword and 4-7 secondary keywords; use the primary keyword naturally.
     - {depth_rules}
+    {trust_rules}
+    {depth_quality_rules}
+    {reference_style_rules}
     - Include a final "## References" section using the source URLs or source names from the memory when available.
-    - Every reference URL must be written as a clickable Markdown link like "- [Source name](https://example.com/page)".
-    - Provide exactly 2 AI image prompts: one hero image and one inline supporting image. Both must specify no text, no logos, no watermarks.
+    - Provide 3-5 AI image prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections. All must specify no text, no logos, no watermarks.
     - The article should be in Markdown format.
     - Do not include a top-level H1 title inside `content`; the website already renders the title above the article.
     - Start `content` with the opening paragraph or the first H2 section.
@@ -363,13 +533,17 @@ def build_context_prompt(reference_label: str, reference_text: str, instruction:
       "secondary_keywords": ["keyword one", "keyword two"],
       "image_prompts": [
         "Hero image prompt for this exact article, no text, no logos, no watermarks",
-        "Inline supporting image prompt for this exact article, no text, no logos, no watermarks"
+        "Inline supporting image prompt for section one, no text, no logos, no watermarks",
+        "Inline supporting image prompt for section two, no text, no logos, no watermarks"
       ]
     }}
     """
 
 def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight") -> str:
     is_guide = mode == "guide"
+    trust_rules = build_trust_and_culture_rules(mode)
+    depth_quality_rules = build_authoritative_depth_rules(mode)
+    reference_style_rules = build_reference_style_rules()
     word_count = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["label"]
     min_words = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["min"]
     category = "guide" if is_guide else "insight"
@@ -404,9 +578,16 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     - Include at most one Markdown blockquote callout.
     - Avoid repeated boxed/callout-style sections.
     - If references exist or the owner asks for references, include a final "## References" section.
-    - Every reference URL must be a clickable Markdown link like "- [Source name](https://example.com/page)".
     - Use cautious medical language and encourage readers to consult licensed healthcare professionals.
     - Do not invent precise statistics, clinic details, or medical claims without source support.
+    {trust_rules}
+    {depth_quality_rules}
+    {reference_style_rules}
+    Image requirements:
+    - Provide 3-5 distinct image prompts in `image_prompts`, choosing the count based on the rewritten article depth and section variety.
+    - First prompt is for the hero image.
+    - Remaining prompts are for inline supporting images tied to different major sections of the rewritten article.
+    - Every prompt must be visually distinct and must say no text, no logos, no watermarks.
 
     Output ONLY valid JSON in this exact structure:
     {{
@@ -417,7 +598,12 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
       "tags": ["Asian Health", "Primary Care"],
       "seo_description": "SEO description under 160 characters",
       "primary_keyword": "primary keyword here",
-      "secondary_keywords": ["keyword one", "keyword two"]
+      "secondary_keywords": ["keyword one", "keyword two"],
+      "image_prompts": [
+        "Hero image prompt for this exact rewritten article, no text, no logos, no watermarks",
+        "Inline supporting image prompt for section one, no text, no logos, no watermarks",
+        "Inline supporting image prompt for section two, no text, no logos, no watermarks"
+      ]
     }}
     """
 
@@ -445,21 +631,31 @@ def normalize_image_prompts(data: dict) -> List[str]:
         cleaned.append(legacy_prompt)
 
     if not cleaned:
-        cleaned.append(f"Professional healthcare editorial illustration for {data.get('title', 'Asian Health Hub article')}, no text, no logos, no watermarks")
-
-    while len(cleaned) < 2:
         cleaned.append(
-            f"Supportive patient education healthcare illustration for {data.get('title', 'Asian Health Hub article')}, diverse Asian American patients, no text, no logos, no watermarks"
+            f"Professional healthcare editorial hero illustration for {data.get('title', 'Asian Health Hub article')}, diverse Asian American patients, no text, no logos, no watermarks"
         )
 
-    return cleaned[:2]
+    fallback_prompts = [
+        "Supportive patient education illustration showing a culturally sensitive conversation with an Asian American clinician, no text, no logos, no watermarks",
+        "Practical healthcare navigation illustration showing a family reviewing care options at home, no text, no logos, no watermarks",
+        "Preventive care illustration in a clean clinic setting with diverse Asian American patients, no text, no logos, no watermarks",
+        "Community health illustration focused on preparation, questions, and patient confidence, no text, no logos, no watermarks",
+    ]
+
+    for fallback in fallback_prompts:
+        if len(cleaned) >= 3:
+            break
+        cleaned.append(f"{fallback}. Article topic: {data.get('title', 'Asian Health Hub article')}")
+
+    return cleaned[:5]
 
 def generate_article_images(client: OpenAI, data: dict, slug: str) -> List[str]:
     image_urls = []
-    suffixes = ["hero", "inline"]
+    image_prompts = normalize_image_prompts(data)
+    suffixes = ["hero", "inline-1", "inline-2", "inline-3", "inline-4"]
 
-    for index, image_prompt in enumerate(normalize_image_prompts(data)):
-        print(f"[*] Generating image {index + 1}/2 via {IMAGE_MODEL} using prompt: {image_prompt}")
+    for index, image_prompt in enumerate(image_prompts):
+        print(f"[*] Generating image {index + 1}/{len(image_prompts)} via {IMAGE_MODEL} using prompt: {image_prompt}")
         image_response = client.chat.completions.create(
             model=IMAGE_MODEL,
             messages=[
@@ -484,6 +680,9 @@ def generate_article_images(client: OpenAI, data: dict, slug: str) -> List[str]:
 def build_length_retry_prompt(data: dict, original_prompt: str, mode: str, current_words: int, attempt: int) -> str:
     target = CONTENT_WORD_TARGETS.get(mode, CONTENT_WORD_TARGETS["insight"])
     missing_words = max(target["min"] - current_words, 0)
+    trust_rules = build_trust_and_culture_rules(mode)
+    depth_quality_rules = build_authoritative_depth_rules(mode)
+    reference_style_rules = build_reference_style_rules()
 
     return f"""
     The previous JSON draft is too short for Asian Health Hub and must be expanded before publication.
@@ -503,9 +702,12 @@ def build_length_retry_prompt(data: dict, original_prompt: str, mode: str, curre
     - `content` must be {target["label"]}; never below {target["min"]} words.
     - Keep `content` in Markdown and do not include a top-level H1.
     - Add deeper explanations, examples, patient-facing action steps, one Markdown table, one practical bullet list, at most one blockquote callout, FAQ, disclaimer, and References when sources are available.
+    - Add missing emotional specificity, culturally grounded context, and evidence-backed detail instead of padding with generic educational prose.
     - Do not create repeated callout boxes; use normal paragraphs for most additions.
-    - If References are included, every URL must be a clickable Markdown link like "- [Source name](https://example.com/page)".
     - Keep title, excerpt, tags, SEO fields, and image_prompts aligned with the expanded article.
+    {trust_rules}
+    {depth_quality_rules}
+    {reference_style_rules}
     - Output ONLY valid JSON.
     """
 
@@ -522,6 +724,9 @@ def generate_supplemental_markdown(client: OpenAI, data: dict, original_prompt: 
     target = CONTENT_WORD_TARGETS.get(mode, CONTENT_WORD_TARGETS["insight"])
     missing_words = max(target["min"] - current_words, 0)
     desired_words = min(800, max(450, missing_words + 180))
+    trust_rules = build_trust_and_culture_rules(mode)
+    depth_quality_rules = build_authoritative_depth_rules(mode)
+    reference_style_rules = build_reference_style_rules()
     prompt = f"""
     The article below is still too short and needs additional original Markdown sections.
     Return ONLY Markdown to append to the existing `content`. Do not return JSON.
@@ -539,12 +744,14 @@ def generate_supplemental_markdown(client: OpenAI, data: dict, original_prompt: 
     - Write {desired_words}-{desired_words + 180} additional words.
     - Do not repeat existing paragraphs.
     - Use H2/H3 headings only, never H1.
-    - Add practical patient guidance, culturally aware context, and concrete next steps.
+    - Add practical patient guidance, culturally aware context, concrete next steps, brief human moments, and evidence-backed details.
     - If the article lacks a table, list, one quote/callout, FAQ, disclaimer, or clickable References, include the missing block.
     - Do not create repeated callout boxes; use normal paragraphs for most additions.
-    - References must use clickable Markdown links when URLs are present.
     - Current word count is {current_words}; minimum required is {target["min"]}.
     - Supplement attempt: {attempt}/{MAX_SUPPLEMENT_RETRIES}.
+    {trust_rules}
+    {depth_quality_rules}
+    {reference_style_rules}
     """
 
     response = client.chat.completions.create(
@@ -639,6 +846,9 @@ def create_article_from_prompt(client: OpenAI, supabase: Client, prompt: str, la
             "primary_keyword": data.get("primary_keyword"),
             "secondary_keywords": data.get("secondary_keywords", []),
             "content_mode": mode,
+            "current_version": 1,
+            "version_label": "v1",
+            ARTICLE_VERSIONS_KEY: [],
         }
         if image_urls:
             seo_meta["og_image"] = image_urls[0]
@@ -653,7 +863,7 @@ def create_article_from_prompt(client: OpenAI, supabase: Client, prompt: str, la
             "tags": data["tags"],
             "status": "published",
             "author": "Asian Health Hub Medical Team",
-            "published_at": datetime.now().isoformat(),
+            "published_at": iso_now(),
             "seo_meta": seo_meta
         }
 
@@ -703,16 +913,17 @@ def rewrite_article(identifier: str, instruction: str) -> None:
     data = ensure_article_length(client, data, prompt, mode)
     new_words = count_markdown_words(data.get("content") or "")
 
-    updated_seo_meta = {
-        **seo_meta,
-        "description": data.get("seo_description") or seo_meta.get("description"),
-        "keywords": data.get("tags") or article.get("tags") or [],
-        "primary_keyword": data.get("primary_keyword"),
-        "secondary_keywords": data.get("secondary_keywords", []),
-        "content_mode": mode,
-        "last_rewrite_instruction": instruction,
-        "last_rewritten_at": datetime.now().isoformat(),
-    }
+    image_urls = []
+    try:
+        image_urls = generate_article_images(client, data, article.get("slug") or generate_slug(data.get("title") or article.get("title") or "article"))
+    except Exception as exc:
+        print(f"[!] Could not generate rewrite images; keeping existing article images: {exc}")
+
+    rewritten_at = iso_now()
+    updated_seo_meta = build_rewrite_version_meta(article, data, mode, instruction, rewritten_at)
+    if image_urls:
+        updated_seo_meta["og_image"] = image_urls[0]
+        updated_seo_meta["images"] = image_urls
 
     supabase.table("articles").update(
         {
@@ -722,11 +933,15 @@ def rewrite_article(identifier: str, instruction: str) -> None:
             "category": data.get("category") or article.get("category"),
             "tags": data.get("tags") or article.get("tags") or [],
             "seo_meta": updated_seo_meta,
-            "updated_at": datetime.now().isoformat(),
+            "updated_at": rewritten_at,
         }
     ).eq("id", article["id"]).execute()
 
     print(f"[+] Article rewritten successfully: /insights/{article.get('slug')}")
+    print(f"[*] Version saved: v{updated_seo_meta['current_version']}")
+    print(f"[*] Previous versions available in seo_meta.{ARTICLE_VERSIONS_KEY}: {len(updated_seo_meta[ARTICLE_VERSIONS_KEY])}")
+    if image_urls:
+        print(f"[*] Generated rewrite images: {len(image_urls)}")
     print(f"[*] Word count: {old_words} -> {new_words}")
 
 def is_valid_source_url(url: str) -> bool:

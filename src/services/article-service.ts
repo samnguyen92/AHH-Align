@@ -56,9 +56,14 @@ function matchesCategorySlug(article: Article, categorySlug?: string) {
   }
 
   const articleCategorySlug = slugifyArticleCategory(article.category ?? '');
-  const articleTagSlugs = article.tags.map(slugifyArticleCategory);
 
-  return articleCategorySlug === categorySlug || articleTagSlugs.includes(categorySlug);
+  return articleCategorySlug === categorySlug;
+}
+
+function matchesTagSlug(article: Article, tagSlug?: string) {
+  if (!tagSlug) return true;
+
+  return article.tags.map(slugifyArticleCategory).includes(tagSlug);
 }
 
 /**
@@ -110,7 +115,7 @@ export async function getPublishedArticles(
  */
 export async function getPublishedArticlesByMode(
   mode: ArticleContentMode,
-  categorySlug?: string,
+  filters?: { categorySlug?: string; tagSlug?: string },
   limit = 5
 ): Promise<Article[]> {
   const supabase = createServerAnonClient();
@@ -131,7 +136,8 @@ export async function getPublishedArticlesByMode(
 
     return ((data as Article[]) || [])
       .filter((article) => getArticleContentMode(article) === mode)
-      .filter((article) => matchesCategorySlug(article, categorySlug))
+      .filter((article) => matchesCategorySlug(article, filters?.categorySlug))
+      .filter((article) => matchesTagSlug(article, filters?.tagSlug))
       .slice(0, limit);
   } catch (err) {
     console.error('[article-service] getPublishedArticlesByMode error:', err);
@@ -308,6 +314,35 @@ export async function getArticleCategories(): Promise<string[]> {
     return [...new Set(categories)].sort();
   } catch (err) {
     console.error('[article-service] getArticleCategories error:', err);
+    return [];
+  }
+}
+
+/**
+ * Lấy danh sách tags hiện có để dùng cho hot topics.
+ */
+export async function getArticleTags(): Promise<string[]> {
+  const supabase = createServerAnonClient();
+
+  if (!supabase) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('articles')
+      .select('tags')
+      .eq('status', 'published');
+
+    if (error) throw error;
+
+    const tags = (data || [])
+      .flatMap((article) => article.tags ?? [])
+      .filter((tag): tag is string => Boolean(tag));
+
+    return [...new Set(tags)].sort();
+  } catch (err) {
+    console.error('[article-service] getArticleTags error:', err);
     return [];
   }
 }

@@ -72,12 +72,15 @@ asian-health-hub/
 ├── .env.local.example          # Template environment variables
 ├── components.json             # ShadcnUI configuration
 ├── tsconfig.json               # TypeScript strict mode enabled
+├── GIT_WORKFLOW.md             # Git workflow, commit, push, and Vercel deployment checks
 ├── PIPELINE.md                 # Tài liệu chi tiết AI Data Pipeline
 ├── ARCHITECTURE.md             # Kiến trúc hệ thống & quy ước code
 └── README.md                   # File này
 ```
 
 ## Cài đặt & Chạy
+
+For Git usage, commit hygiene, and Vercel commit checks, see [`GIT_WORKFLOW.md`](./GIT_WORKFLOW.md).
 
 ### Yêu cầu
 - Node.js 18+ & npm

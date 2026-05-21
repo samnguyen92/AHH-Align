@@ -1,8 +1,9 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
+import { ArrowRight, Calendar } from 'lucide-react';
 import { ArticleImage } from '@/components/insights/article-image';
 import {
-  getArticleCategories,
+  getArticleTags,
   getPublishedArticlesByMode,
   slugifyArticleCategory,
 } from '@/services/article-service';
@@ -15,7 +16,9 @@ export const metadata: Metadata = {
   description: 'Expert medical guides, healthcare tips, and community health news for the Asian community.',
 };
 
-const DEFAULT_TOPICS = [
+const DEFAULT_HOT_TAGS = [
+  'Immigration-Health',
+  'Wellness',
   'Primary Care',
   'Houston',
   'Dental',
@@ -25,8 +28,18 @@ const DEFAULT_TOPICS = [
   'Korean',
 ];
 
+const CATEGORY_FILTERS = [
+  { label: 'All', slug: null },
+  { label: 'Insight', slug: 'insight' },
+  { label: 'Guide', slug: 'guide' },
+];
+
 function categoryHref(categorySlug: string) {
   return `/insights?category=${categorySlug}`;
+}
+
+function tagHref(tagSlug: string) {
+  return `/insights?tag=${tagSlug}`;
 }
 
 function formatDate(date: string | null) {
@@ -39,26 +52,56 @@ function formatDate(date: string | null) {
   });
 }
 
+function tagToneClass(tag: string) {
+  const tones = [
+    'border-blue-100 bg-blue-50 text-blue-700',
+    'border-emerald-100 bg-emerald-50 text-emerald-700',
+    'border-violet-100 bg-violet-50 text-violet-700',
+    'border-amber-100 bg-amber-50 text-amber-700',
+    'border-rose-100 bg-rose-50 text-rose-700',
+    'border-cyan-100 bg-cyan-50 text-cyan-700',
+    'border-teal-100 bg-teal-50 text-teal-700',
+    'border-indigo-100 bg-indigo-50 text-indigo-700',
+  ];
+  const hash = Array.from(tag).reduce((total, char) => total + char.charCodeAt(0), 0);
+
+  return tones[hash % tones.length];
+}
+
 function ArticleMeta({ article }: { article: Article }) {
+  const tags = article.tags.length > 0 ? article.tags.slice(0, 2) : ['Community Health'];
+
   return (
-    <div className="flex flex-wrap items-center gap-4 text-[11px] text-gray-400">
-      <span>{article.category || 'Guide'}</span>
-      <span>{article.tags[0] || 'Community Health'}</span>
-      <span className="inline-flex items-center gap-1">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2">
-          <rect width="18" height="18" x="3" y="4" rx="2" />
-          <path d="M16 2v4M8 2v4M3 10h18" />
-        </svg>
+    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+      {tags.map((tag) => (
+        <span
+          key={tag}
+          className={`rounded-full border px-2.5 py-1 font-medium ${tagToneClass(tag)}`}
+        >
+          {tag}
+        </span>
+      ))}
+      <span className="inline-flex items-center gap-1 px-1 py-1 text-gray-500">
+        <Calendar className="h-3 w-3 text-[var(--ahh-blue)]" />
         {formatDate(article.published_at)}
       </span>
     </div>
   );
 }
 
+function ReadMoreLabel() {
+  return (
+    <span className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ahh-blue)]">
+      Read more
+      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+    </span>
+  );
+}
+
 function FeaturedArticleCard({ article }: { article?: Article }) {
   if (!article) {
     return (
-      <div className="rounded-xl border border-gray-100 bg-white p-8 text-sm text-gray-500 shadow-lg shadow-gray-200/60">
+      <div className="rounded-lg border border-gray-200 bg-white p-8 text-sm text-gray-500 shadow-sm">
         No published articles yet.
       </div>
     );
@@ -67,21 +110,54 @@ function FeaturedArticleCard({ article }: { article?: Article }) {
   return (
     <Link
       href={`/insights/${article.slug}`}
-      className="group flex h-full min-h-[440px] flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-lg shadow-gray-200/70 transition-all hover:-translate-y-0.5 hover:shadow-xl"
+      className="group grid overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg md:grid-cols-2"
     >
       <ArticleImage
         src={article.seo_meta.og_image}
         alt={article.title}
-        className="h-64 w-full shrink-0 sm:h-72"
+        className="h-72 w-full md:h-full md:min-h-[320px]"
       />
-      <div className="flex flex-1 flex-col justify-end space-y-4 p-6 sm:p-7">
+      <div className="flex min-h-[320px] flex-col justify-center space-y-4 p-6 sm:p-8">
         <ArticleMeta article={article} />
-        <h3 className="text-lg font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
+        <h3 className="text-xl font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
           {article.title}
         </h3>
-        <p className="line-clamp-3 text-sm leading-6 text-gray-500">
+        <p className="line-clamp-4 text-sm leading-6 text-gray-600">
           {article.excerpt || 'Read practical healthcare guidance for Asian American patients and families.'}
         </p>
+        <div className="pt-1">
+          <span className="inline-flex items-center gap-2 rounded-md bg-[var(--ahh-blue)] px-4 py-2 text-sm font-semibold text-white transition group-hover:bg-[var(--ahh-blue-dark)]">
+            Read Full Article
+            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function SecondaryTopArticleCard({ article }: { article: Article }) {
+  return (
+    <Link
+      href={`/insights/${article.slug}`}
+      className="group grid overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg sm:grid-cols-2"
+    >
+      <ArticleImage
+        src={article.seo_meta.og_image}
+        alt={article.title}
+        className="h-52 w-full"
+      />
+      <div className="flex min-w-0 flex-col justify-center gap-2 p-4">
+        <ArticleMeta article={article} />
+        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
+          {article.title}
+        </h3>
+        <p className="line-clamp-2 text-xs leading-5 text-gray-600">
+          {article.excerpt || 'Short, useful healthcare context for choosing care with confidence.'}
+        </p>
+        <span className="mt-1 inline-flex h-8 w-8 items-center justify-center self-end rounded-full bg-blue-50 text-[var(--ahh-blue)] transition group-hover:bg-[var(--ahh-blue)] group-hover:text-white">
+          <ArrowRight className="h-4 w-4" />
+        </span>
       </div>
     </Link>
   );
@@ -89,21 +165,25 @@ function FeaturedArticleCard({ article }: { article?: Article }) {
 
 function CompactArticleCard({ article }: { article: Article }) {
   return (
-    <Link href={`/insights/${article.slug}`} className="group block">
-      <div className="overflow-hidden rounded-lg bg-white">
-        <ArticleImage
-          src={article.seo_meta.og_image}
-          alt={article.title}
-          className="aspect-[16/9]"
-        />
-        <div className="space-y-2 pt-3">
-          <ArticleMeta article={article} />
-          <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
-            {article.title}
-          </h3>
-          <p className="line-clamp-3 text-xs leading-5 text-gray-500">
-            {article.excerpt || 'Short, useful healthcare context for choosing care with confidence.'}
-          </p>
+    <Link
+      href={`/insights/${article.slug}`}
+      className="group flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
+    >
+      <ArticleImage
+        src={article.seo_meta.og_image}
+        alt={article.title}
+        className="aspect-[16/9] w-full"
+      />
+      <div className="flex flex-1 flex-col space-y-3 p-5">
+        <ArticleMeta article={article} />
+        <h3 className="line-clamp-3 text-base font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
+          {article.title}
+        </h3>
+        <p className="line-clamp-3 text-sm leading-6 text-gray-600">
+          {article.excerpt || 'Short, useful healthcare context for choosing care with confidence.'}
+        </p>
+        <div className="mt-auto pt-1">
+          <ReadMoreLabel />
         </div>
       </div>
     </Link>
@@ -124,29 +204,43 @@ function ArticleSection({
   showAll?: boolean;
 }) {
   const [featured, ...rest] = articles;
-  const compact = showAll ? rest : rest.slice(0, 4);
+  const topArticles = rest.slice(0, 2);
+  const compact = showAll ? rest.slice(2) : rest.slice(2, 6);
 
   return (
-    <section className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-      <div className="mb-8 flex items-end justify-between gap-4">
+    <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mb-7">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-gray-950">{title}</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">{description}</p>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-950">{title}</h2>
+          <p className="mt-3 max-w-2xl text-base leading-6 text-gray-500">{description}</p>
         </div>
-        {!showAll && (
-          <Link href={viewAllHref} className="hidden text-sm text-gray-700 hover:text-[var(--ahh-blue)] sm:inline-flex">
-            View all &rarr;
-          </Link>
-        )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-        <FeaturedArticleCard article={featured} />
-        <div className="grid gap-x-6 gap-y-8 sm:grid-cols-2">
-          {compact.map((article) => (
-            <CompactArticleCard key={article.id} article={article} />
+      <div className="grid items-start gap-6 xl:grid-cols-3">
+        <div className="xl:col-span-2">
+          <FeaturedArticleCard article={featured} />
+        </div>
+        <div className="grid gap-6 self-start xl:col-span-1">
+          {topArticles.map((article) => (
+            <SecondaryTopArticleCard key={article.id} article={article} />
           ))}
         </div>
+      </div>
+
+      <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {compact.map((article) => (
+          <CompactArticleCard key={article.id} article={article} />
+        ))}
+      </div>
+
+      <div className="mt-7 flex justify-center">
+        <Link
+          href={viewAllHref}
+          className="inline-flex h-10 items-center gap-3 rounded-full border border-gray-200 bg-white px-6 text-sm font-semibold text-[var(--ahh-blue)] shadow-sm transition hover:border-[var(--ahh-blue)] hover:bg-blue-50"
+        >
+          View all articles
+          <ArrowRight className="h-4 w-4" />
+        </Link>
       </div>
     </section>
   );
@@ -165,25 +259,27 @@ function isModeCategory(categorySlug?: string) {
 export default async function InsightsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string }>;
+  searchParams: Promise<{ category?: string; tag?: string }>;
 }) {
-  const { category } = await searchParams;
+  const { category, tag } = await searchParams;
   const categorySlug = category ? slugifyArticleCategory(category) : undefined;
+  const tagSlug = tag ? slugifyArticleCategory(tag) : undefined;
   const selectedMode = categorySlug === 'guide' || categorySlug === 'guides' || categorySlug === 'in-depth-guides'
     ? 'guide'
     : categorySlug === 'insight' || categorySlug === 'insights'
       ? 'insight'
       : null;
-  const articleLimit = categorySlug ? 60 : 5;
+  const articleLimit = categorySlug || tagSlug ? 60 : 7;
 
-  const [latestInsights, latestGuides, categories] = await Promise.all([
-    selectedMode === 'guide' ? Promise.resolve([]) : getPublishedArticlesByMode('insight', categorySlug, articleLimit),
-    selectedMode === 'insight' ? Promise.resolve([]) : getPublishedArticlesByMode('guide', categorySlug, articleLimit),
-    getArticleCategories(),
+  const filters = { categorySlug, tagSlug };
+  const [latestInsights, latestGuides, articleTags] = await Promise.all([
+    selectedMode === 'guide' ? Promise.resolve([]) : getPublishedArticlesByMode('insight', filters, articleLimit),
+    selectedMode === 'insight' ? Promise.resolve([]) : getPublishedArticlesByMode('guide', filters, articleLimit),
+    getArticleTags(),
   ]);
 
   const heroArticle = latestInsights[0] ?? latestGuides[0];
-  const topics = [...new Set([...categories, ...DEFAULT_TOPICS])]
+  const topics = [...new Set([...articleTags, ...DEFAULT_HOT_TAGS])]
     .map((topic) => ({ label: topic, slug: slugifyArticleCategory(topic) }))
     .filter((topic) => topic.slug && !isModeCategory(topic.slug))
     .slice(0, 8);
@@ -201,13 +297,17 @@ export default async function InsightsPage({
                 Practical health articles and in-depth guides tailored to Vietnamese and Korean American communities navigating the US healthcare system and finding the right clinic.
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
-                {['All', 'Insights', 'Guides'].map((label) => (
+                {CATEGORY_FILTERS.map((filter) => (
                   <Link
-                    key={label}
-                    href={label === 'All' ? '/insights' : `/insights?category=${label.toLowerCase()}`}
-                    className="rounded-full border border-white/40 px-4 py-1.5 text-xs font-medium text-white transition hover:bg-white hover:text-[var(--ahh-blue)]"
+                    key={filter.label}
+                    href={filter.slug ? categoryHref(filter.slug) : '/insights'}
+                    className={`rounded-full border px-4 py-1.5 text-xs font-medium transition ${
+                      (!filter.slug && !categorySlug && !tagSlug) || filter.slug === selectedMode
+                        ? 'border-white bg-white text-[var(--ahh-blue)]'
+                        : 'border-white/40 text-white hover:bg-white hover:text-[var(--ahh-blue)]'
+                    }`}
                   >
-                    {label}
+                    {filter.label}
                   </Link>
                 ))}
               </div>
@@ -230,7 +330,7 @@ export default async function InsightsPage({
             <Link
               href="/insights"
               className={`rounded-full px-4 py-2 text-xs font-medium ${
-                !categorySlug ? 'bg-[var(--ahh-blue)] text-white' : 'border border-gray-200 text-gray-600'
+                !categorySlug && !tagSlug ? 'bg-[var(--ahh-blue)] text-white' : 'border border-gray-200 text-gray-600'
               }`}
             >
               All
@@ -238,9 +338,9 @@ export default async function InsightsPage({
             {topics.map((topic) => (
               <Link
                 key={topic.slug}
-                href={categoryHref(topic.slug)}
+                href={tagHref(topic.slug)}
                 className={`rounded-full border px-4 py-2 text-xs font-medium capitalize transition ${
-                  categorySlug === topic.slug
+                  tagSlug === topic.slug
                     ? 'border-[var(--ahh-blue)] bg-[var(--ahh-blue)] text-white'
                     : 'border-gray-200 text-gray-600 hover:border-[var(--ahh-blue)] hover:text-[var(--ahh-blue)]'
                 }`}
@@ -259,7 +359,7 @@ export default async function InsightsPage({
             description="Choose short articles for quick tips and detailed healthcare information."
             articles={latestInsights}
             viewAllHref={categoryHref('insights')}
-            showAll={Boolean(categorySlug)}
+            showAll={Boolean(categorySlug || tagSlug)}
           />
         )}
 
@@ -269,7 +369,7 @@ export default async function InsightsPage({
             description="Long-form healthcare guides that explain important topics in more detail, from finding the right clinic to preparing for care."
             articles={latestGuides}
             viewAllHref={categoryHref('guides')}
-            showAll={Boolean(categorySlug)}
+            showAll={Boolean(categorySlug || tagSlug)}
           />
         )}
       </div>
