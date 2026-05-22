@@ -50,25 +50,25 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const totalPages = Math.ceil(result.total / result.limit);
 
   return (
-    <>
-      {/* Blue Hero */}
-      <section className="bg-[var(--ahh-blue)] py-10 px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">
+    <main className="bg-[var(--ahh-mist)]">
+      {/* Search Hero */}
+      <section className="px-4 pt-8 sm:px-6 lg:px-8">
+        <div className="brand-hero mx-auto max-w-7xl px-6 py-10 sm:px-10">
+          <h1 className="text-2xl font-semibold text-white sm:text-4xl">
             Find an Asian Clinic<br />That Speaks Your Language
           </h1>
-          <p className="mt-2 text-sm text-blue-100 max-w-lg">
+          <p className="mt-3 max-w-xl text-sm leading-6 text-white/72">
             Asian Health Hub connects Vietnamese and Korean-speaking patients with trusted clinics across the United States. Search by specialty, city, or language.
           </p>
         </div>
       </section>
 
       {/* Search Bar */}
-      <section className="bg-white border-b border-gray-100 py-4 px-4 sm:px-6 lg:px-8 shadow-sm">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex flex-col sm:flex-row items-stretch gap-2 bg-gray-50 rounded-xl p-2">
+      <section className="relative z-10 -mt-5 px-4 sm:px-6 lg:px-8">
+        <div className="brand-card mx-auto max-w-6xl rounded-lg p-2 shadow-sm">
+          <div className="flex flex-col items-stretch gap-2 rounded-lg bg-white sm:flex-row">
             <div className="flex-[2] relative">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-deep-teal)" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
               <input
                 type="text"
                 placeholder="Search by specialty, clinic name, or keyword..."
@@ -85,7 +85,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       </section>
 
       {/* Main Content */}
-      <section className="py-8 px-4 sm:px-6 lg:px-8">
+      <section className="px-4 pb-16 pt-8 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-bold text-gray-900">Explore Clinics</h2>
@@ -111,6 +111,6 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
           </div>
         </div>
       </section>
-    </>
+    </main>
   );
 }

@@ -5,6 +5,7 @@ import base64
 import copy
 import unicodedata
 from datetime import datetime
+from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 from openai import OpenAI
@@ -17,12 +18,15 @@ load_dotenv(".env")
 load_dotenv("../.env.local")
 
 IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
+TEXT_MODEL = "deepseek/deepseek-v4-flash"
 CONTENT_WORD_TARGETS = {
     "insight": {"min": 1200, "max": 1500, "label": "1,200-1,500 words"},
-    "guide": {"min": 1900, "max": 2200, "label": "1,900-2,200 words"},
+    "guide": {"min": 3000, "max": 3500, "label": "3,000-3,500 words"},
 }
-MAX_LENGTH_RETRIES = 3
-MAX_SUPPLEMENT_RETRIES = 3
+REWRITE_SIMILARITY_THRESHOLD = 0.92
+MAX_REWRITE_SIMILARITY_RETRIES = 2
+JSON_TEMPERATURE = 0.4
+SECTION_TEMPERATURE = 0.35
 ARTICLE_VERSIONS_KEY = "versions"
 ARTICLE_VERSION_META_KEYS = {
     ARTICLE_VERSIONS_KEY,
@@ -48,7 +52,7 @@ DEFAULT_TOPICS = [
     "Mental Health Care Access for Asian American Patients",
 ]
 
-def generate_slug(text):
+def generate_slug(text: str) -> str:
     text = text.replace("Đ", "D").replace("đ", "d")
     text = unicodedata.normalize("NFKD", text)
     text = text.encode("ascii", "ignore").decode("ascii")
@@ -59,12 +63,68 @@ def generate_slug(text):
     return text[:180] or "article"
 
 def count_markdown_words(content: str) -> int:
+    """Return an approximate word count for Markdown content."""
+    text = re.sub(r"```.*?```", " ", content or "", flags=re.DOTALL)
+    text = re.sub(r"!\[[^\]]*]\([^)]+\)", " ", text)
+    text = re.sub(r"\[([^\]]+)]\([^)]+\)", r"\1", text)
+    words = re.findall(r"\b[\w'-]+\b", text)
+    return len(words)
+
+def normalize_for_similarity(content: str) -> str:
     plain_text = re.sub(r"```[\s\S]*?```", " ", content or "")
     plain_text = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", plain_text)
-    plain_text = re.sub(r"\[[^\]]*\]\([^)]+\)", " ", plain_text)
-    plain_text = re.sub(r"[#>*_`|~\-\[\]():]", " ", plain_text)
-    plain_text = re.sub(r"\s+", " ", plain_text).strip()
-    return len(plain_text.split()) if plain_text else 0
+    plain_text = re.sub(r"\[[^\]]+\]\([^)]+\)", " ", plain_text)
+    plain_text = re.sub(r"https?://\S+", " ", plain_text)
+    plain_text = re.sub(r"[^a-zA-Z0-9\s]", " ", plain_text)
+    plain_text = re.sub(r"\s+", " ", plain_text).strip().lower()
+    return plain_text
+
+def content_similarity(left: str, right: str) -> float:
+    left_normalized = normalize_for_similarity(left)
+    right_normalized = normalize_for_similarity(right)
+    if not left_normalized or not right_normalized:
+        return 0.0
+
+    left_sample = left_normalized[:24000]
+    right_sample = right_normalized[:24000]
+    return SequenceMatcher(None, left_sample, right_sample).ratio()
+
+def should_enforce_material_rewrite(instruction: str) -> bool:
+    normalized = normalize_for_similarity(instruction)
+    words = normalized.split()
+    if not normalized:
+        return False
+
+    generic_phrases = {
+        "rewrite",
+        "rewrite article",
+        "rewrite the article",
+        "rewrite blog",
+        "rewrite the blog",
+        "rewrite content",
+        "rewrite the content",
+        "rewrite the blog content as needed",
+        "viet lai",
+        "viet lai bai",
+        "viet lai bai blog",
+        "viet lai noi dung",
+    }
+    if normalized in generic_phrases:
+        return True
+
+    rewrite_words = {"rewrite", "rewritten", "regenerate", "improve"}
+    return len(words) <= 12 and any(word in rewrite_words for word in words)
+
+def extract_markdown_headings(content: str, limit: int = 18) -> List[str]:
+    headings = []
+    for line in (content or "").splitlines():
+        match = re.match(r"^(#{2,3})\s+(.+?)\s*$", line.strip())
+        if not match:
+            continue
+        headings.append(f"{match.group(1)} {match.group(2)}")
+        if len(headings) >= limit:
+            break
+    return headings
 
 def extract_image_value(message) -> Optional[str]:
     """
@@ -258,6 +318,51 @@ def build_reference_style_rules() -> str:
     - Do not fabricate author names, publication years, DOI links, PMC links, or journal details. If only the organization and page title are known, cite those accurately.
     """
 
+def build_guide_structure_rules(mode: str = "insight") -> str:
+    if mode != "guide":
+        return ""
+
+    return """
+    Guide structure and SEO requirements:
+    - Do not include an inline "Table of Contents" section inside `content`; the website renders the table of contents in the right sidebar from H2/H3 headings.
+    - Build the article as a complete SEO pillar guide, not a long blog post or a stitched-together summary.
+    - Use 10-14 SEO-friendly H2 sections, plus H3 subquestions where a topic needs depth.
+    - Start with 2 original intro paragraphs that define the reader problem, search intent, and why the guide matters. Do not start with a table, list, FAQ, or table of contents.
+    - Each H2 section before FAQ must contain at least 120 words of useful substance. Prefer 2 paragraphs, or 1 paragraph plus a practical list/table.
+    - Use the primary keyword or a close variant in the title, opening paragraph, one early H2, one later H2, and the Next Steps/conclusion.
+    - H2 headings should answer real search questions: symptoms or decision points, cost, insurance, language access, preparation, risks, when to seek care, cultural considerations, and what to ask a clinician.
+    - Include exactly one H2 named "FAQs" with 4-6 H3 question headings. Each FAQ answer needs 2-4 useful sentences.
+    - Include exactly one H2 named "Next Steps" near the end before References. It should give a practical checklist readers can act on.
+    - Include one comparison table in the body, but do not use a table as a substitute for section depth.
+    - Avoid repeated generic sections. Every H2 must add a new decision, scenario, or patient action.
+    - Keep the structure continuous from the opening through References; do not write two separate mini-articles in one response.
+    """
+
+def build_guide_generation_rules(mode: str = "insight") -> str:
+    if mode != "guide":
+        return ""
+
+    return """
+    Mandatory guide generation plan:
+    - Silently plan the guide first, then output only the final JSON. Do not include the plan outside `content`.
+    - The guide must feel like one complete, authoritative resource for the topic.
+    - Recommended flow:
+      1. Opening context for the specific audience and healthcare problem.
+      2. What this topic means in practical U.S. healthcare terms.
+      3. Why the topic matters for Asian American, Vietnamese, Korean, immigrant, or limited-English families when relevant.
+      4. Symptoms, warning signs, eligibility, or decision points relevant to the topic.
+      5. Insurance, cost, scheduling, language access, and documentation issues.
+      6. What to ask the clinician, clinic, insurer, or pharmacist.
+      7. Cultural trust, family decision-making, and communication barriers where relevant.
+      8. Prevention, follow-up, and when to seek urgent care.
+      9. Comparison table.
+      10. FAQs.
+      11. Next Steps.
+      12. References.
+    - Do not stop after FAQ. FAQ and Next Steps are late-guide sections, not the end of the main guide.
+    - Do not produce a short draft and rely on later expansion. The first response should already satisfy the minimum word count.
+    """
+
 def pick_topic(supabase: Client) -> str:
     existing = supabase.table("articles").select("title").execute().data or []
     existing_titles = {row["title"].strip().lower() for row in existing if row.get("title")}
@@ -293,7 +398,7 @@ def pick_trending_topic(client: OpenAI, supabase: Client, mode: str = "insight")
 
     try:
         response = client.chat.completions.create(
-            model="deepseek/deepseek-chat",
+            model=TEXT_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
             max_tokens=600,
@@ -309,14 +414,30 @@ def pick_trending_topic(client: OpenAI, supabase: Client, mode: str = "insight")
     return pick_topic(supabase)
 
 def create_article(topic: Optional[str] = None):
+    print("[*] Start generate blog.")
     client, supabase = create_clients()
-    topic = (topic or os.environ.get("OPENCLAW_ARTICLE_TOPIC") or "").strip() or pick_trending_topic(client, supabase, mode="insight")
+    requested_topic = (topic or os.environ.get("OPENCLAW_ARTICLE_TOPIC") or "").strip()
+    if requested_topic:
+        print(f"[*] Using requested blog topic: {requested_topic}")
+    else:
+        print("[*] Getting topic for blog...")
+    topic = requested_topic or pick_trending_topic(client, supabase, mode="insight")
+    print(f"[*] Blog topic selected: {topic}")
+    print("[*] Building blog prompt...")
     prompt = build_topic_prompt(topic, mode="insight")
     create_article_from_prompt(client, supabase, prompt, topic, mode="insight")
 
 def create_guide(topic: Optional[str] = None):
+    print("[*] Start generate guide.")
     client, supabase = create_clients()
-    topic = (topic or os.environ.get("OPENCLAW_GUIDE_TOPIC") or "").strip() or pick_trending_topic(client, supabase, mode="guide")
+    requested_topic = (topic or os.environ.get("OPENCLAW_GUIDE_TOPIC") or "").strip()
+    if requested_topic:
+        print(f"[*] Using requested guide topic: {requested_topic}")
+    else:
+        print("[*] Getting topic for guide...")
+    topic = requested_topic or pick_trending_topic(client, supabase, mode="guide")
+    print(f"[*] Guide topic selected: {topic}")
+    print("[*] Building guide prompt...")
     prompt = build_topic_prompt(topic, mode="guide")
     create_article_from_prompt(client, supabase, prompt, topic, mode="guide")
 
@@ -337,18 +458,20 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
+    guide_structure_rules = build_guide_structure_rules(mode)
+    guide_generation_rules = build_guide_generation_rules(mode)
 
     if mode == "guide":
         content_type = "pillar guide"
         word_count = CONTENT_WORD_TARGETS["guide"]["label"]
         category = "guide"
         depth_rules = """
-    - Write as Pillar Content: comprehensive, structured, and useful enough to rank for a broad healthcare topic.
-    - Include a short table of contents, practical step-by-step sections, a comparison table, a checklist, FAQs, and a clear care-next-step section.
-    - Cover definitions, symptoms or decision points when relevant, preparation, costs/insurance questions, language access, and when to seek professional care.
-    - Include one Markdown table, one practical bullet list, and at most one Markdown blockquote callout.
-    - Do not overuse boxed/callout-style content; most sections should be normal paragraphs with occasional lists.
-    - Use H2 and H3 headings with SEO-friendly phrasing, but keep the writing natural.
+    - Write as Pillar Content: comprehensive, cohesive, and useful enough to rank for a broad healthcare topic.
+    - Cover the full patient journey: definition, why it matters, who is affected, decision points, preparation, cost/insurance, language access, cultural considerations, clinician questions, follow-up, FAQs, and next steps.
+    - Include one Markdown comparison table, one practical checklist, 4-6 FAQs, and a clear care-next-step section.
+    - Use normal paragraphs for most sections. Use bullets only when they make an action easier to follow.
+    - Use H2 and H3 headings with SEO-friendly phrasing, but keep the writing natural and medically cautious.
+    - The guide should not read like two articles pasted together. Maintain one clear throughline from opening to References.
     """
     else:
         content_type = "SEO healthcare insight article"
@@ -386,6 +509,8 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {guide_structure_rules}
+    {guide_generation_rules}
     Image requirements:
     - Provide 3-5 distinct image prompts in `image_prompts`, choosing the count based on the article depth and section variety.
     - First prompt is for the hero image.
@@ -416,12 +541,14 @@ def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insi
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
+    guide_structure_rules = build_guide_structure_rules(mode)
+    guide_generation_rules = build_guide_generation_rules(mode)
     content_type = "Pillar Content guide" if is_guide else "SEO healthcare insight article"
     word_count = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["label"]
     category = "guide" if is_guide else "insight"
     min_words = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["min"]
     depth_rules = (
-        "Include a table of contents, detailed step-by-step guidance, one Markdown comparison table, one checklist, FAQs, at most one blockquote callout, and care-next-step guidance. Do not overuse callouts."
+        "Write a complete SEO pillar guide with 10-14 substantive H2 sections, one Markdown comparison table, one checklist, 4-6 FAQs, and Next Steps. Do not include an inline table of contents; the website sidebar handles navigation. Do not overuse callouts. Do not copy the source structure."
         if is_guide
         else "Include 5-7 substantive H2 sections, practical patient tips, one Markdown table, one bullet list, at most one blockquote callout, a short FAQ, and a medical disclaimer. Do not overuse callouts."
     )
@@ -445,6 +572,8 @@ def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insi
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {guide_structure_rules}
+    {guide_generation_rules}
     - Include a final "## References" section with the source URL and any other source names clearly supported by the reference text.
     - Provide 3-5 AI image prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections. All must specify no text, no logos, no watermarks.
     - The article should be in Markdown format.
@@ -479,12 +608,14 @@ def build_context_prompt(reference_label: str, reference_text: str, instruction:
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
+    guide_structure_rules = build_guide_structure_rules(mode)
+    guide_generation_rules = build_guide_generation_rules(mode)
     content_type = "Pillar Content guide" if is_guide else "SEO healthcare insight article"
     word_count = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["label"]
     category = "guide" if is_guide else "insight"
     min_words = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["min"]
     depth_rules = (
-        "Include a table of contents, detailed step-by-step guidance, one Markdown comparison table, one checklist, FAQs, at most one blockquote callout, and care-next-step guidance. Do not overuse callouts."
+        "Write a complete SEO pillar guide with 10-14 substantive H2 sections, one Markdown comparison table, one checklist, 4-6 FAQs, and Next Steps. Do not include an inline table of contents; the website sidebar handles navigation. Do not overuse callouts. Do not copy the memory structure."
         if is_guide
         else "Include 5-7 substantive H2 sections, practical patient tips, one Markdown table, one bullet list, at most one blockquote callout, a short FAQ, and a medical disclaimer. Do not overuse callouts."
     )
@@ -511,6 +642,8 @@ def build_context_prompt(reference_label: str, reference_text: str, instruction:
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {guide_structure_rules}
+    {guide_generation_rules}
     - Include a final "## References" section using the source URLs or source names from the memory when available.
     - Provide 3-5 AI image prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections. All must specify no text, no logos, no watermarks.
     - The article should be in Markdown format.
@@ -544,10 +677,14 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
+    guide_structure_rules = build_guide_structure_rules(mode)
+    guide_generation_rules = build_guide_generation_rules(mode)
     word_count = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["label"]
     min_words = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["min"]
     category = "guide" if is_guide else "insight"
-    existing_content = str(article.get("content") or "")[:32000]
+    existing_content_limit = 18000 if is_guide else 32000
+    existing_content = str(article.get("content") or "")[:existing_content_limit]
+    existing_headings = extract_markdown_headings(str(article.get("content") or ""), limit=24)
     existing_seo = article.get("seo_meta") or {}
 
     return f"""
@@ -560,6 +697,7 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     - Current category: {article.get("category")}
     - Current tags: {json.dumps(article.get("tags") or [], ensure_ascii=False)}
     - Current primary keyword: {existing_seo.get("primary_keyword")}
+    - Current H2/H3 outline: {json.dumps(existing_headings, ensure_ascii=False)}
 
     Owner rewrite instruction:
     {instruction}
@@ -570,6 +708,9 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     Rewrite rules:
     - Apply the owner's requested edits precisely.
     - Preserve the article's useful factual content, but improve clarity, structure, SEO, and patient usefulness.
+    - If the owner instruction is broad or generic, treat this as a full editorial rewrite, not a light polish.
+    - The rewritten article must be visibly different in version comparison: change the opening, rewrite every paragraph in fresh language, improve or reorder headings where useful, and add stronger examples, patient actions, FAQ detail, and references.
+    - Do not keep the same paragraph-by-paragraph structure unless the owner explicitly asks for a tiny edit.
     - Target length: {word_count}. Minimum: {min_words} words.
     - Keep `content` in Markdown.
     - Do not include a top-level H1 inside `content`; the website renders the title separately.
@@ -583,6 +724,8 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {guide_structure_rules}
+    {guide_generation_rules}
     Image requirements:
     - Provide 3-5 distinct image prompts in `image_prompts`, choosing the count based on the rewritten article depth and section variety.
     - First prompt is for the hero image.
@@ -607,17 +750,50 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     }}
     """
 
-def extract_json_payload(content: str) -> dict:
-    content = content.strip()
-    if "```json" in content:
-        content = content.split("```json", 1)[1].split("```", 1)[0].strip()
-    elif content.startswith("```"):
-        content = content.split("```", 1)[1].split("```", 1)[0].strip()
+def repair_json_text(json_text: str) -> List[str]:
+    """Return small, safe repair variants for a truncated JSON object."""
+    text = json_text.strip()
+    variants = [text]
+    variants.append(text.rstrip(","))
+    variants.append(f"{text}}}")
+    variants.append(f'{text}"}}')
+    variants.append(f"{text}]}}")
+    variants.append(re.sub(r",\s*([}\]])", r"\1", text))
+    return list(dict.fromkeys(variants))
 
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        return json.loads(content, strict=False)
+def extract_json_candidates(content: str) -> List[str]:
+    """Extract likely JSON snippets from plain text or fenced model output."""
+    text = (content or "").strip()
+    candidates = re.findall(r"```(?:json)?\s*([\s\S]*?)```", text, flags=re.IGNORECASE)
+
+    object_start = text.find("{")
+    if object_start != -1:
+        object_end = find_json_object_end(text, object_start)
+        if object_end != -1:
+            candidates.append(text[object_start:object_end])
+        else:
+            candidates.append(text[object_start:])
+
+    if text.startswith("{"):
+        candidates.append(text)
+
+    return [candidate.strip() for candidate in candidates if candidate.strip()]
+
+def extract_json_payload(content: str) -> dict:
+    """Parse model JSON with fenced-block extraction and light auto-repair."""
+    for candidate in extract_json_candidates(content):
+        for repaired in repair_json_text(candidate):
+            try:
+                parsed = json.loads(repaired)
+            except json.JSONDecodeError:
+                try:
+                    parsed = json.loads(repaired, strict=False)
+                except json.JSONDecodeError:
+                    continue
+            if isinstance(parsed, dict):
+                return parsed
+
+    raise ValueError("Could not parse a valid JSON object from model response.")
 
 def normalize_image_prompts(data: dict) -> List[str]:
     prompts = data.get("image_prompts")
@@ -677,40 +853,6 @@ def generate_article_images(client: OpenAI, data: dict, slug: str) -> List[str]:
 
     return image_urls
 
-def build_length_retry_prompt(data: dict, original_prompt: str, mode: str, current_words: int, attempt: int) -> str:
-    target = CONTENT_WORD_TARGETS.get(mode, CONTENT_WORD_TARGETS["insight"])
-    missing_words = max(target["min"] - current_words, 0)
-    trust_rules = build_trust_and_culture_rules(mode)
-    depth_quality_rules = build_authoritative_depth_rules(mode)
-    reference_style_rules = build_reference_style_rules()
-
-    return f"""
-    The previous JSON draft is too short for Asian Health Hub and must be expanded before publication.
-    Retry attempt: {attempt}/{MAX_LENGTH_RETRIES}
-    Current content word count: {current_words}
-    Minimum required word count: {target["min"]}
-    Add at least {missing_words + 250} useful words of original, patient-facing detail.
-
-    Original writing brief:
-    {original_prompt}
-
-    Current JSON draft:
-    {json.dumps(data, ensure_ascii=False)}
-
-    Rewrite and expand the JSON while preserving the same schema.
-    Requirements:
-    - `content` must be {target["label"]}; never below {target["min"]} words.
-    - Keep `content` in Markdown and do not include a top-level H1.
-    - Add deeper explanations, examples, patient-facing action steps, one Markdown table, one practical bullet list, at most one blockquote callout, FAQ, disclaimer, and References when sources are available.
-    - Add missing emotional specificity, culturally grounded context, and evidence-backed detail instead of padding with generic educational prose.
-    - Do not create repeated callout boxes; use normal paragraphs for most additions.
-    - Keep title, excerpt, tags, SEO fields, and image_prompts aligned with the expanded article.
-    {trust_rules}
-    {depth_quality_rules}
-    {reference_style_rules}
-    - Output ONLY valid JSON.
-    """
-
 def clean_markdown_supplement(content: str) -> str:
     content = content.strip()
     if content.startswith("```"):
@@ -718,102 +860,555 @@ def clean_markdown_supplement(content: str) -> str:
         if content.startswith("markdown"):
             content = content[len("markdown"):].strip()
         content = content.split("```", 1)[0].strip()
-    return content
+    return strip_assistant_chatter(content)
 
-def generate_supplemental_markdown(client: OpenAI, data: dict, original_prompt: str, mode: str, current_words: int, attempt: int) -> str:
+def strip_assistant_chatter(content: str) -> str:
+    """Remove model self-commentary that is not article Markdown."""
+    chatter_line_patterns = [
+        r"^\s*here(?:'|’)?s\s+(?:the\s+)?(?:rewritten\s+)?section\s+in\s+markdown\s*:?\s*$",
+        r"^\s*[\"'“”‘’]*\s*next\s+section\s*:\s*.+[\"'“”‘’]*\s*$",
+        r"^\s*[\"'“”‘’]*\(?\s*word\s+count\s*:\s*\d+[\w\s.,-]*\)?[\"'“”‘’]*\s*$",
+        r"^\s*this\s+(?:revision|version|section|draft)\s*:?\s*$",
+        r"^\s*the\s+content\s+avoids\s+.+$",
+        r"^\s*it\s+presents\s+the\s+information\s+.+$",
+        r"^\s*let\s+me\s+know\s+.+$",
+    ]
+    chatter_inline_patterns = [
+        r"^\s*this\s+version\s+(?:maintains|keeps|uses|includes|focuses|simplifies|improves)\b.+$",
+        r"^\s*this\s+revision\s+(?:maintains|keeps|uses|includes|focuses|simplifies|improves)\b.+$",
+    ]
+
+    cleaned_lines: List[str] = []
+    skipping_revision_list = False
+
+    for line in (content or "").splitlines():
+        stripped = line.strip().strip('"“”')
+
+        if skipping_revision_list:
+            if not stripped:
+                skipping_revision_list = False
+                continue
+            if re.match(r"^[-*]\s+", stripped):
+                continue
+            skipping_revision_list = False
+
+        if any(re.match(pattern, stripped, re.IGNORECASE) for pattern in chatter_line_patterns):
+            if re.match(r"^\s*this\s+(?:revision|version|section|draft)\s*:?\s*$", stripped, re.IGNORECASE):
+                skipping_revision_list = True
+            continue
+
+        if any(re.match(pattern, stripped, re.IGNORECASE) for pattern in chatter_inline_patterns):
+            continue
+
+        cleaned_lines.append(line)
+
+    cleaned = "\n".join(cleaned_lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
+
+def find_json_object_end(text: str, start: int) -> int:
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+
+    return -1
+
+def strip_leaked_json_payloads(content: str) -> str:
+    """Remove accidental fenced JSON blobs from Markdown content."""
+    return re.sub(
+        r"```(?:json)?\s*\{[\s\S]*?\"(?:content|image_prompts)\"[\s\S]*?\}\s*```",
+        "",
+        content or "",
+        flags=re.IGNORECASE,
+    )
+
+def normalize_reference_line(line: str) -> str:
+    line = line.strip().rstrip()
+    line = re.sub(r"^\d+[\.)]\s*", "", line)
+    line = line.lstrip("-* ").strip()
+    return line.rstrip()
+
+def split_reference_sections(content: str) -> tuple[str, List[str]]:
+    lines = content.replace("\\n", "\n").splitlines()
+    body_lines: List[str] = []
+    references: List[str] = []
+    in_references = False
+
+    for line in lines:
+        if re.match(r"^##\s+References\s*$", line.strip(), re.IGNORECASE):
+            in_references = True
+            continue
+
+        if in_references and re.match(r"^##\s+\S+", line.strip()):
+            in_references = False
+            body_lines.append(line)
+            continue
+
+        if in_references:
+            reference = normalize_reference_line(line)
+            if reference:
+                references.append(reference)
+            continue
+
+        body_lines.append(line)
+
+    return "\n".join(body_lines).strip(), references
+
+def dedupe_references(references: List[str]) -> List[str]:
+    unique = []
+    seen = set()
+
+    for reference in references:
+        url_match = re.search(r"\]\((https?://[^)]+)\)", reference)
+        key = url_match.group(1).rstrip("/").lower() if url_match else re.sub(r"\s+", " ", reference).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(reference)
+
+    return unique
+
+def remove_inline_table_of_contents(content: str) -> str:
+    toc_pattern = re.compile(
+        r"(?ims)^#{2,3}\s+Table of Contents\s*\n"
+        r"(?:(?:\s*\d+[\.)]\s+\[[^\n]+\]\(#[^)]+\)\s*)|(?:\s*[-*]\s+\[[^\n]+\]\(#[^)]+\)\s*)|\s*)*"
+    )
+    return toc_pattern.sub("", content, count=1).strip()
+
+def clean_generated_article_content(content: str, mode: str = "insight") -> str:
+    cleaned = strip_assistant_chatter(strip_leaked_json_payloads(content or ""))
+    body, references = split_reference_sections(cleaned)
+    references = dedupe_references(references)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+
+    if mode == "guide":
+        body = remove_inline_table_of_contents(body)
+
+    if references:
+        formatted_references = "\n".join(
+            f"{index}. {reference}" for index, reference in enumerate(references, start=1)
+        )
+        body = f"{body}\n\n## References\n\n{formatted_references}".strip()
+
+    return body
+
+def build_similarity_retry_prompt(
+    article: dict,
+    instruction: str,
+    mode: str,
+    similarity: float,
+    attempt: int,
+    previous_error: str = "",
+) -> str:
     target = CONTENT_WORD_TARGETS.get(mode, CONTENT_WORD_TARGETS["insight"])
-    missing_words = max(target["min"] - current_words, 0)
-    desired_words = min(800, max(450, missing_words + 180))
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
-    prompt = f"""
-    The article below is still too short and needs additional original Markdown sections.
-    Return ONLY Markdown to append to the existing `content`. Do not return JSON.
+    guide_structure_rules = build_guide_structure_rules(mode)
+    existing_content = str(article.get("content") or "")
+    current_headings = extract_markdown_headings(existing_content)
+    previous_error_note = f"\n    Previous retry problem to avoid: {previous_error}\n" if previous_error else ""
 
-    Original writing brief:
-    {original_prompt}
+    return f"""
+    The previous rewrite is too similar to the existing article and cannot be published as a new version.
+    Similarity score: {similarity:.2%}
+    Material rewrite retry: {attempt}/{MAX_REWRITE_SIMILARITY_RETRIES}
+    {previous_error_note}
 
-    Existing title:
-    {data.get("title")}
+    Owner rewrite instruction:
+    {instruction}
 
-    Existing content:
-    {data.get("content")}
+    Current article metadata:
+    - Title: {article.get("title")}
+    - Excerpt: {article.get("excerpt")}
+    - Category: {article.get("category")}
+    - Tags: {json.dumps(article.get("tags") or [], ensure_ascii=False)}
+
+    Current H2/H3 outline to improve, not copy:
+    {json.dumps(current_headings, ensure_ascii=False, indent=2)}
+
+    Current article content for factual context only. Do not copy the structure or paragraph wording:
+    {existing_content[:16000]}
+
+    Rewrite again with a materially different editorial version while preserving accurate facts and the same general topic.
 
     Requirements:
-    - Write {desired_words}-{desired_words + 180} additional words.
-    - Do not repeat existing paragraphs.
-    - Use H2/H3 headings only, never H1.
-    - Add practical patient guidance, culturally aware context, concrete next steps, brief human moments, and evidence-backed details.
-    - If the article lacks a table, list, one quote/callout, FAQ, disclaimer, or clickable References, include the missing block.
-    - Do not create repeated callout boxes; use normal paragraphs for most additions.
-    - Current word count is {current_words}; minimum required is {target["min"]}.
-    - Supplement attempt: {attempt}/{MAX_SUPPLEMENT_RETRIES}.
+    - Keep the same JSON schema.
+    - `content` must be {target["label"]}; never below {target["min"]} words.
+    - For guide mode, write at least 10 substantial H2 sections plus FAQ and Next Steps.
+    - Make the article visibly different in version comparison.
+    - Write a new opening and conclusion.
+    - Rewrite every paragraph in fresh language.
+    - Improve the H2/H3 structure; reorder sections when it improves SEO and reader flow.
+    - Add deeper patient-facing examples, decision points, FAQ answers, next steps, and culturally specific guidance where relevant.
+    - Do not reuse long phrases or the same paragraph-by-paragraph structure from the existing article.
+    - Do not summarize the article into a short draft.
+    - Keep `content` in Markdown and do not include a top-level H1.
+    - Provide 3-5 distinct image prompts.
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {guide_structure_rules}
+
+    Output ONLY valid JSON.
     """
 
-    response = client.chat.completions.create(
-        model="deepseek/deepseek-chat",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.45,
-        max_tokens=6000,
-    )
-    return clean_markdown_supplement(response.choices[0].message.content or "")
+def ensure_rewrite_changes_article(
+    client: OpenAI,
+    article: dict,
+    data: dict,
+    instruction: str,
+    mode: str,
+) -> dict:
+    if not should_enforce_material_rewrite(instruction):
+        print("[*] Material rewrite similarity guard skipped for specific edit instruction.")
+        return data
 
-def ensure_article_length(client: OpenAI, data: dict, original_prompt: str, mode: str) -> dict:
-    target = CONTENT_WORD_TARGETS.get(mode, CONTENT_WORD_TARGETS["insight"])
-    best_data = data
-    best_words = count_markdown_words(str(data.get("content") or ""))
+    existing_content = str(article.get("content") or "")
+    last_retry_error = ""
 
-    for attempt in range(1, MAX_LENGTH_RETRIES + 1):
-        current_words = count_markdown_words(str(data.get("content") or ""))
-        print(f"[*] Draft word count after attempt {attempt - 1}: {current_words} words")
+    for attempt in range(0, MAX_REWRITE_SIMILARITY_RETRIES + 1):
+        rewritten_content = str(data.get("content") or "")
+        similarity = content_similarity(existing_content, rewritten_content)
+        print(f"[*] Rewrite similarity vs existing content after attempt {attempt}: {similarity:.2%}")
 
-        if current_words >= target["min"]:
+        if similarity < REWRITE_SIMILARITY_THRESHOLD:
             return data
 
-        if current_words > best_words:
-            best_data = data
-            best_words = current_words
+        if attempt >= MAX_REWRITE_SIMILARITY_RETRIES:
+            break
 
-        print(f"[*] Draft is shorter than {target['min']} words. Expanding attempt {attempt}/{MAX_LENGTH_RETRIES}...")
-        response = client.chat.completions.create(
-            model="deepseek/deepseek-chat",
-            messages=[{"role": "user", "content": build_length_retry_prompt(data, original_prompt, mode, current_words, attempt)}],
-            temperature=0.45,
-            max_tokens=14000 if mode == "guide" else 11000,
+        print(
+            "[*] Rewrite is too similar to the current article. "
+            f"Retrying with stricter material-change prompt ({attempt + 1}/{MAX_REWRITE_SIMILARITY_RETRIES})..."
         )
-        data = extract_json_payload(response.choices[0].message.content.strip())
-
-    final_words = count_markdown_words(str(data.get("content") or ""))
-    if final_words > best_words:
-        best_data = data
-        best_words = final_words
-
-    for attempt in range(1, MAX_SUPPLEMENT_RETRIES + 1):
-        if best_words >= target["min"]:
-            return best_data
-
-        print(f"[*] Generating supplemental Markdown attempt {attempt}/{MAX_SUPPLEMENT_RETRIES}...")
-        supplement = generate_supplemental_markdown(client, best_data, original_prompt, mode, best_words, attempt)
-        if supplement:
-            best_data["content"] = f"{best_data.get('content', '').rstrip()}\n\n{supplement.strip()}"
-            best_words = count_markdown_words(str(best_data.get("content") or ""))
-            print(f"[*] Word count after supplemental attempt {attempt}: {best_words} words")
-
-    final_words = count_markdown_words(str(best_data.get("content") or ""))
-    print(f"[*] Final expanded word count: {final_words} words")
-
-    if final_words < target["min"]:
-        raise ValueError(
-            f"Generated {mode} is still too short after {MAX_LENGTH_RETRIES} rewrite retries "
-            f"and {MAX_SUPPLEMENT_RETRIES} supplemental retries: "
-            f"{final_words} words; minimum is {target['min']}. Not publishing short article."
+        retry_prompt = build_similarity_retry_prompt(
+            article,
+            instruction,
+            mode,
+            similarity,
+            attempt + 1,
+            last_retry_error,
         )
+        try:
+            candidate = generate_chunked_article_data(
+                client,
+                retry_prompt,
+                article.get("title") or "rewrite",
+                mode,
+                article=article,
+                instruction=instruction,
+            )
+            data = candidate
+            last_retry_error = ""
+        except ValueError as exc:
+            last_retry_error = str(exc)
+            print(f"[!] Material rewrite retry produced an invalid draft: {last_retry_error}")
+            continue
 
-    return best_data
+    final_similarity = content_similarity(existing_content, str(data.get("content") or ""))
+    raise ValueError(
+        "Rewrite is still too similar to the existing article "
+        f"({final_similarity:.2%} similarity; threshold is {REWRITE_SIMILARITY_THRESHOLD:.0%}). "
+        "Not publishing a new version because readers would not be able to compare meaningful changes."
+    )
+
+def call_text_model(client: OpenAI, prompt: str, temperature: float, max_tokens: int) -> str:
+    """Call the text model and return message content."""
+    response = client.chat.completions.create(
+        model=TEXT_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    return (response.choices[0].message.content or "").strip()
+
+def normalize_outline(raw_outline: Any, mode: str) -> List[str]:
+    """Coerce an LLM outline into a clean list of H2 heading names."""
+    if isinstance(raw_outline, list):
+        items = raw_outline
+    elif isinstance(raw_outline, str):
+        items = raw_outline.splitlines()
+    else:
+        items = []
+
+    headings: List[str] = []
+    seen = set()
+    for item in items:
+        if isinstance(item, dict):
+            heading = str(item.get("heading") or item.get("title") or "").strip()
+        else:
+            heading = str(item).strip()
+        heading = re.sub(r"^#+\s*", "", heading)
+        heading = re.sub(r"^\d+[\.)]\s*", "", heading).strip()
+        if not heading:
+            continue
+        key = heading.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        headings.append(heading)
+
+    if mode == "guide":
+        fallback_headings = [
+            "What This Healthcare Topic Means",
+            "Why It Matters for Asian American Families",
+            "Common Barriers and Decision Points",
+            "Insurance, Cost, and Scheduling Questions",
+            "Language Access and Communication Support",
+            "Cultural Trust and Family Decision-Making",
+            "What to Ask Your Clinician",
+            "Prevention, Follow-Up, and When to Seek Care",
+            "Comparison of Care Options",
+        ]
+        for heading in fallback_headings:
+            if len([item for item in headings if item.lower() not in {"faqs", "next steps", "references"}]) >= 10:
+                break
+            if heading.lower() not in seen:
+                seen.add(heading.lower())
+                headings.append(heading)
+        if not any(heading.lower() == "faqs" for heading in headings):
+            headings.append("FAQs")
+        if not any(heading.lower() == "next steps" for heading in headings):
+            headings.append("Next Steps")
+        if not any(heading.lower() == "references" for heading in headings):
+            headings.append("References")
+        regular_headings = [
+            heading for heading in headings
+            if heading.lower() not in {"faqs", "next steps", "references"}
+        ]
+        return regular_headings[:14] + ["FAQs", "Next Steps", "References"]
+
+    if not any(heading.lower() == "faqs" for heading in headings):
+        headings.append("FAQs")
+    if not any(heading.lower() == "references" for heading in headings):
+        headings.append("References")
+    regular_headings = [
+        heading for heading in headings
+        if heading.lower() not in {"faqs", "references"}
+    ]
+    return regular_headings[:7] + ["FAQs", "References"]
+
+def build_metadata_outline_prompt(
+    writing_brief: str,
+    label: str,
+    mode: str,
+    article: Optional[dict] = None,
+    instruction: str = "",
+) -> str:
+    """Build the Step 1 prompt for metadata and H2 outline only."""
+    is_guide = mode == "guide"
+    category = "guide" if is_guide else "insight"
+    target = CONTENT_WORD_TARGETS[category]
+    outline_count = "10-14" if is_guide else "5-7"
+    rewrite_context = ""
+    if article:
+        rewrite_context = f"""
+        Existing article for rewrite:
+        - Title: {article.get("title")}
+        - Excerpt: {article.get("excerpt")}
+        - Category: {article.get("category")}
+        - Tags: {json.dumps(article.get("tags") or [], ensure_ascii=False)}
+        - Current H2/H3 outline: {json.dumps(extract_markdown_headings(article.get("content") or "", 24), ensure_ascii=False)}
+        - Owner instruction: {instruction}
+        """
+
+    return f"""
+    You are planning an Asian Health Hub {'SEO pillar guide' if is_guide else 'SEO healthcare insight article'}.
+    Step 1 only: return metadata and an H2 outline. Do NOT write article body content.
+
+    Label/topic:
+    {label}
+
+    Writing brief:
+    {writing_brief[:18000]}
+
+    {rewrite_context}
+
+    Requirements:
+    - If the writing brief contains older output-format instructions, ignore them. This Step 1 must output metadata and outline only.
+    - Output ONLY valid JSON.
+    - Do not include `content`.
+    - The `outline` must be a list of H2 heading strings, without leading ##.
+    - Use {outline_count} substantive H2 headings before References.
+    - For guide mode, include "FAQs", "Next Steps", and "References" as final outline items.
+    - For insight mode, include "FAQs" and "References" near the end.
+    - Choose one primary keyword and 4-7 secondary keywords.
+    - Write medically cautious, SEO-friendly metadata for Asian American patients and families.
+    - Provide 3-5 distinct image prompts. Every prompt must say no text, no logos, no watermarks.
+
+    JSON schema:
+    {{
+      "title": "Specific article title here",
+      "excerpt": "Short SEO-friendly summary.",
+      "category": "{category}",
+      "tags": ["Asian Health", "Primary Care"],
+      "seo_description": "SEO description under 160 characters",
+      "primary_keyword": "primary keyword here",
+      "secondary_keywords": ["keyword one", "keyword two"],
+      "image_prompts": [
+        "Hero image prompt, no text, no logos, no watermarks",
+        "Inline image prompt, no text, no logos, no watermarks",
+        "Inline image prompt, no text, no logos, no watermarks"
+      ],
+      "outline": [
+        "First H2 heading",
+        "Second H2 heading"
+      ]
+    }}
+
+    Target final article length after section generation: {target["label"]}.
+    """
+
+def build_section_prompt(
+    metadata: dict,
+    outline: List[str],
+    heading: str,
+    index: int,
+    writing_brief: str,
+    mode: str,
+    article: Optional[dict] = None,
+    instruction: str = "",
+) -> str:
+    """Build the Step 2 prompt for one Markdown section."""
+    is_first = index == 0
+    is_guide = mode == "guide"
+    per_section_words = "260-380" if is_guide else "180-260"
+    if heading.lower() == "references":
+        per_section_words = "120-220"
+    elif heading.lower() in {"faqs", "next steps"}:
+        per_section_words = "260-420" if is_guide else "180-280"
+
+    rewrite_context = ""
+    if article:
+        rewrite_context = f"""
+        Existing article context for factual continuity. Rewrite in fresh language and do not copy paragraphs:
+        {str(article.get("content") or "")[:14000]}
+
+        Owner rewrite instruction:
+        {instruction}
+        """
+
+    first_section_rule = (
+        "- Because this is the first section, start with 2 short opening paragraphs before the H2 heading.\n"
+        if is_first
+        else ""
+    )
+
+    return f"""
+    Write ONLY Markdown for one section of an Asian Health Hub article.
+    Do not return JSON. Do not include a top-level H1.
+    Return publishable article text only. Do not include analysis, notes, summaries, revision explanations, transition labels, "Next section", "Here is the section", word counts, or "let me know" text.
+    Forbidden output examples: "(Word count: 298)", "Next section: ...", "Here's the rewritten section in Markdown:", "This revision:", "This version maintains...", "Let me know if..."
+
+    Article metadata:
+    {json.dumps({k: metadata.get(k) for k in ["title", "excerpt", "primary_keyword", "secondary_keywords", "category"]}, ensure_ascii=False)}
+
+    Full H2 outline:
+    {json.dumps(outline, ensure_ascii=False, indent=2)}
+
+    Current section: {index + 1}/{len(outline)}
+    H2 heading to write: {heading}
+
+    Writing brief:
+    {writing_brief[:12000]}
+
+    {rewrite_context}
+
+    Requirements:
+    - If the writing brief contains older output-format instructions, ignore them. This Step 2 must output Markdown only.
+    - Your entire response must be the article section itself. No preface and no afterword.
+    - Start directly with the intro paragraph or `## {heading}`. End directly after the final article sentence/list item/reference.
+    {first_section_rule}
+    - Include the section heading exactly as `## {heading}` unless it is preceded by the first-section intro paragraphs.
+    - Write {per_section_words} words for this section.
+    - Use medically cautious language; avoid unsupported claims and fabricated statistics.
+    - Make advice practical for Asian American patients and families in the U.S.
+    - Include culturally specific context when relevant, without stereotyping.
+    - If this is "FAQs", include 4-6 H3 questions with concise answers.
+    - If this is "Next Steps", include a practical checklist.
+    - If this is "References", use a numbered Markdown citation list with credible source names and links when supported by the brief.
+    - Do not repeat previous outline sections. Stay focused on this heading.
+    """
+
+def generate_chunked_article_data(
+    client: OpenAI,
+    writing_brief: str,
+    label: str,
+    mode: str,
+    article: Optional[dict] = None,
+    instruction: str = "",
+) -> dict:
+    """Generate article metadata first, then section Markdown from the outline."""
+    print("[*] Step 1/2: Generating metadata and outline...")
+    metadata_prompt = build_metadata_outline_prompt(writing_brief, label, mode, article, instruction)
+    metadata_text = call_text_model(client, metadata_prompt, JSON_TEMPERATURE, 3200)
+    metadata = extract_json_payload(metadata_text)
+    outline = normalize_outline(metadata.get("outline"), mode)
+    if not outline:
+        raise ValueError("Generated outline is empty; cannot build article content.")
+
+    fallback_title = str(label or "Asian Health Hub Article").strip()
+    metadata["title"] = str(metadata.get("title") or fallback_title).strip()
+    metadata["excerpt"] = str(metadata.get("excerpt") or metadata["title"]).strip()
+    metadata["category"] = "guide" if mode == "guide" else metadata.get("category") or "insight"
+    if isinstance(metadata.get("tags"), list):
+        metadata["tags"] = [str(tag).strip() for tag in metadata["tags"] if str(tag).strip()]
+    else:
+        metadata["tags"] = ["Asian Health"]
+    metadata["seo_description"] = str(metadata.get("seo_description") or metadata["excerpt"])[:160]
+    metadata["primary_keyword"] = str(metadata.get("primary_keyword") or metadata["title"]).strip()
+    if isinstance(metadata.get("secondary_keywords"), list):
+        metadata["secondary_keywords"] = [
+            str(keyword).strip()
+            for keyword in metadata["secondary_keywords"]
+            if str(keyword).strip()
+        ]
+    else:
+        metadata["secondary_keywords"] = []
+    metadata["image_prompts"] = normalize_image_prompts(metadata)
+    print(f"[*] Metadata ready: {metadata['title']}")
+    print(f"[*] Outline ready: {len(outline)} sections")
+
+    print(f"[*] Step 2/2: Generating {len(outline)} Markdown sections...")
+    sections: List[str] = []
+    for index, heading in enumerate(outline):
+        print(f"[*] Generating section {index + 1}/{len(outline)}: {heading}")
+        section_prompt = build_section_prompt(metadata, outline, heading, index, writing_brief, mode, article, instruction)
+        section = call_text_model(
+            client,
+            section_prompt,
+            SECTION_TEMPERATURE,
+            3200 if mode == "guide" else 2200,
+        )
+        sections.append(clean_markdown_supplement(section))
+
+    metadata["outline"] = outline
+    metadata["content"] = clean_generated_article_content("\n\n".join(sections), mode)
+    word_count = count_markdown_words(metadata["content"])
+    print(f"[*] Chunked article word count: {word_count}")
+    print("[*] Article content assembled.")
+    return metadata
 
 def create_article_from_prompt(client: OpenAI, supabase: Client, prompt: str, label: str, mode: str = "insight"):
     print("[*] Generating article content via Deepseek...")
@@ -821,24 +1416,16 @@ def create_article_from_prompt(client: OpenAI, supabase: Client, prompt: str, la
     print(f"[*] Content mode: {mode}")
 
     try:
-        # Step 1: Generate Text with Deepseek
-        response = client.chat.completions.create(
-            model="deepseek/deepseek-chat",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
-            max_tokens=12000 if mode == "guide" else 9500,
-        )
-
-        content = response.choices[0].message.content.strip()
-        data = extract_json_payload(content)
-        data = ensure_article_length(client, data, prompt, mode)
+        data = generate_chunked_article_data(client, prompt, label, mode)
         
         base_slug = generate_slug(data["title"])
         slug = make_unique_slug(supabase, base_slug)
         if slug != base_slug:
             print(f"[*] Slug already existed. Using unique slug: {slug}")
 
+        print("[*] Generating article images...")
         image_urls = generate_article_images(client, data, slug)
+        print(f"[*] Article images ready: {len(image_urls)}")
         
         seo_meta = {
             "description": data["seo_description"],
@@ -867,7 +1454,7 @@ def create_article_from_prompt(client: OpenAI, supabase: Client, prompt: str, la
             "seo_meta": seo_meta
         }
 
-        print(f"[*] Inserting article: {data['title']}")
+        print(f"[*] Publishing article to Supabase: {data['title']}")
         res = supabase.table("articles").insert(article_payload).execute()
         print(f"[+] Article published successfully: /insights/{slug}")
 
@@ -903,14 +1490,15 @@ def rewrite_article(identifier: str, instruction: str) -> None:
     print(f"[*] Existing word count: {old_words}")
 
     prompt = build_rewrite_prompt(article, instruction, mode=mode)
-    response = client.chat.completions.create(
-        model="deepseek/deepseek-chat",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.55,
-        max_tokens=14000 if mode == "guide" else 11000,
+    data = generate_chunked_article_data(
+        client,
+        prompt,
+        article.get("title") or identifier,
+        mode,
+        article=article,
+        instruction=instruction,
     )
-    data = extract_json_payload(response.choices[0].message.content.strip())
-    data = ensure_article_length(client, data, prompt, mode)
+    data = ensure_rewrite_changes_article(client, article, data, instruction, mode)
     new_words = count_markdown_words(data.get("content") or "")
 
     image_urls = []

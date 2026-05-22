@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { DM_Sans } from 'next/font/google';
 import { PageViewTracker } from '@/components/layout/page-view-tracker';
 import { SiteChrome } from '@/components/layout/site-chrome';
 import { JsonLd } from '@/lib/json-ld';
@@ -8,9 +8,9 @@ import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
 import './globals.css';
 
-const inter = Inter({
+const dmSans = DM_Sans({
   variable: '--font-sans',
-  subsets: ['latin', 'vietnamese'],
+  subsets: ['latin', 'latin-ext'],
   display: 'swap',
 });
 
@@ -75,7 +75,7 @@ export default function RootLayout({
   };
 
   return (
-    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+    <html lang="en" className={`${dmSans.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col font-sans">
         <JsonLd data={[organizationJsonLd, websiteJsonLd]} />
         <PageViewTracker />

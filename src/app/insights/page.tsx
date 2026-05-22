@@ -110,14 +110,14 @@ function FeaturedArticleCard({ article }: { article?: Article }) {
   return (
     <Link
       href={`/insights/${article.slug}`}
-      className="group grid overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg md:grid-cols-2"
+      className="group grid h-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg md:grid-cols-[1.05fr_0.95fr]"
     >
       <ArticleImage
         src={article.seo_meta.og_image}
         alt={article.title}
-        className="h-72 w-full md:h-full md:min-h-[320px]"
+        className="h-72 w-full md:h-full md:min-h-[420px]"
       />
-      <div className="flex min-h-[320px] flex-col justify-center space-y-4 p-6 sm:p-8">
+      <div className="flex min-h-[360px] flex-col justify-center space-y-4 p-6 sm:p-8">
         <ArticleMeta article={article} />
         <h3 className="text-xl font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
           {article.title}
@@ -140,12 +140,12 @@ function SecondaryTopArticleCard({ article }: { article: Article }) {
   return (
     <Link
       href={`/insights/${article.slug}`}
-      className="group grid overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg sm:grid-cols-2"
+      className="group grid h-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg sm:grid-cols-[0.9fr_1fr]"
     >
       <ArticleImage
         src={article.seo_meta.og_image}
         alt={article.title}
-        className="h-52 w-full"
+        className="h-56 w-full sm:h-full sm:min-h-[210px]"
       />
       <div className="flex min-w-0 flex-col justify-center gap-2 p-4">
         <ArticleMeta article={article} />
@@ -216,11 +216,11 @@ function ArticleSection({
         </div>
       </div>
 
-      <div className="grid items-start gap-6 xl:grid-cols-3">
-        <div className="xl:col-span-2">
+      <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(0,2.1fr)_minmax(360px,1fr)]">
+        <div className="h-full">
           <FeaturedArticleCard article={featured} />
         </div>
-        <div className="grid gap-6 self-start xl:col-span-1">
+        <div className="grid h-full gap-6 xl:grid-rows-2">
           {topArticles.map((article) => (
             <SecondaryTopArticleCard key={article.id} article={article} />
           ))}
@@ -287,13 +287,13 @@ export default async function InsightsPage({
   return (
     <main className="bg-white">
       <section className="px-2 pt-4 sm:px-4">
-        <div className="mx-auto max-w-[1240px] rounded-2xl bg-[var(--ahh-blue)] px-7 py-14 sm:px-12 lg:px-20">
-          <div className="grid items-center gap-10 lg:grid-cols-[1fr_280px]">
+        <div className="brand-hero mx-auto max-w-[1240px] px-7 py-14 sm:px-12 lg:px-20">
+          <div className="relative z-10 grid items-center gap-10 lg:grid-cols-[1fr_280px]">
             <div className="max-w-3xl">
-              <h1 className="text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
+              <h1 className="text-4xl font-semibold leading-tight tracking-tight text-white sm:text-5xl">
                 Health Insights for Asian American Patients
               </h1>
-              <p className="mt-5 max-w-2xl text-sm leading-6 text-blue-100">
+              <p className="mt-5 max-w-2xl text-sm leading-6 text-white/72">
                 Practical health articles and in-depth guides tailored to Vietnamese and Korean American communities navigating the US healthcare system and finding the right clinic.
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
@@ -303,8 +303,8 @@ export default async function InsightsPage({
                     href={filter.slug ? categoryHref(filter.slug) : '/insights'}
                     className={`rounded-full border px-4 py-1.5 text-xs font-medium transition ${
                       (!filter.slug && !categorySlug && !tagSlug) || filter.slug === selectedMode
-                        ? 'border-white bg-white text-[var(--ahh-blue)]'
-                        : 'border-white/40 text-white hover:bg-white hover:text-[var(--ahh-blue)]'
+                        ? 'border-[var(--ahh-lime)] bg-[var(--ahh-lime)] text-[var(--ahh-deep-teal)]'
+                        : 'border-white/40 text-white hover:bg-white hover:text-[var(--ahh-deep-teal)]'
                     }`}
                   >
                     {filter.label}
@@ -324,8 +324,8 @@ export default async function InsightsPage({
       </section>
 
       <section className="relative z-10 mx-auto -mt-8 max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div className="rounded-xl bg-white p-7 shadow-xl shadow-gray-200/70">
-          <h2 className="text-base font-semibold text-gray-950">Hot Topic</h2>
+        <div className="brand-card rounded-lg p-7">
+          <h2 className="text-base font-semibold text-[var(--ahh-ink)]">Hot Topic</h2>
           <div className="mt-6 flex flex-wrap gap-2">
             <Link
               href="/insights"

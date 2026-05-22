@@ -344,14 +344,14 @@ function VersionSwitcher({
 
 function NewsletterInline() {
   return (
-    <aside className="my-10 rounded-lg bg-[var(--ahh-blue)] px-6 py-6 text-center text-white">
+    <aside className="my-10 rounded-lg bg-[var(--ahh-deep-teal)] px-6 py-6 text-center text-white">
       <h2 className="text-lg font-semibold">AHH Pulse Newsletter</h2>
-      <p className="mx-auto mt-1 max-w-md text-xs text-blue-100">
+      <p className="mx-auto mt-1 max-w-md text-xs text-white/70">
         Monthly healthcare guides, clinic spotlights, and practical tips for Asian American patients.
       </p>
       <div className="mx-auto mt-4 flex max-w-sm items-center rounded-full bg-white p-1">
-        <span className="flex-1 px-4 text-left text-xs text-gray-400">Enter your email</span>
-        <span className="rounded-full bg-[var(--ahh-blue)] px-4 py-2 text-xs font-semibold text-white">
+        <span className="flex-1 px-4 text-left text-xs text-[var(--ahh-muted)]">Enter your email</span>
+        <span className="rounded-full bg-[var(--ahh-lime)] px-4 py-2 text-xs font-bold text-[var(--ahh-deep-teal)]">
           Subscribe
         </span>
       </div>
@@ -385,17 +385,17 @@ function slugifyHeading(text: string) {
 function extractOutline(content: string): ArticleOutlineItem[] {
   return content
     .split('\n')
-    .map((line) => {
-      const match = line.match(/^(##|###)\s+(.+)$/);
+    .map((line): ArticleOutlineItem | null => {
+      const match = line.match(/^##\s+(.+)$/);
       if (!match) return null;
 
-      const title = match[2].replace(/[#*_`]/g, '').trim();
+      const title = match[1].replace(/[#*_`]/g, '').trim();
       if (!title) return null;
 
       return {
         id: slugifyHeading(title),
         title,
-        level: match[1] === '##' ? 2 : 3,
+        level: 2,
       } satisfies ArticleOutlineItem;
     })
     .filter((item): item is ArticleOutlineItem => Boolean(item));
@@ -465,7 +465,7 @@ function createMarkdownComponents() {
       <td className="border-b border-gray-200 px-4 py-3">{children}</td>
     ),
     blockquote: ({ children }: { children?: ReactNode }) => (
-      <blockquote className="my-8 rounded-lg border-l-4 border-[var(--ahh-blue)] bg-blue-50 px-6 py-5 text-base leading-8 text-gray-700">
+      <blockquote className="brand-quote my-8 rounded-lg px-6 py-5 text-base leading-8 text-[var(--ahh-ink)]">
         {children}
       </blockquote>
     ),
@@ -510,11 +510,18 @@ function prepareArticleContent(content: string, title: string) {
     .split('\n')
     .filter((line) => {
       const trimmed = line.trim();
+      const chatterText = trimmed.replace(/^[-*]\s+/, '').replace(/^>+\s*/, '').trim();
       const normalizedLine = normalizeTitle(trimmed.replace(/^#+\s*/, ''));
 
       if (!trimmed) return true;
       if (trimmed.startsWith('# ') && normalizedLine === normalizedTitle) return false;
       if (normalizedLine === `${normalizedTitle} illustration`) return false;
+      if (/^["“”']*\(?\s*word\s+count\s*:\s*\d+/i.test(chatterText)) return false;
+      if (/^["“”']*next\s+section\s*:/i.test(chatterText)) return false;
+      if (/^here(?:'|’)?s\s+(?:the\s+)?(?:rewritten\s+)?section\s+in\s+markdown\s*:?$/i.test(chatterText)) return false;
+      if (/^this\s+(?:revision|version|section|draft)\s*:?$/i.test(chatterText)) return false;
+      if (/^this\s+(?:version|revision)\s+(?:maintains|keeps|uses|includes|focuses|simplifies|improves)\b/i.test(chatterText)) return false;
+      if (/^let\s+me\s+know\b/i.test(chatterText)) return false;
 
       return true;
     });
@@ -674,16 +681,16 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
       />
       <main className="bg-white">
         <section className="px-2 pt-4 sm:px-4">
-          <div className="mx-auto max-w-[1240px] rounded-xl bg-[var(--ahh-blue)] px-7 py-10 sm:px-12 lg:px-16">
-            <div className="grid items-center gap-8 lg:grid-cols-[1fr_280px]">
+          <div className="brand-hero mx-auto max-w-[1240px] px-7 py-10 sm:px-12 lg:px-16">
+            <div className="relative z-10 grid items-center gap-8 lg:grid-cols-[1fr_280px]">
               <div className="max-w-3xl">
                 <h1 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
                   {selectedView.title}
                 </h1>
-                <p className="mt-4 max-w-2xl text-sm leading-6 text-blue-100">
+                <p className="mt-4 max-w-2xl text-sm leading-6 text-white/72">
                   {selectedView.excerpt || getSeoString(selectedView.seoMeta, 'description') || 'A practical guide for Asian American patients navigating care with confidence.'}
                 </p>
-                <div className="mt-5 flex flex-wrap items-center gap-2 text-xs text-blue-100">
+                <div className="mt-5 flex flex-wrap items-center gap-2 text-xs text-white/72">
                   <span className="rounded-full border border-white/35 px-3 py-1">
                     {selectedView.category || 'Guide'}
                   </span>

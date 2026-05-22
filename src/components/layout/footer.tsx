@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { NewsletterForm } from './newsletter-form';
+import { BrandLogo } from './brand-logo';
 
 const socialLinks = [
   {
@@ -37,11 +38,11 @@ export function Footer() {
   return (
     <footer>
       {/* Newsletter Section */}
-      <section className="bg-gray-900 py-10 px-4 sm:px-6 lg:px-8">
+      <section className="bg-[var(--ahh-deep-teal)] px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl flex flex-col md:flex-row items-center justify-between gap-6">
           <div>
-            <h3 className="text-xl font-bold text-white">Subscribe to AHH Pulse</h3>
-            <p className="text-sm text-gray-400 mt-1">
+            <h3 className="text-2xl font-bold text-white">Subscribe to AHH Pulse</h3>
+            <p className="mt-1 text-sm text-white/70">
               Get tips on navigating healthcare, finding clinics, health insurance, health
               guidance, and community updates — delivered to your inbox.
             </p>
@@ -51,18 +52,15 @@ export function Footer() {
       </section>
 
       {/* Footer Links */}
-      <section className="bg-gray-950 py-10 px-4 sm:px-6 lg:px-8">
+      <section className="bg-[#07382f] px-4 py-10 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {/* Brand */}
             <div>
-              <Link href="/" className="flex items-center gap-2 mb-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-blue-light)" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                <span className="text-sm font-bold tracking-tight uppercase text-white">
-                  Asian Health Hub
-                </span>
-              </Link>
-              <p className="text-xs text-gray-400 leading-relaxed mb-4">
+              <div className="mb-3">
+                <BrandLogo inverted />
+              </div>
+              <p className="mb-4 text-xs leading-relaxed text-white/62">
                 Connecting Vietnamese and Korean-speaking patients with trusted clinics across the United States. Free to use. Always.
               </p>
               {/* Social Icons */}
@@ -71,7 +69,7 @@ export function Footer() {
                   <a
                     key={social.label}
                     href={social.href}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-white/8 text-white/65 transition-colors hover:bg-[var(--ahh-lime)] hover:text-[var(--ahh-deep-teal)]"
                     aria-label={social.label}
                   >
                     {social.icon}
@@ -82,7 +80,7 @@ export function Footer() {
 
             {/* Directory */}
             <div>
-              <h4 className="text-sm font-semibold text-white mb-3">DIRECTORY</h4>
+              <h4 className="mb-3 text-xs font-extrabold uppercase text-[var(--ahh-lime)]">Directory</h4>
               <ul className="space-y-2">
                 {[
                   { href: '/search?groupBy=specialty', label: 'Browse by Specialty' },
@@ -90,7 +88,7 @@ export function Footer() {
                   { href: '/search?groupBy=language', label: 'Browse by Language' },
                 ].map((link) => (
                   <li key={link.href}>
-                    <Link href={link.href} className="text-sm text-gray-400 hover:text-white transition-colors">
+                    <Link href={link.href} className="text-sm text-white/62 transition-colors hover:text-white">
                       {link.label}
                     </Link>
                   </li>
@@ -100,7 +98,7 @@ export function Footer() {
 
             {/* Resources */}
             <div>
-              <h4 className="text-sm font-semibold text-white mb-3">RESOURCES</h4>
+              <h4 className="mb-3 text-xs font-extrabold uppercase text-[var(--ahh-lime)]">Resources</h4>
               <ul className="space-y-2">
                 {[
                   { href: '/insights', label: 'Insights & Guides' },
@@ -108,7 +106,7 @@ export function Footer() {
                   { href: '#about', label: 'About Us' },
                 ].map((link) => (
                   <li key={link.href}>
-                    <Link href={link.href} className="text-sm text-gray-400 hover:text-white transition-colors">
+                    <Link href={link.href} className="text-sm text-white/62 transition-colors hover:text-white">
                       {link.label}
                     </Link>
                   </li>
@@ -118,23 +116,23 @@ export function Footer() {
 
             {/* For Clinic + Legal */}
             <div>
-              <h4 className="text-sm font-semibold text-white mb-3">FOR CLINIC</h4>
+              <h4 className="mb-3 text-xs font-extrabold uppercase text-[var(--ahh-lime)]">For Clinic</h4>
               <ul className="space-y-2">
                 <li>
-                  <Link href="/claim" className="text-sm text-gray-400 hover:text-white transition-colors">
+                  <Link href="/claim" className="text-sm text-white/62 transition-colors hover:text-white">
                     Claim a Free Profile
                   </Link>
                 </li>
               </ul>
 
-              <h4 className="text-sm font-semibold text-white mt-6 mb-3">LEGAL</h4>
+              <h4 className="mb-3 mt-6 text-xs font-extrabold uppercase text-[var(--ahh-lime)]">Legal</h4>
               <ul className="space-y-2">
                 {[
                   { href: '/privacy', label: 'Privacy Policy' },
                   { href: '/terms', label: 'Terms of Use' },
                 ].map((link) => (
                   <li key={link.href}>
-                    <Link href={link.href} className="text-sm text-gray-400 hover:text-white transition-colors">
+                    <Link href={link.href} className="text-sm text-white/62 transition-colors hover:text-white">
                       {link.label}
                     </Link>
                   </li>
@@ -144,8 +142,8 @@ export function Footer() {
           </div>
 
           {/* Copyright */}
-          <div className="mt-8 pt-6 border-t border-gray-800">
-            <p className="text-xs text-gray-500 text-center">
+          <div className="mt-8 border-t border-white/10 pt-6">
+            <p className="text-center text-xs text-white/48">
               © {new Date().getFullYear()} Asian Health Hub. Not a medical provider. Always consult a licensed healthcare professional.
             </p>
           </div>

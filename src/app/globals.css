@@ -139,20 +139,94 @@
    ============================================ */
 
 :root {
-  --ahh-blue: #2563EB;
-  --ahh-blue-light: #60A5FA;
-  --ahh-blue-dark: #1D4ED8;
-  --ahh-blue-50: #EFF6FF;
-  --ahh-blue-100: #DBEAFE;
-  --ahh-blue-700: #1D4ED8;
-  --ahh-blue-900: #1E3A5F;
-  --ahh-accent: #F59E0B;
-  --ahh-gradient: linear-gradient(135deg, var(--ahh-blue) 0%, var(--ahh-blue-dark) 100%);
+  --ahh-deep-teal: #005c4b;
+  --ahh-deep-teal-2: #00483c;
+  --ahh-forest: #17624f;
+  --ahh-lime: #c9ff5d;
+  --ahh-soft-yellow: #f7efaa;
+  --ahh-blush-pink: #ffc9c5;
+  --ahh-sage-green: #93c9ad;
+  --ahh-mist: #eef7f2;
+  --ahh-ink: #10231f;
+  --ahh-muted: #5f726b;
+  --ahh-blue: var(--ahh-deep-teal);
+  --ahh-blue-light: var(--ahh-sage-green);
+  --ahh-blue-dark: var(--ahh-deep-teal-2);
+  --ahh-blue-50: var(--ahh-mist);
+  --ahh-blue-100: #dcefe8;
+  --ahh-blue-700: var(--ahh-deep-teal);
+  --ahh-blue-900: var(--ahh-ink);
+  --ahh-accent: var(--ahh-lime);
+  --ahh-gradient: linear-gradient(135deg, var(--ahh-deep-teal) 0%, var(--ahh-forest) 100%);
   --success: oklch(0.65 0.20 145);
   --warning: oklch(0.70 0.18 65);
   --orange: oklch(0.70 0.18 50);
   --purple: oklch(0.55 0.20 300);
   --teal: oklch(0.60 0.15 175);
+}
+
+body {
+  background:
+    linear-gradient(180deg, rgba(201, 255, 93, 0.16) 0, rgba(238, 247, 242, 0) 220px),
+    var(--background);
+  color: var(--ahh-ink);
+  letter-spacing: 0;
+}
+
+.brand-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--ahh-deep-teal);
+  color: var(--ahh-lime);
+  padding: 0.28rem 0.72rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.brand-card {
+  border: 1px solid rgba(0, 92, 75, 0.08);
+  background: #fff;
+  box-shadow: 0 18px 45px rgba(0, 92, 75, 0.08);
+}
+
+.brand-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--ahh-deep-teal);
+  color: white;
+  box-shadow: 0 24px 70px rgba(0, 92, 75, 0.16);
+}
+
+.brand-hero::before,
+.brand-hero::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(147, 201, 173, 0.22);
+  pointer-events: none;
+}
+
+.brand-hero::before {
+  width: 16rem;
+  height: 16rem;
+  right: -5rem;
+  top: -6rem;
+}
+
+.brand-hero::after {
+  width: 12rem;
+  height: 12rem;
+  left: 38%;
+  bottom: -6rem;
+}
+
+.brand-quote {
+  border-left: 4px solid var(--ahh-deep-teal);
+  background: color-mix(in srgb, var(--ahh-mist) 78%, white);
 }
 
 /* Animations */

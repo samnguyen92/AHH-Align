@@ -9,7 +9,7 @@ from jobs import check_status
 load_dotenv(".env")
 load_dotenv("../.env.local")
 
-DEFAULT_AGENT_MODEL = "deepseek/deepseek-chat"
+DEFAULT_AGENT_MODEL = "deepseek/deepseek-v4-flash"
 
 
 def build_context() -> str:

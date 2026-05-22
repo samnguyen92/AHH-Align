@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import sys
 import traceback
 from datetime import datetime
 from typing import Callable, Optional
@@ -14,6 +15,23 @@ load_dotenv("../.env.local")
 LOG_PATH = os.path.join(os.path.dirname(__file__), "openclaw.log")
 
 
+class TeeWriter:
+    """Write job output to both a buffer and the real console."""
+
+    def __init__(self, *streams) -> None:
+        self.streams = streams
+
+    def write(self, text: str) -> int:
+        for stream in self.streams:
+            stream.write(text)
+            stream.flush()
+        return len(text)
+
+    def flush(self) -> None:
+        for stream in self.streams:
+            stream.flush()
+
+
 def _write_log(text: str) -> None:
     timestamp = datetime.now().isoformat(timespec="seconds")
     with open(LOG_PATH, "a", encoding="utf-8") as log_file:
@@ -23,8 +41,10 @@ def _write_log(text: str) -> None:
 def _run_with_captured_output(name: str, fn: Callable[[], None]) -> str:
     buffer = io.StringIO()
     started = datetime.now()
+    stdout_tee = TeeWriter(buffer, sys.__stdout__)
+    stderr_tee = TeeWriter(buffer, sys.__stderr__)
 
-    with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+    with contextlib.redirect_stdout(stdout_tee), contextlib.redirect_stderr(stderr_tee):
         print(f"[*] Starting job: {name}")
         print(f"[*] Started at: {started.isoformat(timespec='seconds')}")
         try:

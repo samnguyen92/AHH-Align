@@ -1,0 +1,8 @@
+<svg width="310" height="81" viewBox="0 0 310 81" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M7 58C11 26.5 24.2 9 45.8 9C68.4 9 81.4 26.4 85 58" stroke="#061F1B" stroke-width="7" stroke-linecap="round"/>
+  <path d="M11 45.5H32" stroke="#061F1B" stroke-width="7" stroke-linecap="round"/>
+  <path d="M49.5 43.5L40.6 34.5C36.8 30.6 37.1 24.5 41.2 21.2C44.8 18.3 49.9 18.8 53 22.1L54.5 23.7L56.1 22.1C59.2 18.8 64.3 18.3 67.9 21.2C72 24.5 72.3 30.6 68.5 34.5L54.5 48.7" stroke="#061F1B" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="39.5" cy="31.5" r="4.5" fill="#061F1B"/>
+  <text x="105" y="34" fill="#061F1B" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="800" letter-spacing="-1.2">Asian</text>
+  <text x="105" y="68" fill="#061F1B" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="800" letter-spacing="-1.2">Health Hub</text>
+</svg>

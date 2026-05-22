@@ -69,11 +69,11 @@ export function HeroSearch() {
   }
 
   return (
-    <div className="w-full bg-white rounded-xl shadow-lg p-2 animate-slide-up">
+    <div className="brand-card w-full rounded-lg p-2 animate-slide-up">
       <div className="flex flex-col sm:flex-row items-stretch gap-2">
         {/* Keyword Input */}
         <div className="flex-[2] relative">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-deep-teal)" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
           </svg>
           <input
@@ -83,7 +83,7 @@ export function HeroSearch() {
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-full h-10 pl-9 pr-3 text-sm text-gray-700 placeholder:text-gray-400 bg-transparent border-0 outline-none rounded-lg"
+            className="h-10 w-full rounded-lg border-0 bg-transparent pl-9 pr-3 text-sm text-[var(--ahh-ink)] outline-none placeholder:text-[var(--ahh-muted)]"
           />
         </div>
 
@@ -131,7 +131,7 @@ export function HeroSearch() {
         <Button
           id="hero-search-button"
           onClick={handleSearch}
-          className="h-10 px-6 bg-[var(--ahh-blue)] hover:bg-[var(--ahh-blue-dark)] text-white font-semibold text-sm rounded-lg transition-all"
+          className="h-10 rounded-full bg-[var(--ahh-lime)] px-6 text-sm font-bold text-[var(--ahh-deep-teal)] transition-all hover:bg-[var(--ahh-soft-yellow)]"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mr-1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           Search

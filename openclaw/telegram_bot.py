@@ -244,9 +244,11 @@ class TelegramBot:
             "/delete_article <id|slug|title> - delete one article after confirmation\n"
             "/delete_clinic <id|slug|name> - delete one clinic after confirmation\n"
             "/rewrite_article <id|slug|title> | <edit instruction> - rewrite an article and save it as the next version\n"
+            "/generate_blog [topic] - alias for /generate_insight\n"
             "/generate_insight [topic] - generate one SEO insight article, 1200-1500 words, plus 3-5 AI images\n"
+            "/generate_blog_from_url <url...> - alias for /generate_insight_from_url\n"
             "/generate_insight_from_url <url...> - analyze one or more reference URLs and publish original SEO insights, plus 3-5 AI images each\n"
-            "/generate_guide [topic] - generate one pillar guide, about 2000 words, plus 3-5 AI images\n"
+            "/generate_guide [topic] - generate one pillar guide, about 3000 words, plus 3-5 AI images\n"
             "/generate_guide_from_url <url...> - analyze one or more reference URLs and publish original pillar guides\n"
             "/research <topic> - run multi-agent research and return a sourced report\n"
             "/ask <message> - ask the OpenClaw AI agent\n"
@@ -254,6 +256,19 @@ class TelegramBot:
             "/tail - show recent OpenClaw log\n"
             "/help - show this menu\n\n"
             "Security: set TELEGRAM_ALLOWED_USER_IDS in openclaw/.env to restrict access."
+        )
+
+    def startup_log_text(self) -> str:
+        return (
+            "[*] OpenClaw Telegram bot is running.\n"
+            "[*] Blog generation commands:\n"
+            "    /generate_blog [topic]              -> generate one SEO blog/insight\n"
+            "    /generate_insight [topic]           -> same as /generate_blog\n"
+            "    /generate_blog_from_url <url...>    -> generate blog(s) from reference URL(s)\n"
+            "    /generate_guide [topic]             -> generate one SEO pillar guide\n"
+            "    /rewrite_article <target> | <edit>  -> rewrite and save as next version\n"
+            "[*] Utility commands: /status, /tail, /help\n"
+            "[*] Press Ctrl+C to stop."
         )
 
     def is_approval(self, text: str) -> bool:
@@ -667,7 +682,7 @@ Return JSON:
         is_guide = mode == "guide"
         action_type = "generate_guide_from_memory" if is_guide else "generate_insight_from_memory"
         action_name = "generate_guide_from_memory" if is_guide else "generate_insight_from_memory"
-        content_label = "in-depth Pillar Guide of about 2000 words" if is_guide else "SEO Insight of about 1200-1500 words"
+        content_label = "in-depth Pillar Guide of about 3000 words" if is_guide else "SEO Insight of about 1200-1500 words"
         memory_name = memory.get("name") or "latest saved result"
 
         return {
@@ -851,7 +866,7 @@ Return JSON:
         is_batch = len(url_list) > 1
         action_type = "generate_guide_from_urls" if is_guide and is_batch else "generate_guide_from_url" if is_guide else "generate_insight_from_urls" if is_batch else "generate_insight_from_url"
         action_name = action_type
-        content_label = "in-depth Pillar Guide of about 2000 words" if is_guide else "SEO Insight of about 1200-1500 words"
+        content_label = "in-depth Pillar Guide of about 3000 words" if is_guide else "SEO Insight of about 1200-1500 words"
         url_lines = "\n".join(f"- {url}" for url in url_list)
         count_label = f"{len(url_list)} articles" if is_batch else "one article"
 
@@ -879,7 +894,7 @@ Return JSON:
         is_guide = mode == "guide"
         action_type = "generate_guide" if is_guide else "generate_insight"
         action_name = "generate_guide" if is_guide else "generate_insight"
-        content_label = "in-depth Pillar Guide of about 2000 words" if is_guide else "SEO Insight of about 1200-1500 words"
+        content_label = "in-depth Pillar Guide of about 3000 words" if is_guide else "SEO Insight of about 1200-1500 words"
         topic_label = topic or "OpenClaw will choose a suitable topic"
 
         return {
@@ -1200,26 +1215,27 @@ Return JSON:
                 else:
                     self.pending_actions[chat_id] = self.build_rewrite_article_action(target, instruction)
                     self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
-        elif command == "/generate_insight":
-            topic = text.removeprefix("/generate_insight").strip() or None
-            job_name = "generate_insight" if not topic else f"generate_insight: {topic[:48]}"
+        elif command in {"/generate_insight", "/generate_blog"}:
+            topic = re.sub(r"^/(?:generate_insight|generate_blog)(?:@\w+)?", "", text, count=1).strip() or None
+            job_name = "generate_blog" if not topic else f"generate_blog: {topic[:48]}"
             self.run_job(chat_id, job_name, lambda: generate_insight_job(topic), action_type="generate_insight")
-        elif command == "/generate_insight_from_url":
-            source_urls = self.extract_urls(text.removeprefix("/generate_insight_from_url").strip())
+        elif command in {"/generate_insight_from_url", "/generate_blog_from_url"}:
+            payload = re.sub(r"^/(?:generate_insight_from_url|generate_blog_from_url)(?:@\w+)?", "", text, count=1).strip()
+            source_urls = self.extract_urls(payload)
             if not source_urls:
-                self.send_message(chat_id, "Use: /generate_insight_from_url https://example.com/article")
+                self.send_message(chat_id, "Use: /generate_blog_from_url https://example.com/article")
             elif len(source_urls) == 1:
                 source_url = source_urls[0]
                 self.run_job(
                     chat_id,
-                    f"generate_insight_from_url: {source_url[:48]}",
+                    f"generate_blog_from_url: {source_url[:48]}",
                     lambda: generate_insight_from_url_job(source_url),
                     action_type="generate_insight_from_url",
                 )
             else:
                 self.run_job(
                     chat_id,
-                    f"generate_insight_from_urls: {len(source_urls)} urls",
+                    f"generate_blog_from_urls: {len(source_urls)} urls",
                     lambda: self.run_url_batch(source_urls, generate_insight_from_url_job),
                     action_type="generate_insight_from_urls",
                 )
@@ -1278,8 +1294,7 @@ Return JSON:
         self.send_message(chat_id, ask_openclaw_agent(text))
 
     def run_forever(self) -> None:
-        print("[*] OpenClaw Telegram bot is running.")
-        print("[*] Press Ctrl+C to stop.")
+        print(self.startup_log_text())
 
         while True:
             try:
