@@ -14,6 +14,22 @@ def generate_slug(text):
     text = text.strip('-')
     return text[:180] or "clinic"
 
+
+def _merge_lists(existing, incoming):
+    """
+    Merge scalar/object lists while preserving order and avoiding exact duplicates.
+    """
+    merged = []
+    seen = set()
+    for item in (existing or []) + (incoming or []):
+        key = repr(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
 def insert_clinic(clinic_data: dict):
     """
     Insert or update clinic data in Supabase.
@@ -29,12 +45,29 @@ def insert_clinic(clinic_data: dict):
     
     # Construct DB payload
     slug = generate_slug(clinic_data.get("name", ""))
-    incoming_metadata = {
-        "services": clinic_data.get("services", []),
-        "working_hours": clinic_data.get("working_hours", {}),
-    }
-    if clinic_data.get("images"):
-        incoming_metadata["images"] = clinic_data.get("images")
+    incoming_metadata = {}
+    metadata_fields = [
+        "services",
+        "working_hours",
+        "images",
+        "insurance_accepted",
+        "conditions_treated",
+        "accepting_new_patients",
+        "provider_credentials",
+        "language_note",
+        "review_summary",
+        "faqs",
+        "website",
+        "appointment_url",
+        "email",
+        "fax",
+        "source_url",
+    ]
+    for field in metadata_fields:
+        value = clinic_data.get(field)
+        if value not in (None, "", [], {}):
+            incoming_metadata[field] = value
+
     if clinic_data.get("google_metadata"):
         incoming_metadata.update(clinic_data.get("google_metadata") or {})
 
@@ -62,8 +95,11 @@ def insert_clinic(clinic_data: dict):
             existing_row = existing.data[0]
             existing_metadata = existing_row.get("metadata") or {}
             merged_metadata = {**existing_metadata, **incoming_metadata}
-            if existing_metadata.get("images") and not incoming_metadata.get("images"):
-                merged_metadata["images"] = existing_metadata["images"]
+            for list_key in ["images", "reviews", "services", "insurance_accepted", "conditions_treated", "faqs"]:
+                if existing_metadata.get(list_key) and incoming_metadata.get(list_key):
+                    merged_metadata[list_key] = _merge_lists(existing_metadata[list_key], incoming_metadata[list_key])
+                elif existing_metadata.get(list_key) and not incoming_metadata.get(list_key):
+                    merged_metadata[list_key] = existing_metadata[list_key]
 
             db_payload["id"] = existing_row["id"]
             db_payload["metadata"] = merged_metadata

@@ -19,7 +19,7 @@ export function ClinicMainContent({ clinic }: ClinicMainContentProps) {
   const rating = clinic.metadata?.rating || 0;
   const ratingCount = clinic.metadata?.rating_count || 0;
   const reviews = clinic.metadata?.reviews || [];
-  const highlightedReview = reviews[0];
+  const highlightedReviews = reviews.slice(0, 2);
 
   return (
     <div className="flex-1 space-y-12">
@@ -111,27 +111,31 @@ export function ClinicMainContent({ clinic }: ClinicMainContentProps) {
         </div>
 
         {/* Highlighted Review Card */}
-        {highlightedReview ? (
-          <div className="p-6 rounded-xl border border-gray-100 bg-white shadow-sm flex gap-4">
-            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-[var(--ahh-blue)] font-bold shrink-0">
-              {highlightedReview.author?.charAt(0) || 'G'}
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 italic mb-3">
-                &ldquo;{highlightedReview.text}&rdquo;
-              </p>
-              <p className="text-xs font-semibold text-gray-900">{highlightedReview.author}</p>
-              <p className="text-xs text-gray-500 mb-2">
-                Google review{highlightedReview.date ? ` • ${highlightedReview.date}` : ''}
-              </p>
-              <div className="flex items-center gap-0.5">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <svg key={star} xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill={star <= Math.round(highlightedReview.rating) ? '#1F2937' : 'none'} stroke="#1F2937" strokeWidth="1.5">
-                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                  </svg>
-                ))}
+        {highlightedReviews.length > 0 ? (
+          <div className="grid gap-4">
+            {highlightedReviews.map((review, index) => (
+              <div key={`${review.author}-${review.date}-${index}`} className="p-6 rounded-xl border border-gray-100 bg-white shadow-sm flex gap-4">
+                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-[var(--ahh-blue)] font-bold shrink-0">
+                  {review.author?.charAt(0) || 'G'}
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 italic mb-3">
+                    &ldquo;{review.text}&rdquo;
+                  </p>
+                  <p className="text-xs font-semibold text-gray-900">{review.author}</p>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Google review{review.date ? ` • ${review.date}` : ''}
+                  </p>
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <svg key={star} xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill={star <= Math.round(review.rating) ? '#1F2937' : 'none'} stroke="#1F2937" strokeWidth="1.5">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                      </svg>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
+            ))}
           </div>
         ) : ratingCount > 0 ? (
           <p className="text-sm text-gray-500">

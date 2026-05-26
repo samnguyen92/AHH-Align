@@ -92,6 +92,9 @@ def get_place_details(place_id: str, api_key: str) -> dict:
             "googleMapsUri",
             "nationalPhoneNumber",
             "websiteUri",
+            "internationalPhoneNumber",
+            "primaryTypeDisplayName",
+            "types",
             "regularOpeningHours",
             "photos",
             "reviews",
@@ -219,6 +222,9 @@ def enrich_clinic_with_google_places(clinic_data: dict) -> dict:
         if details.get("nationalPhoneNumber") and not clinic_data.get("phone"):
             clinic_data["phone"] = details["nationalPhoneNumber"]
 
+        if details.get("websiteUri") and not clinic_data.get("website"):
+            clinic_data["website"] = details["websiteUri"]
+
         google_images = upload_place_photos(details, clinic_data, api_key)
         if google_images:
             existing_images = clinic_data.get("images") or []
@@ -230,6 +236,8 @@ def enrich_clinic_with_google_places(clinic_data: dict) -> dict:
             "google_website_url": details.get("websiteUri"),
             "google_formatted_address": formatted_address,
             "google_business_status": details.get("businessStatus"),
+            "google_primary_type": (details.get("primaryTypeDisplayName") or {}).get("text"),
+            "google_types": details.get("types"),
             "rating": details.get("rating"),
             "rating_count": details.get("userRatingCount"),
             "reviews": normalize_reviews(details),

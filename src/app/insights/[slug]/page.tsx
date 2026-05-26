@@ -413,7 +413,16 @@ function countWords(content: string) {
   return plainText ? plainText.split(' ').length : 0;
 }
 
-function createMarkdownComponents() {
+function getMarkdownSectionTitle(section: string) {
+  const match = section.match(/^##\s+(.+)$/m);
+  return match ? match[1].replace(/[#*_`]/g, '').trim() : '';
+}
+
+function usesCheckListStyle(sectionTitle: string) {
+  return /\b(checklist|check-list|next\s+steps?)\b/i.test(sectionTitle);
+}
+
+function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?: boolean } = {}) {
   return {
     h1: ({ children }: { children?: ReactNode }) => (
       <h2
@@ -442,14 +451,39 @@ function createMarkdownComponents() {
     p: ({ children }: { children?: ReactNode }) => (
       <p className="text-[15px] leading-8 text-gray-700">{children}</p>
     ),
-    ul: ({ children }: { children?: ReactNode }) => (
-      <ul className="my-5 ml-5 list-disc space-y-2">{children}</ul>
+    ul: ({ children, className }: { children?: ReactNode; className?: string }) => {
+      const isTaskList = className?.includes('contains-task-list');
+      const listClassName =
+        checkListStyle || isTaskList
+          ? 'article-check-list my-5 ml-0 list-none space-y-3'
+          : 'my-5 ml-5 list-disc space-y-2';
+
+      return <ul className={listClassName}>{children}</ul>;
+    },
+    input: ({ checked, type }: { checked?: boolean; type?: string }) => (
+      type === 'checkbox' ? (
+        <input
+          type="checkbox"
+          checked={checked}
+          readOnly
+          className="mr-2 mt-1 h-4 w-4 shrink-0 rounded border-gray-300 accent-[var(--ahh-blue)]"
+        />
+      ) : (
+        <input type={type} readOnly />
+      )
     ),
     ol: ({ children }: { children?: ReactNode }) => (
       <ol className="my-5 ml-5 list-decimal space-y-2">{children}</ol>
     ),
-    li: ({ children }: { children?: ReactNode }) => (
-      <li className="pl-1 text-[15px] leading-7 text-gray-700">{children}</li>
+    li: ({ children, className }: { children?: ReactNode; className?: string }) => (
+      <li
+        className={[
+          'text-[15px] leading-7 text-gray-700',
+          checkListStyle || className?.includes('task-list-item') ? 'list-none pl-0' : 'pl-1',
+        ].join(' ')}
+      >
+        {children}
+      </li>
     ),
     table: ({ children }: { children?: ReactNode }) => (
       <div className="my-8 overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
@@ -540,7 +574,6 @@ function ArticleMarkdownWithImages({
 }) {
   const sections = preparedContent.split(/(?=^##\s+)/m).filter((section) => section.trim());
   const imageSlots = imageSources.slice(0, 4);
-  const markdownComponents = createMarkdownComponents();
 
   if (sections.length === 0) {
     return null;
@@ -556,7 +589,12 @@ function ArticleMarkdownWithImages({
     <>
       {sections.map((section, index) => (
         <div key={`${index}-${section.slice(0, 20)}`} className="space-y-6">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={createMarkdownComponents({
+              checkListStyle: usesCheckListStyle(getMarkdownSectionTitle(section)),
+            })}
+          >
             {section}
           </ReactMarkdown>
 

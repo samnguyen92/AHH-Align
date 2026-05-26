@@ -5,11 +5,31 @@ interface ClinicSidebarProps {
   clinic: Clinic;
 }
 
+function getClinicMapEmbedUrl(clinic: Clinic) {
+  const location = clinic.metadata?.location;
+  const latitude = location?.latitude ?? location?.lat;
+  const longitude = location?.longitude ?? location?.lng;
+  const addressQuery = [
+    clinic.address,
+    clinic.city,
+    clinic.state,
+    clinic.zip_code,
+  ]
+    .filter(Boolean)
+    .join(', ');
+  const query = latitude && longitude ? `${latitude},${longitude}` : addressQuery;
+
+  if (!query) return null;
+
+  return `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
+}
+
 export function ClinicSidebar({ clinic }: ClinicSidebarProps) {
   const addressString = [clinic.address, clinic.city, clinic.state, clinic.zip_code]
     .filter(Boolean)
     .join(', ');
   const googleMapsUrl = clinic.metadata?.google_maps_url;
+  const mapEmbedUrl = getClinicMapEmbedUrl(clinic);
 
   const hours = clinic.metadata?.working_hours || {
     monday: '8:00 AM - 5:00 PM',
@@ -85,9 +105,26 @@ export function ClinicSidebar({ clinic }: ClinicSidebarProps) {
       </div>
 
       {/* Map */}
-      <div className="bg-blue-50 rounded-xl overflow-hidden aspect-[4/3] flex items-center justify-center border border-blue-100">
-        <div className="text-center">
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-blue)" strokeWidth="1.5" className="mx-auto mb-2 opacity-50"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+      <div className="overflow-hidden rounded-xl border border-blue-100 bg-blue-50 shadow-sm">
+        <div className="relative aspect-[4/3]">
+          {mapEmbedUrl ? (
+            <iframe
+              src={mapEmbedUrl}
+              title={`${clinic.name} map`}
+              className="h-full w-full border-0"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-center">
+              <div>
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-blue)" strokeWidth="1.5" className="mx-auto mb-2 opacity-50"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                <span className="text-xs font-medium text-[var(--ahh-blue)]/60">Map View Available</span>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="border-t border-blue-100 bg-white px-4 py-3 text-center">
           {googleMapsUrl ? (
             <Link
               href={googleMapsUrl}
@@ -98,7 +135,7 @@ export function ClinicSidebar({ clinic }: ClinicSidebarProps) {
               Open in Google Maps
             </Link>
           ) : (
-            <span className="text-xs font-medium text-[var(--ahh-blue)]/60">Map View Available</span>
+            <span className="text-xs font-medium text-[var(--ahh-blue)]/60">Google Maps link unavailable</span>
           )}
         </div>
       </div>

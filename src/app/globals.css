@@ -166,9 +166,7 @@
 }
 
 body {
-  background:
-    linear-gradient(180deg, rgba(201, 255, 93, 0.16) 0, rgba(238, 247, 242, 0) 220px),
-    var(--background);
+  background: var(--background);
   color: var(--ahh-ink);
   letter-spacing: 0;
 }

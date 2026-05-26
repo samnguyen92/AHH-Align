@@ -77,7 +77,7 @@ export function ArticleProgressSidebar({
         {outline.length > 0 && (
           <nav aria-label="Article outline">
             <ol className="space-y-3">
-              {outline.slice(0, 12).map((item) => {
+              {outline.map((item) => {
                 const isActive = item.id === activeId;
 
                 return (

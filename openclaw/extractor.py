@@ -1,6 +1,30 @@
 import os
 import json
+import re
 from openai import OpenAI
+
+
+def _extract_json_object(text: str) -> dict:
+    """
+    Parse the first JSON object from an LLM response.
+    """
+    cleaned = text.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    if cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\{[\s\S]*\}", cleaned)
+        if not match:
+            raise
+        return json.loads(match.group(0))
+
 
 def extract_clinic_data(hospital_name: str, text_content: str) -> dict:
     """
@@ -18,23 +42,46 @@ def extract_clinic_data(hospital_name: str, text_content: str) -> dict:
     )
 
     system_prompt = """
-    You are an AI data extractor for a healthcare directory. 
+    You are an AI data extractor for a healthcare directory.
     Your job is to extract clinic/hospital information from the provided text.
+    Use ONLY the provided webpage text. If a value is not present, use null, [], {}, or false.
+    Do not invent provider names, insurance plans, credentials, conditions, or FAQs.
     You MUST output ONLY valid JSON matching the following schema. Do not include markdown formatting like ```json or any other text.
     
     Schema:
     {
       "name": "string (the exact name of the hospital/clinic, or the requested name)",
-      "description": "string (a brief 2-3 sentence overview)",
+      "description": "string (a brief 2-4 sentence overview)",
       "address": "string (street address only)",
       "city": "string",
       "state": "string (2-letter abbreviation)",
       "zip_code": "string",
       "phone": "string",
+      "website": "string or null",
+      "appointment_url": "string or null",
+      "email": "string or null",
+      "fax": "string or null",
       "specialty": "string (e.g. General Hospital, Primary Care, etc. Guess based on context if not explicit)",
       "languages": ["string"] (list of languages spoken, default to ["English"] if none specified),
-      "services": ["string"] (list of 3-5 key medical services offered),
+      "language_note": "string or null (specific note about language access, interpreter availability, or bilingual staff)",
+      "services": ["string"] (list of key medical services offered),
+      "conditions_treated": ["string"] (common conditions or patient needs explicitly mentioned),
+      "insurance_accepted": ["string"] (insurance plans, payer names, Medicare/Medicaid/new-patient payment notes),
+      "accepting_new_patients": "boolean or null",
       "is_telehealth_available": boolean,
+      "provider_credentials": {
+        "providers": ["string"],
+        "education": ["string"],
+        "board_certifications": ["string"],
+        "residency": ["string"],
+        "hospital_affiliations": ["string"],
+        "years_in_practice": "string or null",
+        "professional_memberships": ["string"]
+      },
+      "review_summary": "string or null",
+      "faqs": [
+        {"question": "string", "answer": "string"}
+      ],
       "working_hours": {
          "monday": "string",
          "tuesday": "string",
@@ -49,7 +96,16 @@ def extract_clinic_data(hospital_name: str, text_content: str) -> dict:
 
     # Limit text to roughly 20k chars to prevent context overflow if pages are massive
     safe_text = text_content[:20000]
-    user_prompt = f"Target Hospital Name: {hospital_name}\n\nWebpage Content:\n{safe_text}"
+    user_prompt = f"""
+    Target Hospital Name: {hospital_name}
+
+    Extract as much of the schema as the page supports. Prioritize information needed for a rich clinic profile:
+    services offered, commonly treated conditions, insurance/new-patient status, Vietnamese/Korean/Asian-language access,
+    provider credentials, FAQ-style patient questions, website/appointment links, phone, address, hours, and review summary.
+
+    Webpage Content:
+    {safe_text}
+    """
 
     print(f"[*] Sending extraction request to OpenRouter (Deepseek v4 Flash)...")
     try:
@@ -77,17 +133,9 @@ def extract_clinic_data(hospital_name: str, text_content: str) -> dict:
             return None
 
     content = response.choices[0].message.content.strip()
-    
-    # Clean up markdown if the LLM ignores instructions
-    if content.startswith("```json"):
-        content = content[7:]
-    if content.startswith("```"):
-        content = content[3:]
-    if content.endswith("```"):
-        content = content[:-3]
-        
+
     try:
-        data = json.loads(content.strip())
+        data = _extract_json_object(content)
         print(f"[*] Successfully extracted data for {data.get('name')}")
         return data
     except json.JSONDecodeError as e:

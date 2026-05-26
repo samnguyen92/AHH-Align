@@ -26,17 +26,47 @@ export interface ClinicMetadata {
   rating_count?: number;
   images?: string[];
   insurance_accepted?: string[];
+  conditions_treated?: string[];
+  accepting_new_patients?: boolean | null;
+  provider_credentials?: ProviderCredentials;
+  language_note?: string;
+  review_summary?: string;
+  faqs?: ClinicFaq[];
+  website?: string;
+  appointment_url?: string;
+  email?: string;
+  fax?: string;
+  source_url?: string;
   npi_number?: string;
   google_place_id?: string;
   google_maps_url?: string;
   google_website_url?: string;
   google_formatted_address?: string;
   google_business_status?: string;
+  google_primary_type?: string;
+  google_types?: string[];
   google_photo_attributions?: unknown[];
   location?: {
     latitude?: number;
     longitude?: number;
+    lat?: number;
+    lng?: number;
   };
+}
+
+export interface ProviderCredentials {
+  providers?: string[];
+  education?: string[];
+  board_certifications?: string[];
+  residency?: string[];
+  hospital_affiliations?: string[];
+  years_in_practice?: string | null;
+  professional_memberships?: string[];
+}
+
+export interface ClinicFaq {
+  question: string;
+  answer: string;
 }
 
 export interface Review {

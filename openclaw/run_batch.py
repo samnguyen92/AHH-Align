@@ -62,10 +62,15 @@ def main():
         data = extract_clinic_data(target['name'], text)
         if not data:
             continue
+        data["source_url"] = url
 
         source_images = content.get("images", [])
         if source_images:
             data["images"] = source_images
+
+        for link_key in ["website", "appointment_url"]:
+            if not data.get(link_key) and content.get(link_key):
+                data[link_key] = content[link_key]
 
         data = enrich_clinic_with_google_places(data)
 
