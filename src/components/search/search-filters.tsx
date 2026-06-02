@@ -56,10 +56,10 @@ export function SearchFilters() {
   }, [searchParams, router]);
 
   return (
-    <aside className="w-full lg:w-60 shrink-0 space-y-6">
+    <aside className="brand-card w-full shrink-0 space-y-6 p-4 lg:w-64">
       {/* Filter by Specialty */}
       <div>
-        <button className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-3">
+        <button className="mb-3 flex w-full items-center justify-between text-sm font-semibold text-[var(--ahh-ink)]">
           Filter by Specialty
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
         </button>
@@ -74,7 +74,7 @@ export function SearchFilters() {
               <label
                 key={spec.value}
                 className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm transition-colors ${
-                  isSelected ? 'bg-[var(--ahh-blue)] text-white' : 'text-gray-600 hover:bg-gray-50'
+                  isSelected ? 'bg-[var(--ahh-deep-teal)] text-white' : 'text-[var(--ahh-muted)] hover:bg-[var(--ahh-mist)]'
                 }`}
               >
                 <input
@@ -89,15 +89,15 @@ export function SearchFilters() {
                   className="sr-only"
                 />
                 <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                  isSelected ? 'border-white bg-white' : 'border-gray-300'
+                  isSelected ? 'border-white bg-white' : 'border-[var(--ahh-border)]'
                 }`}>
                   {isSelected && (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-blue)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-deep-teal)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                   )}
                 </span>
                 <span className="flex-1">{spec.value}</span>
                 {spec.count != null && (
-                  <span className={`text-xs ${isSelected ? 'text-blue-100' : 'text-gray-400'}`}>
+                  <span className={`text-xs ${isSelected ? 'text-white/70' : 'text-[var(--ahh-muted-2)]'}`}>
                     ({spec.count})
                   </span>
                 )}
@@ -109,7 +109,7 @@ export function SearchFilters() {
 
       {/* Filter by Language */}
       <div>
-        <button className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-3">
+        <button className="mb-3 flex w-full items-center justify-between text-sm font-semibold text-[var(--ahh-ink)]">
           Filter by Language
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
         </button>
@@ -119,7 +119,7 @@ export function SearchFilters() {
             return (
               <label
                 key={lang.value}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm text-[var(--ahh-muted)] hover:bg-[var(--ahh-mist)] transition-colors"
               >
                 <input
                   type="checkbox"
@@ -132,14 +132,14 @@ export function SearchFilters() {
                   className="sr-only"
                 />
                 <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
-                  isSelected ? 'border-[var(--ahh-blue)] bg-[var(--ahh-blue)]' : 'border-gray-300'
+                  isSelected ? 'border-[var(--ahh-deep-teal)] bg-[var(--ahh-deep-teal)]' : 'border-[var(--ahh-border)]'
                 }`}>
                   {isSelected && (
                     <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                   )}
                 </span>
                 <span className="flex-1">{lang.value}</span>
-                <span className="text-xs text-gray-400">({lang.count})</span>
+                <span className="text-xs text-[var(--ahh-muted-2)]">({lang.count})</span>
               </label>
             );
           })}
@@ -148,7 +148,7 @@ export function SearchFilters() {
 
       {/* Filter by City */}
       <div>
-        <button className="flex items-center justify-between w-full text-sm font-semibold text-gray-900 mb-3">
+        <button className="mb-3 flex w-full items-center justify-between text-sm font-semibold text-[var(--ahh-ink)]">
           Filter by City
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
         </button>
@@ -158,7 +158,7 @@ export function SearchFilters() {
             return (
               <label
                 key={c.value}
-                className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm text-[var(--ahh-muted)] hover:bg-[var(--ahh-mist)] transition-colors"
               >
                 <input
                   type="radio"
@@ -172,7 +172,7 @@ export function SearchFilters() {
                   className="sr-only"
                 />
                 <span className={`w-3 h-3 rounded-full border-2 shrink-0 ${
-                  isSelected ? 'border-[var(--ahh-blue)] bg-[var(--ahh-blue)]' : 'border-gray-300'
+                  isSelected ? 'border-[var(--ahh-deep-teal)] bg-[var(--ahh-deep-teal)]' : 'border-[var(--ahh-border)]'
                 }`} />
                 <span className="flex-1">{c.value}, {c.state}</span>
               </label>
@@ -182,14 +182,14 @@ export function SearchFilters() {
       </div>
 
       {/* Provider CTA */}
-      <div className="rounded-xl bg-[var(--ahh-blue)] p-4 text-center">
+      <div className="rounded-[var(--ahh-radius)] bg-[var(--ahh-deep-teal)] p-4 text-center">
         <p className="text-sm font-bold text-white mb-1">Are You a Provider?</p>
-        <p className="text-xs text-blue-100 mb-3">
+        <p className="mb-3 text-xs text-white/72">
           Claim your free profile to show patients your language capabilities.
         </p>
         <Link
           href="/claim"
-          className="inline-flex items-center px-4 py-2 text-xs font-semibold rounded-lg bg-white text-[var(--ahh-blue)] hover:bg-blue-50 transition-colors"
+          className="brand-button min-h-9 px-4 py-2 text-xs"
         >
           Claim Your Profile →
         </Link>

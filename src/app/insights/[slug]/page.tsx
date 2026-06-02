@@ -250,7 +250,7 @@ function ShareRow({ title, shareUrl }: { title: string; shareUrl: string }) {
   ];
 
   return (
-    <div className="flex items-center gap-3 text-xs text-gray-500">
+    <div className="flex items-center gap-3 text-xs text-[var(--ahh-muted)]">
       <span>Share:</span>
       <div className="flex items-center gap-2">
         {links.map((item) => (
@@ -260,7 +260,7 @@ function ShareRow({ title, shareUrl }: { title: string; shareUrl: string }) {
             aria-label={item.label}
             target={item.href.startsWith('mailto:') ? undefined : '_blank'}
             rel={item.href.startsWith('mailto:') ? undefined : 'noreferrer'}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition hover:border-[var(--ahh-blue)] hover:bg-blue-50 hover:text-[var(--ahh-blue)]"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--ahh-border)] text-[var(--ahh-ink)] transition hover:border-[var(--ahh-deep-teal)] hover:bg-[var(--ahh-mist)] hover:text-[var(--ahh-deep-teal)]"
           >
             {item.icon}
           </a>
@@ -292,12 +292,12 @@ function VersionSwitcher({
   }
 
   return (
-    <section className="mx-auto max-w-[1180px] px-4 pt-6 sm:px-6 lg:px-8">
-      <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+    <section className="brand-container pt-6">
+      <div className="brand-card p-4">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase text-gray-500">Article versions</p>
-            <p className="mt-1 text-sm text-gray-700">
+            <p className="brand-caption font-semibold uppercase text-[var(--ahh-muted)]">Article versions</p>
+            <p className="mt-1 text-sm text-[var(--ahh-ink)]">
               Viewing {selectedVersion.label}
               {selectedVersion.isCurrent ? ' (current)' : ` saved ${formatDate(selectedVersion.savedAt)}`}.
             </p>
@@ -312,8 +312,8 @@ function VersionSwitcher({
                   className={[
                     'rounded-full border px-4 py-2 text-xs font-semibold transition',
                     isSelected
-                      ? 'border-[var(--ahh-blue)] bg-[var(--ahh-blue)] text-white'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-[var(--ahh-blue)] hover:text-[var(--ahh-blue)]',
+                      ? 'border-[var(--ahh-deep-teal)] bg-[var(--ahh-deep-teal)] text-white'
+                      : 'border-[var(--ahh-border)] bg-white text-[var(--ahh-ink)] hover:border-[var(--ahh-deep-teal)] hover:text-[var(--ahh-deep-teal)]',
                   ].join(' ')}
                 >
                   {version.label}
@@ -325,7 +325,7 @@ function VersionSwitcher({
         </div>
 
         {!selectedVersion.isCurrent && (
-          <div className="mt-4 grid gap-3 border-t border-gray-100 pt-4 text-xs text-gray-500 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 border-t border-[var(--ahh-border)] pt-4 text-xs text-[var(--ahh-muted)] sm:grid-cols-3">
             <span>Words: {(selectedVersion.wordCount || countWords(selectedVersion.content)).toLocaleString()}</span>
             <span>Saved: {formatDate(selectedVersion.savedAt)}</span>
             <span>Current: {currentVersion.label}</span>
@@ -333,7 +333,7 @@ function VersionSwitcher({
         )}
 
         {selectedVersion.rewriteInstruction && (
-          <p className="mt-3 border-t border-gray-100 pt-3 text-xs leading-6 text-gray-500">
+          <p className="mt-3 border-t border-[var(--ahh-border)] pt-3 text-xs leading-6 text-[var(--ahh-muted)]">
             Rewrite note: {selectedVersion.rewriteInstruction}
           </p>
         )}
@@ -344,7 +344,7 @@ function VersionSwitcher({
 
 function NewsletterInline() {
   return (
-    <aside className="my-10 rounded-lg bg-[var(--ahh-deep-teal)] px-6 py-6 text-center text-white">
+    <aside className="my-10 rounded-[var(--ahh-radius)] bg-[var(--ahh-deep-teal)] px-6 py-6 text-center text-white">
       <h2 className="text-lg font-semibold">AHH Pulse Newsletter</h2>
       <p className="mx-auto mt-1 max-w-md text-xs text-white/70">
         Monthly healthcare guides, clinic spotlights, and practical tips for Asian American patients.
@@ -419,7 +419,11 @@ function getMarkdownSectionTitle(section: string) {
 }
 
 function usesCheckListStyle(sectionTitle: string) {
-  return /\b(checklist|check-list|next\s+steps?)\b/i.test(sectionTitle);
+  return /\b(checklist|check-list|next\s+steps?|key\s+takeaways?)\b/i.test(sectionTitle);
+}
+
+function usesKeyTakeawaysStyle(sectionTitle: string) {
+  return /\bkey\s+takeaways?\b/i.test(sectionTitle);
 }
 
 function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?: boolean } = {}) {
@@ -427,7 +431,7 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
     h1: ({ children }: { children?: ReactNode }) => (
       <h2
         id={slugifyHeading(textFromNode(children))}
-        className="scroll-mt-24 text-2xl font-semibold leading-snug text-gray-950"
+        className="scroll-mt-24 text-2xl font-semibold leading-snug text-[var(--ahh-ink)]"
       >
         {children}
       </h2>
@@ -435,7 +439,7 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
     h2: ({ children }: { children?: ReactNode }) => (
       <h2
         id={slugifyHeading(textFromNode(children))}
-        className="scroll-mt-24 pt-4 text-2xl font-semibold leading-snug text-gray-950"
+        className="scroll-mt-24 pt-4 text-2xl font-semibold leading-snug text-[var(--ahh-ink)]"
       >
         {children}
       </h2>
@@ -443,13 +447,13 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
     h3: ({ children }: { children?: ReactNode }) => (
       <h3
         id={slugifyHeading(textFromNode(children))}
-        className="scroll-mt-24 pt-2 text-lg font-semibold leading-snug text-gray-950"
+        className="scroll-mt-24 pt-2 text-lg font-semibold leading-snug text-[var(--ahh-ink)]"
       >
         {children}
       </h3>
     ),
     p: ({ children }: { children?: ReactNode }) => (
-      <p className="text-[15px] leading-8 text-gray-700">{children}</p>
+      <p className="text-[15px] leading-8 text-[var(--ahh-muted)]">{children}</p>
     ),
     ul: ({ children, className }: { children?: ReactNode; className?: string }) => {
       const isTaskList = className?.includes('contains-task-list');
@@ -466,7 +470,7 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
           type="checkbox"
           checked={checked}
           readOnly
-          className="mr-2 mt-1 h-4 w-4 shrink-0 rounded border-gray-300 accent-[var(--ahh-blue)]"
+          className="mr-2 mt-1 h-4 w-4 shrink-0 rounded border-[var(--ahh-border)] accent-[var(--ahh-deep-teal)]"
         />
       ) : (
         <input type={type} readOnly />
@@ -478,7 +482,7 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
     li: ({ children, className }: { children?: ReactNode; className?: string }) => (
       <li
         className={[
-          'text-[15px] leading-7 text-gray-700',
+          'text-[15px] leading-7 text-[var(--ahh-muted)]',
           checkListStyle || className?.includes('task-list-item') ? 'list-none pl-0' : 'pl-1',
         ].join(' ')}
       >
@@ -486,20 +490,20 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
       </li>
     ),
     table: ({ children }: { children?: ReactNode }) => (
-      <div className="my-8 overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+      <div className="my-8 overflow-x-auto rounded-[var(--ahh-radius-sm)] border border-[var(--ahh-border)] shadow-sm">
         <table className="w-full border-collapse text-left text-sm">{children}</table>
       </div>
     ),
     th: ({ children }: { children?: ReactNode }) => (
-      <th className="border-b border-blue-700 bg-[var(--ahh-blue)] px-4 py-3 font-semibold text-white">
+      <th className="border-b border-[var(--ahh-deep-teal)] bg-[var(--ahh-deep-teal)] px-4 py-3 font-semibold text-white">
         {children}
       </th>
     ),
     td: ({ children }: { children?: ReactNode }) => (
-      <td className="border-b border-gray-200 px-4 py-3">{children}</td>
+      <td className="border-b border-[var(--ahh-border)] px-4 py-3">{children}</td>
     ),
     blockquote: ({ children }: { children?: ReactNode }) => (
-      <blockquote className="brand-quote my-8 rounded-lg px-6 py-5 text-base leading-8 text-[var(--ahh-ink)]">
+      <blockquote className="brand-quote my-8 rounded-[var(--ahh-radius-sm)] px-6 py-5 text-base leading-8 text-[var(--ahh-ink)]">
         {children}
       </blockquote>
     ),
@@ -508,7 +512,7 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
         href={href}
         target={href?.startsWith('http') ? '_blank' : undefined}
         rel={href?.startsWith('http') ? 'noreferrer' : undefined}
-        className="font-medium text-[var(--ahh-blue)] underline underline-offset-4"
+        className="font-medium text-[var(--ahh-deep-teal)] underline underline-offset-4"
       >
         {children}
       </a>
@@ -538,7 +542,108 @@ function dedentMarkdown(content: string) {
   return lines.map((line) => line.slice(commonIndent)).join('\n').trim();
 }
 
-function prepareArticleContent(content: string, title: string) {
+function stripMarkdownForSummary(content: string) {
+  return content
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s+.+$/gm, ' ')
+    .replace(/^\s*(?:[-*+]|\d+[.)]|\[[ xX]\])\s+/gm, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildFallbackKeyTakeaways(content: string, excerpt?: string | null) {
+  const sourceText = [excerpt || '', stripMarkdownForSummary(content)].filter(Boolean).join(' ');
+  const sentences = sourceText
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.split(/\s+/).length >= 8);
+  const uniqueSentences: string[] = [];
+  const seen = new Set<string>();
+
+  for (const sentence of sentences) {
+    const key = normalizeTitle(sentence);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    uniqueSentences.push(sentence.replace(/\s+[-–—]\s*$/, '').trim());
+    if (uniqueSentences.length >= 4) break;
+  }
+
+  const fallbackItems = uniqueSentences.length >= 3
+    ? uniqueSentences
+    : [
+        'Start with the main care decisions, language needs, costs, and follow-up questions that affect this topic.',
+        'Use the guide as preparation for a conversation with a licensed clinician, clinic staff member, or insurance plan.',
+        'Pay attention to cultural trust, family decision-making, and language access when planning care.',
+      ];
+
+  return `## Key Takeaways\n\n${fallbackItems.slice(0, 5).map((item) => `- [x] ${item}`).join('\n')}`;
+}
+
+function isKeyTakeawaysHeadingLine(line: string) {
+  return /^##\s+Key Takeaways\b/i.test(line.trim());
+}
+
+function normalizeTakeawayText(line: string) {
+  return line
+    .replace(/^\s*(?:[-*+]\s*)?(?:\[[ xX]\]\s*)?/i, '')
+    .replace(/^\s*\d+[.)]\s*/, '')
+    .trim();
+}
+
+function normalizeKeyTakeawaysContent(content: string, excerpt?: string | null) {
+  const rawSections = content.split(/(?=^##\s+)/m).filter((section) => section.trim());
+  const bodySections: string[] = [];
+  const takeawayItems: string[] = [];
+  const seenTakeaways = new Set<string>();
+
+  for (const section of rawSections) {
+    const lines = section.split('\n');
+    if (!isKeyTakeawaysHeadingLine(lines[0] || '')) {
+      bodySections.push(section.trim());
+      continue;
+    }
+
+    const carriedBodyLines: string[] = [];
+    let collectingBullets = true;
+
+    for (const line of lines.slice(1)) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        if (!collectingBullets) carriedBodyLines.push(line);
+        continue;
+      }
+
+      const isBullet = /^[-*+]\s+(?:\[[ xX]\]\s*)?/.test(trimmed) || /^\d+[.)]\s+/.test(trimmed);
+      if (collectingBullets && isBullet) {
+        const item = normalizeTakeawayText(trimmed);
+        const key = normalizeTitle(item);
+        if (item && !seenTakeaways.has(key)) {
+          seenTakeaways.add(key);
+          takeawayItems.push(item);
+        }
+        continue;
+      }
+
+      collectingBullets = false;
+      carriedBodyLines.push(line);
+    }
+
+    const carriedBody = carriedBodyLines.join('\n').trim();
+    if (carriedBody) {
+      bodySections.push(carriedBody);
+    }
+  }
+
+  const takeawaySection = takeawayItems.length > 0
+    ? `## Key Takeaways\n\n${takeawayItems.slice(0, 5).map((item) => `- [x] ${item}`).join('\n')}`
+    : buildFallbackKeyTakeaways(bodySections.join('\n\n'), excerpt);
+
+  return [takeawaySection, ...bodySections].filter(Boolean).join('\n\n').trim();
+}
+
+function prepareArticleContent(content: string, title: string, excerpt?: string | null) {
   const normalizedTitle = normalizeTitle(title);
   const lines = dedentMarkdown(content)
     .split('\n')
@@ -560,7 +665,8 @@ function prepareArticleContent(content: string, title: string) {
       return true;
     });
 
-  return lines.join('\n').trim();
+  const prepared = lines.join('\n').trim();
+  return normalizeKeyTakeawaysContent(prepared, excerpt);
 }
 
 function ArticleMarkdownWithImages({
@@ -579,39 +685,53 @@ function ArticleMarkdownWithImages({
     return null;
   }
 
+  const firstImageIndex = usesKeyTakeawaysStyle(getMarkdownSectionTitle(sections[0] || '')) ? 1 : 0;
   const imageIndexes = imageSlots.map((_, imageIndex) => {
     if (sections.length <= 1) return 0;
     const position = Math.round(((imageIndex + 1) * sections.length) / (imageSlots.length + 1)) - 1;
-    return Math.min(Math.max(position, 0), sections.length - 1);
+    return Math.min(Math.max(position, firstImageIndex), sections.length - 1);
   });
 
   return (
     <>
-      {sections.map((section, index) => (
-        <div key={`${index}-${section.slice(0, 20)}`} className="space-y-6">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={createMarkdownComponents({
-              checkListStyle: usesCheckListStyle(getMarkdownSectionTitle(section)),
-            })}
-          >
-            {section}
-          </ReactMarkdown>
+      {sections.map((section, index) => {
+        const sectionTitle = getMarkdownSectionTitle(section);
+        const isKeyTakeaways = usesKeyTakeawaysStyle(sectionTitle);
 
-          {imageSlots.map((imageSrc, imageIndex) =>
-            index === imageIndexes[imageIndex] ? (
-              <figure key={imageSrc} className="my-10 overflow-hidden rounded-lg bg-gray-100">
-                <ArticleImage
-                  src={imageSrc}
-                  alt={`${title} supporting illustration ${imageIndex + 1}`}
-                  className="aspect-[16/7]"
-                  iconSize={92}
-                />
-              </figure>
-            ) : null
-          )}
-        </div>
-      ))}
+        return (
+          <div
+            key={`${index}-${section.slice(0, 20)}`}
+            className={[
+              'space-y-6',
+              isKeyTakeaways
+                ? 'rounded-[var(--ahh-radius-sm)] border border-[var(--ahh-deep-teal)] bg-[var(--ahh-mist-2)] px-6 py-6'
+                : '',
+            ].join(' ')}
+          >
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={createMarkdownComponents({
+                checkListStyle: usesCheckListStyle(sectionTitle),
+              })}
+            >
+              {section}
+            </ReactMarkdown>
+
+            {imageSlots.map((imageSrc, imageIndex) =>
+              index === imageIndexes[imageIndex] ? (
+                <figure key={imageSrc} className="my-10 overflow-hidden rounded-[var(--ahh-radius)] bg-[var(--ahh-mist)]">
+                  <ArticleImage
+                    src={imageSrc}
+                    alt={`${title} supporting illustration ${imageIndex + 1}`}
+                    className="aspect-[16/7]"
+                    iconSize={92}
+                  />
+                </figure>
+              ) : null
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -620,18 +740,18 @@ function RelatedGuides({ articles }: { articles: Article[] }) {
   if (articles.length === 0) return null;
 
   return (
-    <section className="bg-gray-50 py-14">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+    <section className="brand-section-mist py-14">
+      <div className="brand-container">
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-950">Related Guides</h2>
-            <p className="mt-2 max-w-2xl text-sm text-gray-500">
+            <h2 className="brand-heading-2">Related Guides</h2>
+            <p className="brand-body-copy mt-2 max-w-2xl">
               Explore similar guides for Vietnamese and Korean patients navigating the US healthcare system.
             </p>
           </div>
           <Link
             href="/insights"
-            className="hidden rounded-full border border-[var(--ahh-blue)] px-4 py-2 text-xs font-medium text-[var(--ahh-blue)] hover:bg-blue-50 sm:inline-flex"
+            className="brand-button-ghost hidden px-4 py-2 text-xs sm:inline-flex"
           >
             See all insights &rarr;
           </Link>
@@ -641,7 +761,7 @@ function RelatedGuides({ articles }: { articles: Article[] }) {
             <Link
               key={article.id}
               href={`/insights/${article.slug}`}
-              className="group overflow-hidden rounded-lg border border-white bg-white shadow-sm"
+              className="brand-card group overflow-hidden"
             >
               <ArticleImage
                 src={article.seo_meta.og_image}
@@ -649,7 +769,7 @@ function RelatedGuides({ articles }: { articles: Article[] }) {
                 className="aspect-[16/9]"
               />
               <div className="p-4">
-                <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
+                <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-[var(--ahh-ink)] group-hover:text-[var(--ahh-deep-teal)]">
                   {article.title}
                 </h3>
               </div>
@@ -686,7 +806,7 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
     .slice(1, 5)
     .map(getSafeArticleImageSrc)
     .filter((src): src is string => Boolean(src));
-  const preparedContent = prepareArticleContent(selectedView.content, selectedView.title);
+  const preparedContent = prepareArticleContent(selectedView.content, selectedView.title, selectedView.excerpt);
   const outline = extractOutline(preparedContent);
   const wordCount = countWords(preparedContent);
   const readMinutes = Math.max(1, Math.ceil(wordCount / 220));
@@ -719,10 +839,10 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
       />
       <main className="bg-white">
         <section className="px-2 pt-4 sm:px-4">
-          <div className="brand-hero mx-auto max-w-[1240px] px-7 py-10 sm:px-12 lg:px-16">
+          <div className="brand-hero brand-container px-7 py-10 sm:px-12 lg:px-16">
             <div className="relative z-10 grid items-center gap-8 lg:grid-cols-[1fr_280px]">
               <div className="max-w-3xl">
-                <h1 className="text-3xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
+                <h1 className="brand-heading-1 text-white">
                   {selectedView.title}
                 </h1>
                 <p className="mt-4 max-w-2xl text-sm leading-6 text-white/72">
@@ -744,7 +864,7 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
               <ArticleImage
                 src={heroImageSrc}
                 alt={selectedView.title}
-                className="hidden aspect-[4/3] rounded-xl bg-white/90 p-0 lg:block"
+                className="hidden aspect-[4/3] rounded-[var(--ahh-radius-sm)] bg-white p-0 lg:block"
                 iconSize={72}
               />
             </div>
@@ -758,11 +878,11 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
           currentVersion={currentView}
         />
 
-        <article className="mx-auto grid max-w-[1180px] gap-12 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,760px)_280px] lg:px-8">
+        <article className="brand-container grid gap-12 py-10 lg:grid-cols-[minmax(0,760px)_280px]">
           <div>
             <ShareRow title={selectedView.title} shareUrl={shareUrl} />
 
-            <div id="article-content" className="mt-8 space-y-6 text-sm leading-7 text-gray-700">
+            <div id="article-content" className="mt-8 space-y-6 text-sm leading-7 text-[var(--ahh-muted)]">
               <ArticleMarkdownWithImages
                 preparedContent={preparedContent}
                 imageSources={contentImageSources}
@@ -773,9 +893,9 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
             <NewsletterInline />
 
             {selectedView.tags.length > 0 && (
-              <div className="mt-10 flex flex-wrap gap-2 border-t border-gray-100 pt-6">
+              <div className="mt-10 flex flex-wrap gap-2 border-t border-[var(--ahh-border)] pt-6">
                 {selectedView.tags.map((tag) => (
-                  <span key={tag} className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600">
+                  <span key={tag} className="brand-chip">
                     #{tag}
                   </span>
                 ))}

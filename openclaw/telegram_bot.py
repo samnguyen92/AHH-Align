@@ -101,8 +101,17 @@ class TelegramBot:
             headers["Content-Type"] = "application/x-www-form-urlencoded"
 
         request = urllib.request.Request(url, data=data, headers=headers)
-        with urllib.request.urlopen(request, timeout=70) as response:
-            return json.loads(response.read().decode("utf-8"))
+        last_error: Optional[Exception] = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(request, timeout=70) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except Exception as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
+
+        raise RuntimeError(f"Telegram request failed after retries: {last_error}")
 
     def send_message(self, chat_id: int, text: str) -> None:
         chunks = [text[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(text), MAX_MESSAGE_LENGTH)] or [""]
@@ -196,6 +205,46 @@ class TelegramBot:
         self.send_message(chat_id, self.format_research_status_message(output))
         self.send_message(chat_id, self.extract_research_report_message(output))
 
+    def format_content_job_message(self, name: str, output: str) -> str:
+        failed = "[!] Job failed:" in output or re.search(r"^\[!\] Error:", output, flags=re.MULTILINE)
+        article_match = re.search(r"\[\+\] Article (?:published|rewritten) successfully: (\S+)", output)
+        version_match = re.search(r"\[\*\] Version saved: (v\d+)", output)
+        word_match = re.search(r"\[\*\] Word count: ([^\n]+)", output)
+        evidence_match = re.search(r"\[\*\] Verified reference evidence ready: (\d+) sources", output)
+        evidence_low_match = re.search(r"Verified reference evidence below requested minimum: (\d+/\d+)", output)
+        image_match = re.search(r"\[\*\] (?:Article images ready|Generated rewrite images): (\d+)", output)
+        warnings = len(
+            re.findall(
+                r"^\[!\] (?!networkidle timed out)(?!Reference source skipped because file type is not supported)(?!Reference source skipped because extracted text is too short)",
+                output,
+                flags=re.MULTILINE,
+            )
+        )
+
+        if failed:
+            tail = "\n".join(output.strip().splitlines()[-18:])
+            return self.trim_message(f"{name} failed.\n\n{tail}")
+
+        lines = [f"{name} finished."]
+        if article_match:
+            lines.append(f"Article: {article_match.group(1)}")
+        if version_match:
+            lines.append(f"Version: {version_match.group(1)}")
+        if word_match:
+            lines.append(f"Word count: {word_match.group(1)}")
+        if evidence_match:
+            lines.append(f"Verified references: {evidence_match.group(1)} sources")
+        elif evidence_low_match:
+            lines.append(f"Verified references: {evidence_low_match.group(1)} sources")
+        if image_match:
+            lines.append(f"Images: {image_match.group(1)}")
+        if warnings:
+            lines.append(f"Warnings: {warnings}. Use /tail for details.")
+        else:
+            lines.append("Technical log available with /tail.")
+
+        return "\n".join(lines)
+
     def is_allowed(self, user_id: int) -> bool:
         return not self.allowed_user_ids or user_id in self.allowed_user_ids
 
@@ -216,15 +265,31 @@ class TelegramBot:
             return
 
         def target() -> None:
-            self.send_message(chat_id, f"Started {name}. I will report back when it finishes.")
-            output = fn()
-            summary = output if output else f"{name} finished with no output."
-            self.remember_job_output(chat_id, name, summary, action_type=action_type)
-            if action_type == "multi_agent_research":
-                self.send_research_result(chat_id, summary)
-            else:
-                self.send_long_message(chat_id, summary, max_chunks=MAX_JOB_OUTPUT_CHUNKS)
-            self.running_jobs.pop(name, None)
+            try:
+                self.send_message(chat_id, f"Started {name}. I will report back when it finishes.")
+                output = fn()
+                summary = output if output else f"{name} finished with no output."
+                self.remember_job_output(chat_id, name, summary, action_type=action_type)
+                if action_type == "multi_agent_research":
+                    self.send_research_result(chat_id, summary)
+                elif action_type in {
+                    "generate_insight",
+                    "generate_insight_from_url",
+                    "generate_insight_from_urls",
+                    "generate_insight_from_memory",
+                    "generate_guide",
+                    "generate_guide_from_url",
+                    "generate_guide_from_urls",
+                    "generate_guide_from_memory",
+                    "rewrite_article",
+                }:
+                    self.send_message(chat_id, self.format_content_job_message(name, summary))
+                else:
+                    self.send_long_message(chat_id, summary, max_chunks=MAX_JOB_OUTPUT_CHUNKS)
+            except Exception as exc:
+                print(f"[!] Telegram job thread failed for {name}: {exc}")
+            finally:
+                self.running_jobs.pop(name, None)
 
         thread = threading.Thread(target=target, daemon=True)
         self.running_jobs[name] = thread

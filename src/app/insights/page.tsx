@@ -54,14 +54,11 @@ function formatDate(date: string | null) {
 
 function tagToneClass(tag: string) {
   const tones = [
-    'border-blue-100 bg-blue-50 text-blue-700',
-    'border-emerald-100 bg-emerald-50 text-emerald-700',
-    'border-violet-100 bg-violet-50 text-violet-700',
-    'border-amber-100 bg-amber-50 text-amber-700',
-    'border-rose-100 bg-rose-50 text-rose-700',
-    'border-cyan-100 bg-cyan-50 text-cyan-700',
-    'border-teal-100 bg-teal-50 text-teal-700',
-    'border-indigo-100 bg-indigo-50 text-indigo-700',
+    'border-[var(--ahh-lime)] bg-[var(--ahh-lime)] text-[var(--ahh-deep-teal)]',
+    'border-[var(--ahh-soft-yellow)] bg-[var(--ahh-soft-yellow)] text-[var(--ahh-ink)]',
+    'border-[var(--ahh-sage-green)] bg-[var(--ahh-sage-green)] text-[var(--ahh-ink)]',
+    'border-[var(--ahh-blush-pink)] bg-[var(--ahh-blush-pink)] text-[var(--ahh-ink)]',
+    'border-[var(--ahh-mist)] bg-[var(--ahh-mist)] text-[var(--ahh-deep-teal)]',
   ];
   const hash = Array.from(tag).reduce((total, char) => total + char.charCodeAt(0), 0);
 
@@ -81,8 +78,8 @@ function ArticleMeta({ article }: { article: Article }) {
           {tag}
         </span>
       ))}
-      <span className="inline-flex items-center gap-1 px-1 py-1 text-gray-500">
-        <Calendar className="h-3 w-3 text-[var(--ahh-blue)]" />
+      <span className="inline-flex items-center gap-1 px-1 py-1 text-[var(--ahh-muted)]">
+        <Calendar className="h-3 w-3 text-[var(--ahh-deep-teal)]" />
         {formatDate(article.published_at)}
       </span>
     </div>
@@ -91,7 +88,7 @@ function ArticleMeta({ article }: { article: Article }) {
 
 function ReadMoreLabel() {
   return (
-    <span className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ahh-blue)]">
+    <span className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ahh-deep-teal)]">
       Read more
       <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
     </span>
@@ -101,7 +98,7 @@ function ReadMoreLabel() {
 function FeaturedArticleCard({ article }: { article?: Article }) {
   if (!article) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-8 text-sm text-gray-500 shadow-sm">
+      <div className="brand-card p-8 text-sm text-[var(--ahh-muted)]">
         No published articles yet.
       </div>
     );
@@ -110,7 +107,7 @@ function FeaturedArticleCard({ article }: { article?: Article }) {
   return (
     <Link
       href={`/insights/${article.slug}`}
-      className="group grid h-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg md:grid-cols-[1.05fr_0.95fr]"
+      className="brand-card group grid h-full overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-[var(--ahh-shadow)] md:grid-cols-[1.05fr_0.95fr]"
     >
       <ArticleImage
         src={article.seo_meta.og_image}
@@ -119,14 +116,14 @@ function FeaturedArticleCard({ article }: { article?: Article }) {
       />
       <div className="flex min-h-[360px] flex-col justify-center space-y-4 p-6 sm:p-8">
         <ArticleMeta article={article} />
-        <h3 className="text-xl font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
+        <h3 className="text-xl font-semibold leading-snug text-[var(--ahh-ink)] group-hover:text-[var(--ahh-deep-teal)]">
           {article.title}
         </h3>
-        <p className="line-clamp-4 text-sm leading-6 text-gray-600">
+        <p className="line-clamp-4 text-sm leading-6 text-[var(--ahh-muted)]">
           {article.excerpt || 'Read practical healthcare guidance for Asian American patients and families.'}
         </p>
         <div className="pt-1">
-          <span className="inline-flex items-center gap-2 rounded-md bg-[var(--ahh-blue)] px-4 py-2 text-sm font-semibold text-white transition group-hover:bg-[var(--ahh-blue-dark)]">
+          <span className="brand-button inline-flex gap-2 px-4 py-2 text-sm">
             Read Full Article
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </span>
@@ -140,7 +137,7 @@ function SecondaryTopArticleCard({ article }: { article: Article }) {
   return (
     <Link
       href={`/insights/${article.slug}`}
-      className="group grid h-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg sm:grid-cols-[0.9fr_1fr]"
+      className="brand-card group grid h-full overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-[var(--ahh-shadow)] sm:grid-cols-[0.9fr_1fr]"
     >
       <ArticleImage
         src={article.seo_meta.og_image}
@@ -149,13 +146,13 @@ function SecondaryTopArticleCard({ article }: { article: Article }) {
       />
       <div className="flex min-w-0 flex-col justify-center gap-2 p-4">
         <ArticleMeta article={article} />
-        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
+        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-[var(--ahh-ink)] group-hover:text-[var(--ahh-deep-teal)]">
           {article.title}
         </h3>
-        <p className="line-clamp-2 text-xs leading-5 text-gray-600">
+        <p className="line-clamp-2 text-xs leading-5 text-[var(--ahh-muted)]">
           {article.excerpt || 'Short, useful healthcare context for choosing care with confidence.'}
         </p>
-        <span className="mt-1 inline-flex h-8 w-8 items-center justify-center self-end rounded-full bg-blue-50 text-[var(--ahh-blue)] transition group-hover:bg-[var(--ahh-blue)] group-hover:text-white">
+        <span className="mt-1 inline-flex h-8 w-8 items-center justify-center self-end rounded-full bg-[var(--ahh-mist)] text-[var(--ahh-deep-teal)] transition group-hover:bg-[var(--ahh-deep-teal)] group-hover:text-white">
           <ArrowRight className="h-4 w-4" />
         </span>
       </div>
@@ -167,7 +164,7 @@ function CompactArticleCard({ article }: { article: Article }) {
   return (
     <Link
       href={`/insights/${article.slug}`}
-      className="group flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
+      className="brand-card group flex h-full flex-col overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-[var(--ahh-shadow)]"
     >
       <ArticleImage
         src={article.seo_meta.og_image}
@@ -176,10 +173,10 @@ function CompactArticleCard({ article }: { article: Article }) {
       />
       <div className="flex flex-1 flex-col space-y-3 p-5">
         <ArticleMeta article={article} />
-        <h3 className="line-clamp-3 text-base font-semibold leading-snug text-gray-950 group-hover:text-[var(--ahh-blue)]">
+        <h3 className="line-clamp-3 text-base font-semibold leading-snug text-[var(--ahh-ink)] group-hover:text-[var(--ahh-deep-teal)]">
           {article.title}
         </h3>
-        <p className="line-clamp-3 text-sm leading-6 text-gray-600">
+        <p className="line-clamp-3 text-sm leading-6 text-[var(--ahh-muted)]">
           {article.excerpt || 'Short, useful healthcare context for choosing care with confidence.'}
         </p>
         <div className="mt-auto pt-1">
@@ -208,11 +205,11 @@ function ArticleSection({
   const compact = showAll ? rest.slice(2) : rest.slice(2, 6);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <section className="brand-container">
       <div className="mb-7">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-gray-950">{title}</h2>
-          <p className="mt-3 max-w-2xl text-base leading-6 text-gray-500">{description}</p>
+          <h2 className="brand-heading-2">{title}</h2>
+          <p className="brand-body-copy mt-3 max-w-2xl">{description}</p>
         </div>
       </div>
 
@@ -236,7 +233,7 @@ function ArticleSection({
       <div className="mt-7 flex justify-center">
         <Link
           href={viewAllHref}
-          className="inline-flex h-10 items-center gap-3 rounded-full border border-gray-200 bg-white px-6 text-sm font-semibold text-[var(--ahh-blue)] shadow-sm transition hover:border-[var(--ahh-blue)] hover:bg-blue-50"
+          className="brand-button-ghost inline-flex h-10 items-center gap-3 px-6 text-sm"
         >
           View all articles
           <ArrowRight className="h-4 w-4" />
@@ -287,13 +284,13 @@ export default async function InsightsPage({
   return (
     <main className="bg-white">
       <section className="px-2 pt-4 sm:px-4">
-        <div className="brand-hero mx-auto max-w-[1240px] px-7 py-14 sm:px-12 lg:px-20">
+        <div className="brand-hero brand-container px-7 py-14 sm:px-12 lg:px-20">
           <div className="relative z-10 grid items-center gap-10 lg:grid-cols-[1fr_280px]">
             <div className="max-w-3xl">
-              <h1 className="text-4xl font-semibold leading-tight tracking-tight text-white sm:text-5xl">
+              <h1 className="brand-heading-display text-white">
                 Health Insights for Asian American Patients
               </h1>
-              <p className="mt-5 max-w-2xl text-sm leading-6 text-white/72">
+              <p className="mt-5 max-w-2xl text-sm leading-7 text-white/72">
                 Practical health articles and in-depth guides tailored to Vietnamese and Korean American communities navigating the US healthcare system and finding the right clinic.
               </p>
               <div className="mt-5 flex flex-wrap gap-2">
@@ -312,25 +309,25 @@ export default async function InsightsPage({
                 ))}
               </div>
             </div>
-            <div className="hidden overflow-hidden rounded-xl bg-white/90 p-4 shadow-sm lg:block">
+            <div className="hidden overflow-hidden rounded-[var(--ahh-radius-sm)] bg-white p-4 shadow-sm lg:block">
               <ArticleImage
                 src={heroArticle?.seo_meta.og_image}
                 alt={heroArticle?.title || 'Health guide illustration'}
-                className="h-48 w-full rounded-lg"
+                className="h-48 w-full rounded-[var(--ahh-radius-sm)]"
               />
             </div>
           </div>
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto -mt-8 max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div className="brand-card rounded-lg p-7">
+      <section className="brand-container relative z-10 -mt-8">
+        <div className="brand-card p-7">
           <h2 className="text-base font-semibold text-[var(--ahh-ink)]">Hot Topic</h2>
           <div className="mt-6 flex flex-wrap gap-2">
             <Link
               href="/insights"
               className={`rounded-full px-4 py-2 text-xs font-medium ${
-                !categorySlug && !tagSlug ? 'bg-[var(--ahh-blue)] text-white' : 'border border-gray-200 text-gray-600'
+                !categorySlug && !tagSlug ? 'bg-[var(--ahh-deep-teal)] text-white' : 'border border-[var(--ahh-border)] text-[var(--ahh-muted)]'
               }`}
             >
               All
@@ -341,8 +338,8 @@ export default async function InsightsPage({
                 href={tagHref(topic.slug)}
                 className={`rounded-full border px-4 py-2 text-xs font-medium capitalize transition ${
                   tagSlug === topic.slug
-                    ? 'border-[var(--ahh-blue)] bg-[var(--ahh-blue)] text-white'
-                    : 'border-gray-200 text-gray-600 hover:border-[var(--ahh-blue)] hover:text-[var(--ahh-blue)]'
+                    ? 'border-[var(--ahh-deep-teal)] bg-[var(--ahh-deep-teal)] text-white'
+                    : 'border-[var(--ahh-border)] text-[var(--ahh-muted)] hover:border-[var(--ahh-deep-teal)] hover:text-[var(--ahh-deep-teal)]'
                 }`}
               >
                 {topic.label}

@@ -58,17 +58,17 @@ export function ArticleProgressSidebar({
 
   return (
     <aside className="hidden lg:block">
-      <div className="sticky top-24 space-y-8 border-b border-gray-200 pb-8">
+      <div className="sticky top-24 space-y-8 border-b border-[var(--ahh-border)] pb-8">
         <div>
-          <p className="text-sm font-semibold uppercase text-gray-800">On This Page</p>
-          <p className="mt-2 text-2xl font-medium text-gray-500">{progress}% read</p>
-          <div className="mt-6 h-2 overflow-hidden rounded-full bg-blue-100">
+          <p className="brand-caption font-semibold uppercase text-[var(--ahh-ink)]">On This Page</p>
+          <p className="mt-2 text-2xl font-medium text-[var(--ahh-muted)]">{progress}% read</p>
+          <div className="mt-6 h-2 overflow-hidden rounded-full bg-[var(--ahh-mist)]">
             <div
-              className="h-full rounded-full bg-[var(--ahh-blue)] transition-[width] duration-150"
+              className="h-full rounded-full bg-[var(--ahh-deep-teal)] transition-[width] duration-150"
               style={{ width: `${progress}%` }}
             />
           </div>
-          <div className="mt-4 flex gap-4 text-xs text-gray-500">
+          <div className="mt-4 flex gap-4 text-xs text-[var(--ahh-muted)]">
             <span>{readMinutes} min read</span>
             <span>{wordCount.toLocaleString('en-US')} words</span>
           </div>
@@ -86,7 +86,7 @@ export function ArticleProgressSidebar({
                       href={`#${item.id}`}
                       className={[
                         'block text-sm leading-6 transition-colors',
-                        isActive ? 'text-[var(--ahh-blue)]' : 'text-gray-500 hover:text-gray-800',
+                        isActive ? 'text-[var(--ahh-deep-teal)]' : 'text-[var(--ahh-muted)] hover:text-[var(--ahh-ink)]',
                       ].join(' ')}
                     >
                       {item.title}

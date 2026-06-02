@@ -43,10 +43,10 @@ export default async function ClinicPage({ params }: ClinicPageProps) {
   }
 
   return (
-    <>
+    <div className="bg-white">
       <ClinicHero clinic={clinic} />
       
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+      <div className="brand-container py-12">
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
           {/* Left Column: Main Content */}
           <ClinicMainContent clinic={clinic} />
@@ -55,6 +55,6 @@ export default async function ClinicPage({ params }: ClinicPageProps) {
           <ClinicSidebar clinic={clinic} />
         </div>
       </div>
-    </>
+    </div>
   );
 }

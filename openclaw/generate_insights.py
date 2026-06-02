@@ -8,6 +8,7 @@ from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
+import urllib.request
 from openai import OpenAI
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -23,6 +24,7 @@ CONTENT_WORD_TARGETS = {
     "insight": {"min": 1200, "max": 1500, "label": "1,200-1,500 words"},
     "guide": {"min": 3000, "max": 3500, "label": "3,000-3,500 words"},
 }
+KEY_TAKEAWAYS_HEADING = "Key Takeaways"
 REWRITE_SIMILARITY_THRESHOLD = 0.92
 MAX_REWRITE_SIMILARITY_RETRIES = 2
 JSON_TEMPERATURE = 0.4
@@ -42,6 +44,30 @@ TRUSTED_HEALTH_SOURCE_NAMES = [
     "U.S. Census Bureau",
     "KFF",
 ]
+TRUSTED_HEALTH_SOURCES = [
+    {"name": "CDC", "domain": "cdc.gov"},
+    {"name": "NIH", "domain": "nih.gov"},
+    {"name": "MedlinePlus", "domain": "medlineplus.gov"},
+    {"name": "National Institute of Dental and Craniofacial Research", "domain": "nidcr.nih.gov"},
+    {"name": "American Dental Association", "domain": "ada.org"},
+    {"name": "AHRQ", "domain": "ahrq.gov"},
+    {"name": "Office of Minority Health", "domain": "minorityhealth.hhs.gov"},
+    {"name": "HealthCare.gov", "domain": "healthcare.gov"},
+    {"name": "Medicare", "domain": "medicare.gov"},
+    {"name": "CMS", "domain": "cms.gov"},
+    {"name": "Health.gov", "domain": "health.gov"},
+    {"name": "Pew Research Center", "domain": "pewresearch.org"},
+    {"name": "KFF", "domain": "kff.org"},
+    {"name": "U.S. Census Bureau", "domain": "census.gov"},
+    {"name": "HHS", "domain": "hhs.gov"},
+    {"name": "APIAVote", "domain": "apiavote.org"},
+    {"name": "AAPCHO", "domain": "aapcho.org"},
+]
+REFERENCE_SEARCH_MAX_RESULTS = int(os.environ.get("OPENCLAW_REFERENCE_SEARCH_MAX_RESULTS", "5"))
+REFERENCE_EVIDENCE_MINIMUM = int(os.environ.get("OPENCLAW_REFERENCE_EVIDENCE_MINIMUM", "5"))
+REFERENCE_EVIDENCE_TARGET = int(os.environ.get("OPENCLAW_REFERENCE_EVIDENCE_TARGET", "8"))
+REFERENCE_MAX_PER_DOMAIN = int(os.environ.get("OPENCLAW_REFERENCE_MAX_PER_DOMAIN", "2"))
+REFERENCE_TEXT_CHAR_LIMIT = int(os.environ.get("OPENCLAW_REFERENCE_TEXT_CHAR_LIMIT", "2600"))
 DEFAULT_TOPICS = [
     "How to Prepare for an I-693 Medical Exam",
     "Understanding Dental Insurance for Asian American Families",
@@ -125,6 +151,64 @@ def extract_markdown_headings(content: str, limit: int = 18) -> List[str]:
         if len(headings) >= limit:
             break
     return headings
+
+def extract_reference_urls_from_content(content: str) -> List[str]:
+    urls = re.findall(r"\]\((https?://[^)]+)\)", content or "")
+    clean_urls = []
+    seen = set()
+    for url in urls:
+        url = url.strip().rstrip(").,;]\"'")
+        key = normalize_reference_url(url)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        clean_urls.append(url)
+    return clean_urls
+
+def should_skip_image_generation(instruction: str) -> bool:
+    normalized = normalize_for_similarity(instruction)
+    no_image_phrases = [
+        "khong can tao lai hinh",
+        "khong can phai tao lai hinh",
+        "khong tao lai hinh",
+        "khong tao hinh",
+        "khong can generate image",
+        "khong generate image",
+        "khong can anh",
+        "khong tao anh",
+        "do not regenerate image",
+        "do not regenerate images",
+        "dont regenerate image",
+        "dont regenerate images",
+        "no image regeneration",
+        "skip image generation",
+        "keep existing images",
+        "reuse existing images",
+    ]
+    return any(phrase in normalized for phrase in no_image_phrases)
+
+def build_rewrite_reference_label(article: dict) -> str:
+    heading_text = " ".join(extract_markdown_headings(article.get("content") or "", limit=10))
+    parts = [
+        article.get("title") or "",
+        article.get("excerpt") or "",
+        heading_text,
+    ]
+    return " ".join(part for part in parts if str(part).strip())
+
+def is_key_takeaways_heading(heading: str) -> bool:
+    normalized = re.sub(r"[^a-z\s]", " ", heading or "").lower()
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized in {
+        "key takeaway",
+        "key takeaways",
+        "main takeaway",
+        "main takeaways",
+        "summary",
+        "article summary",
+        "quick summary",
+        "summery",
+    } or normalized.startswith("key takeaways ")
 
 def extract_image_value(message) -> Optional[str]:
     """
@@ -309,13 +393,15 @@ def build_reference_style_rules() -> str:
     return """
     Reference style requirements:
     - End with a "## References" section when using external evidence, clinical guidance, statistics, or source material.
+    - Use only verified reference evidence supplied in the prompt for URLs, titles, years, statistics, studies, and named citations.
+    - Do not invent URLs, page titles, publication years, journal details, report names, DOI links, PMC links, or source organizations.
     - Format references as a numbered Markdown list, not bullet points.
     - Each reference should read like a citation: author or organization, title in quotation marks, publication/source name when available, year or access date when available, and a short linked source label at the end.
     - Use this style:
       1. American Dental Association. "Oral Health Topics: Gum Disease." ADA. [ADA](https://example.com)
       2. National Institute of Dental and Craniofacial Research. "Periodontal Disease in Adults." NIH/NIDCR. [NIDCR](https://example.com)
     - Do not use bare URLs.
-    - Do not fabricate author names, publication years, DOI links, PMC links, or journal details. If only the organization and page title are known, cite those accurately.
+    - If only the organization and page title are known from verified evidence, cite only those accurately.
     """
 
 def build_guide_structure_rules(mode: str = "insight") -> str:
@@ -327,7 +413,7 @@ def build_guide_structure_rules(mode: str = "insight") -> str:
     - Do not include an inline "Table of Contents" section inside `content`; the website renders the table of contents in the right sidebar from H2/H3 headings.
     - Build the article as a complete SEO pillar guide, not a long blog post or a stitched-together summary.
     - Use 10-14 SEO-friendly H2 sections, plus H3 subquestions where a topic needs depth.
-    - Start with 2 original intro paragraphs that define the reader problem, search intent, and why the guide matters. Do not start with a table, list, FAQ, or table of contents.
+    - Start with Key Takeaways, then use 2 original intro paragraphs in the first body section to define the reader problem, search intent, and why the guide matters. Do not start the body with a table, FAQ, or table of contents.
     - Each H2 section before FAQ must contain at least 120 words of useful substance. Prefer 2 paragraphs, or 1 paragraph plus a practical list/table.
     - Use the primary keyword or a close variant in the title, opening paragraph, one early H2, one later H2, and the Next Steps/conclusion.
     - H2 headings should answer real search questions: symptoms or decision points, cost, insurance, language access, preparation, risks, when to seek care, cultural considerations, and what to ask a clinician.
@@ -995,6 +1081,92 @@ def remove_inline_table_of_contents(content: str) -> str:
     )
     return toc_pattern.sub("", content, count=1).strip()
 
+def normalize_takeaway_bullet(line: str) -> str:
+    text = re.sub(r"^\s*(?:[-*+]\s*)?(?:\[[ xX]\]\s*)?", "", line).strip()
+    text = re.sub(r"^\d+[\.)]\s*", "", text).strip()
+    return text
+
+def extract_first_sentences(text: str, limit: int = 4) -> List[str]:
+    plain = re.sub(r"```[\s\S]*?```", " ", text or "")
+    plain = re.sub(r"!\[[^\]]*]\([^)]+\)", " ", plain)
+    plain = re.sub(r"\[([^\]]+)]\([^)]+\)", r"\1", plain)
+    plain = re.sub(r"^#{2,3}\s+.+$", " ", plain, flags=re.MULTILINE)
+    plain = re.sub(r"^\s*(?:[-*+]|\d+[\.)]|\[[ xX]\])\s+", " ", plain, flags=re.MULTILINE)
+    plain = re.sub(r"\s+", " ", plain).strip()
+    sentences = re.split(r"(?<=[.!?])\s+", plain)
+    return [sentence.strip() for sentence in sentences if len(sentence.split()) >= 8][:limit]
+
+def build_fallback_key_takeaways(content: str, metadata: Optional[dict] = None) -> str:
+    metadata = metadata or {}
+    bullets = extract_first_sentences(str(metadata.get("excerpt") or ""), limit=1)
+    bullets.extend(extract_first_sentences(content, limit=4))
+
+    cleaned_bullets: List[str] = []
+    seen = set()
+    for bullet in bullets:
+        bullet = normalize_takeaway_bullet(bullet).rstrip()
+        if not bullet:
+            continue
+        key = normalize_for_similarity(bullet)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned_bullets.append(bullet)
+        if len(cleaned_bullets) >= 4:
+            break
+
+    if len(cleaned_bullets) < 3:
+        title = str(metadata.get("title") or "this health topic").strip()
+        defaults = [
+            f"Understand the main care decisions, symptoms, costs, and follow-up questions around {title}.",
+            "Use the article as a starting point for a conversation with a licensed clinician, clinic staff, or insurance plan.",
+            "Pay attention to language access, family decision-making, and cultural trust issues when planning care.",
+        ]
+        for default in defaults:
+            key = normalize_for_similarity(default)
+            if key not in seen:
+                seen.add(key)
+                cleaned_bullets.append(default)
+            if len(cleaned_bullets) >= 3:
+                break
+
+    bullet_lines = "\n".join(f"- [x] {bullet}" for bullet in cleaned_bullets[:5])
+    return f"## {KEY_TAKEAWAYS_HEADING}\n\n{bullet_lines}"
+
+def ensure_key_takeaways_section(content: str, mode: str = "insight", metadata: Optional[dict] = None) -> str:
+    if mode not in {"insight", "guide"}:
+        return content
+
+    sections = re.split(r"(?=^##\s+)", (content or "").strip(), flags=re.MULTILINE)
+    intro_sections: List[str] = []
+    other_sections: List[str] = []
+    takeaway_section = ""
+
+    for section in sections:
+        stripped = section.strip()
+        if not stripped:
+            continue
+        heading_match = re.match(r"^##\s+(.+?)\s*$", stripped, flags=re.MULTILINE)
+        if heading_match and is_key_takeaways_heading(heading_match.group(1)):
+            takeaway_lines = []
+            for line in stripped.splitlines()[1:]:
+                bullet = normalize_takeaway_bullet(line)
+                if bullet:
+                    takeaway_lines.append(f"- [x] {bullet}")
+            if takeaway_lines:
+                takeaway_section = f"## {KEY_TAKEAWAYS_HEADING}\n\n" + "\n".join(takeaway_lines[:5])
+            continue
+        if heading_match:
+            other_sections.append(stripped)
+        else:
+            intro_sections.append(stripped)
+
+    if not takeaway_section:
+        takeaway_section = build_fallback_key_takeaways(content, metadata)
+
+    ordered_sections = [takeaway_section] + intro_sections + other_sections
+    return "\n\n".join(section for section in ordered_sections if section).strip()
+
 def clean_generated_article_content(content: str, mode: str = "insight") -> str:
     cleaned = strip_assistant_chatter(strip_leaked_json_payloads(content or ""))
     body, references = split_reference_sections(cleaned)
@@ -1187,6 +1359,11 @@ def normalize_outline(raw_outline: Any, mode: str) -> List[str]:
             if heading.lower() not in seen:
                 seen.add(heading.lower())
                 headings.append(heading)
+        headings = [
+            heading
+            for heading in headings
+            if not is_key_takeaways_heading(heading)
+        ]
         if not any(heading.lower() == "faqs" for heading in headings):
             headings.append("FAQs")
         if not any(heading.lower() == "next steps" for heading in headings):
@@ -1197,8 +1374,13 @@ def normalize_outline(raw_outline: Any, mode: str) -> List[str]:
             heading for heading in headings
             if heading.lower() not in {"faqs", "next steps", "references"}
         ]
-        return regular_headings[:14] + ["FAQs", "Next Steps", "References"]
+        return [KEY_TAKEAWAYS_HEADING] + regular_headings[:14] + ["FAQs", "Next Steps", "References"]
 
+    headings = [
+        heading
+        for heading in headings
+        if not is_key_takeaways_heading(heading)
+    ]
     if not any(heading.lower() == "faqs" for heading in headings):
         headings.append("FAQs")
     if not any(heading.lower() == "references" for heading in headings):
@@ -1207,7 +1389,7 @@ def normalize_outline(raw_outline: Any, mode: str) -> List[str]:
         heading for heading in headings
         if heading.lower() not in {"faqs", "references"}
     ]
-    return regular_headings[:7] + ["FAQs", "References"]
+    return [KEY_TAKEAWAYS_HEADING] + regular_headings[:7] + ["FAQs", "References"]
 
 def build_metadata_outline_prompt(
     writing_brief: str,
@@ -1251,8 +1433,8 @@ def build_metadata_outline_prompt(
     - Do not include `content`.
     - The `outline` must be a list of H2 heading strings, without leading ##.
     - Use {outline_count} substantive H2 headings before References.
-    - For guide mode, include "FAQs", "Next Steps", and "References" as final outline items.
-    - For insight mode, include "FAQs" and "References" near the end.
+    - For guide mode, make the first outline item exactly "Key Takeaways", then include "FAQs", "Next Steps", and "References" as final outline items.
+    - For insight mode, make the first outline item exactly "Key Takeaways", then include "FAQs" and "References" near the end.
     - Choose one primary keyword and 4-7 secondary keywords.
     - Write medically cautious, SEO-friendly metadata for Asian American patients and families.
     - Provide 3-5 distinct image prompts. Every prompt must say no text, no logos, no watermarks.
@@ -1291,10 +1473,15 @@ def build_section_prompt(
     instruction: str = "",
 ) -> str:
     """Build the Step 2 prompt for one Markdown section."""
-    is_first = index == 0
+    is_takeaways = is_key_takeaways_heading(heading)
+    is_first_body_section = index == 0 or (
+        index == 1 and bool(outline) and is_key_takeaways_heading(outline[0])
+    )
     is_guide = mode == "guide"
     per_section_words = "260-380" if is_guide else "180-260"
-    if heading.lower() == "references":
+    if is_takeaways:
+        per_section_words = "90-140"
+    elif heading.lower() == "references":
         per_section_words = "120-220"
     elif heading.lower() in {"faqs", "next steps"}:
         per_section_words = "260-420" if is_guide else "180-280"
@@ -1311,7 +1498,12 @@ def build_section_prompt(
 
     first_section_rule = (
         "- Because this is the first section, start with 2 short opening paragraphs before the H2 heading.\n"
-        if is_first
+        if is_first_body_section and not is_takeaways
+        else ""
+    )
+    key_takeaways_rule = (
+        "- This is the opening summary section. Start directly with `## Key Takeaways`, then write 3-5 concise checked checklist bullets using `- [x]`. Each bullet should summarize a main patient-facing point from the article in one sentence. Do not add intro paragraphs before this heading.\n"
+        if is_takeaways
         else ""
     )
 
@@ -1340,6 +1532,7 @@ def build_section_prompt(
     - Your entire response must be the article section itself. No preface and no afterword.
     - Start directly with the intro paragraph or `## {heading}`. End directly after the final article sentence/list item/reference.
     {first_section_rule}
+    {key_takeaways_rule}
     - Include the section heading exactly as `## {heading}` unless it is preceded by the first-section intro paragraphs.
     - Write {per_section_words} words for this section.
     - Use medically cautious language; avoid unsupported claims and fabricated statistics.
@@ -1405,18 +1598,30 @@ def generate_chunked_article_data(
 
     metadata["outline"] = outline
     metadata["content"] = clean_generated_article_content("\n\n".join(sections), mode)
+    metadata["content"] = ensure_key_takeaways_section(metadata["content"], mode, metadata)
     word_count = count_markdown_words(metadata["content"])
     print(f"[*] Chunked article word count: {word_count}")
     print("[*] Article content assembled.")
     return metadata
 
-def create_article_from_prompt(client: OpenAI, supabase: Client, prompt: str, label: str, mode: str = "insight"):
+def create_article_from_prompt(
+    client: OpenAI,
+    supabase: Client,
+    prompt: str,
+    label: str,
+    mode: str = "insight",
+    seed_urls: Optional[List[str]] = None,
+    reference_query_label: Optional[str] = None,
+):
     print("[*] Generating article content via Deepseek...")
     print(f"[*] Input: {label}")
     print(f"[*] Content mode: {mode}")
 
     try:
-        data = generate_chunked_article_data(client, prompt, label, mode)
+        evidence = gather_reference_evidence(client, reference_query_label or label, mode, seed_urls=seed_urls)
+        verified_prompt = add_reference_evidence_to_prompt(prompt, evidence)
+        data = generate_chunked_article_data(client, verified_prompt, label, mode)
+        data["content"] = enforce_verified_references(data["content"], evidence)
         
         base_slug = generate_slug(data["title"])
         slug = make_unique_slug(supabase, base_slug)
@@ -1490,22 +1695,35 @@ def rewrite_article(identifier: str, instruction: str) -> None:
     print(f"[*] Existing word count: {old_words}")
 
     prompt = build_rewrite_prompt(article, instruction, mode=mode)
+    seed_reference_urls = extract_reference_urls_from_content(article.get("content") or "")
+    seed_reference_urls.extend(re.findall(r"https?://\S+", instruction))
+    evidence = gather_reference_evidence(
+        client,
+        build_rewrite_reference_label(article),
+        mode,
+        seed_urls=seed_reference_urls,
+    )
+    verified_prompt = add_reference_evidence_to_prompt(prompt, evidence)
     data = generate_chunked_article_data(
         client,
-        prompt,
+        verified_prompt,
         article.get("title") or identifier,
         mode,
         article=article,
         instruction=instruction,
     )
     data = ensure_rewrite_changes_article(client, article, data, instruction, mode)
+    data["content"] = enforce_verified_references(data["content"], evidence)
     new_words = count_markdown_words(data.get("content") or "")
 
     image_urls = []
-    try:
-        image_urls = generate_article_images(client, data, article.get("slug") or generate_slug(data.get("title") or article.get("title") or "article"))
-    except Exception as exc:
-        print(f"[!] Could not generate rewrite images; keeping existing article images: {exc}")
+    if should_skip_image_generation(instruction):
+        print("[*] Rewrite image generation skipped by instruction; keeping existing article images.")
+    else:
+        try:
+            image_urls = generate_article_images(client, data, article.get("slug") or generate_slug(data.get("title") or article.get("title") or "article"))
+        except Exception as exc:
+            print(f"[!] Could not generate rewrite images; keeping existing article images: {exc}")
 
     rewritten_at = iso_now()
     updated_seo_meta = build_rewrite_version_meta(article, data, mode, instruction, rewritten_at)
@@ -1536,6 +1754,254 @@ def is_valid_source_url(url: str) -> bool:
     parsed = urlparse(url)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
+def normalize_reference_url(url: str) -> str:
+    parsed = urlparse(url or "")
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+
+    path = re.sub(r"/+$", "", parsed.path or "")
+    return f"{parsed.netloc.lower().removeprefix('www.')}{path}".lower()
+
+def trusted_source_for_url(url: str) -> Optional[dict]:
+    parsed_host = urlparse(url or "").netloc.lower().removeprefix("www.")
+    if not parsed_host:
+        return None
+
+    for source in TRUSTED_HEALTH_SOURCES:
+        domain = source["domain"].lower().removeprefix("www.")
+        if parsed_host == domain or parsed_host.endswith(f".{domain}"):
+            return source
+    return None
+
+def reference_source_key(url: str) -> str:
+    source = trusted_source_for_url(url)
+    if source:
+        return source["domain"].lower().removeprefix("www.")
+    return urlparse(url or "").netloc.lower().removeprefix("www.")
+
+def is_supported_reference_url(url: str) -> bool:
+    parsed = urlparse(url or "")
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+
+    path = parsed.path.lower()
+    return not path.endswith((".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip"))
+
+def clean_reference_search_label(label: str) -> str:
+    label = re.sub(r"https?://\S+", " ", label or "")
+    label = re.sub(r"[^a-zA-Z0-9\s,/-]", " ", label)
+    label = re.sub(r"\s+", " ", label).strip()
+    return label[:180] or "Asian American healthcare"
+
+def build_reference_search_queries(label: str, mode: str = "insight") -> List[str]:
+    safe_label = clean_reference_search_label(label)
+    core_terms = "Asian American patients United States healthcare"
+    if mode == "guide":
+        core_terms += " patient guide"
+
+    queries = []
+    for source in TRUSTED_HEALTH_SOURCES:
+        queries.append(f"{safe_label} {core_terms} site:{source['domain']}")
+    return queries
+
+def fetch_reference_text_fast(url: str) -> Optional[dict]:
+    try:
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/121 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=25) as response:
+            content_type = response.headers.get("content-type", "").lower()
+            if "pdf" in content_type or "html" not in content_type:
+                return None
+            html = response.read().decode("utf-8", errors="ignore")
+    except Exception:
+        return None
+
+    try:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+        title = soup.find("title")
+        for element in soup(["script", "style", "nav", "footer", "header", "noscript", "iframe", "svg"]):
+            element.decompose()
+        text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True)).strip()
+        return {
+            "title": title.get_text(" ", strip=True) if title else "",
+            "text": text,
+        }
+    except Exception:
+        return None
+
+def scrape_reference_url(url: str, title: str = "", source_name: str = "") -> Optional[dict]:
+    if not is_valid_source_url(url):
+        return None
+    if not is_supported_reference_url(url):
+        print(f"[!] Reference source skipped because file type is not supported for citation scraping: {url}")
+        return None
+
+    trusted_source = trusted_source_for_url(url)
+    source_name = source_name or (trusted_source or {}).get("name") or urlparse(url).netloc
+
+    fast_result = fetch_reference_text_fast(url)
+    if fast_result and len(fast_result.get("text") or "") >= 500:
+        text = fast_result["text"]
+        title = title or fast_result.get("title") or ""
+    else:
+        try:
+            from scraper import scrape_content_from_url
+
+            scraped = scrape_content_from_url(url)
+        except Exception as exc:
+            print(f"[!] Could not scrape reference source {url}: {exc}")
+            return None
+
+        text = re.sub(r"\s+", " ", scraped.get("text") or "").strip()
+
+    if len(text) < 500:
+        print(f"[!] Reference source skipped because extracted text is too short: {url}")
+        return None
+
+    return {
+        "title": title or source_name,
+        "url": url,
+        "source_name": source_name,
+        "domain": urlparse(url).netloc.lower().removeprefix("www."),
+        "text": text[:REFERENCE_TEXT_CHAR_LIMIT],
+    }
+
+def gather_reference_evidence(
+    client: OpenAI,
+    label: str,
+    mode: str = "insight",
+    seed_urls: Optional[List[str]] = None,
+) -> List[dict]:
+    print("[*] Gathering verified reference evidence from trusted sources...")
+    evidence: List[dict] = []
+    seen_urls = set()
+    domain_counts: Dict[str, int] = {}
+
+    for seed_url in seed_urls or []:
+        seed_url = seed_url.strip().rstrip(").,;]\"'")
+        if not seed_url or seed_url in seen_urls:
+            continue
+        domain = reference_source_key(seed_url)
+        if domain_counts.get(domain, 0) >= REFERENCE_MAX_PER_DOMAIN:
+            continue
+        seen_urls.add(seed_url)
+        source = trusted_source_for_url(seed_url)
+        scraped = scrape_reference_url(seed_url, source_name=(source or {}).get("name") or "Provided source")
+        if scraped:
+            evidence.append(scraped)
+            domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+    if len(evidence) >= REFERENCE_EVIDENCE_TARGET:
+        return evidence[:REFERENCE_EVIDENCE_TARGET]
+
+    try:
+        from research_agents import search_web
+    except Exception as exc:
+        print(f"[!] Reference search unavailable; continuing with provided sources only: {exc}")
+        return evidence
+
+    for query in build_reference_search_queries(label, mode):
+        if len(evidence) >= REFERENCE_EVIDENCE_TARGET:
+            break
+
+        results = search_web(query, max_results=REFERENCE_SEARCH_MAX_RESULTS)
+        for result in results:
+            if len(evidence) >= REFERENCE_EVIDENCE_TARGET:
+                break
+
+            url = result.get("url") or ""
+            if url in seen_urls or not trusted_source_for_url(url) or not is_supported_reference_url(url):
+                continue
+
+            domain = reference_source_key(url)
+            if domain_counts.get(domain, 0) >= REFERENCE_MAX_PER_DOMAIN:
+                continue
+
+            seen_urls.add(url)
+            source = trusted_source_for_url(url)
+            scraped = scrape_reference_url(
+                url,
+                title=result.get("title") or "",
+                source_name=(source or {}).get("name") or "",
+            )
+            if scraped:
+                evidence.append(scraped)
+                scraped_domain = reference_source_key(scraped.get("url") or url)
+                domain_counts[scraped_domain] = domain_counts.get(scraped_domain, 0) + 1
+
+    if len(evidence) < REFERENCE_EVIDENCE_MINIMUM:
+        print(
+            "[!] Verified reference evidence below requested minimum: "
+            f"{len(evidence)}/{REFERENCE_EVIDENCE_MINIMUM}. Continuing without fabricated citations."
+        )
+    else:
+        print(f"[*] Verified reference evidence ready: {len(evidence)} sources")
+    return evidence[:REFERENCE_EVIDENCE_TARGET]
+
+def format_reference_evidence(evidence: List[dict]) -> str:
+    if not evidence:
+        return """
+Verified reference evidence:
+- No verified web sources were collected. Do not fabricate URLs, titles, years, or citations. If references are needed, mention source organizations in prose without adding fake links.
+""".strip()
+
+    blocks = []
+    for index, source in enumerate(evidence, start=1):
+        blocks.append(
+            "\n".join(
+                [
+                    f"Source {index}: {source.get('source_name') or source.get('domain')}",
+                    f"Title: {source.get('title') or source.get('source_name')}",
+                    f"URL: {source.get('url')}",
+                    "Extracted content:",
+                    str(source.get("text") or "")[:REFERENCE_TEXT_CHAR_LIMIT],
+                ]
+            )
+        )
+
+    return (
+        "Verified reference evidence. Use only these sources for factual citations and the final References section. "
+        "Do not cite any URL, title, year, organization, study, or statistic that is not supported here.\n\n"
+        + "\n\n---\n\n".join(blocks)
+    )
+
+def add_reference_evidence_to_prompt(prompt: str, evidence: List[dict]) -> str:
+    return f"{prompt.strip()}\n\n{format_reference_evidence(evidence)}\n"
+
+def build_verified_reference_line(source: dict) -> str:
+    source_name = source.get("source_name") or source.get("domain") or "Verified source"
+    title = str(source.get("title") or source_name).strip()
+    url = source.get("url") or ""
+    return f'{source_name}. "{title}." [{source_name}]({url})'
+
+def enforce_verified_references(content: str, evidence: List[dict]) -> str:
+    if not evidence:
+        body, _references = split_reference_sections(content)
+        return body.strip()
+
+    body, _references = split_reference_sections(content)
+    verified_references: List[str] = []
+    seen = set()
+    for source in evidence:
+        reference = build_verified_reference_line(source)
+        key = normalize_reference_url(source.get("url") or "") or normalize_for_similarity(reference)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        verified_references.append(reference)
+
+    formatted_references = "\n".join(
+        f"{index}. {reference}" for index, reference in enumerate(verified_references, start=1)
+    )
+    return f"{body.strip()}\n\n## References\n\n{formatted_references}".strip()
+
 def create_article_from_url(source_url: str):
     create_article_from_url_with_mode(source_url, mode="insight")
 
@@ -1551,7 +2017,16 @@ def create_article_from_context(reference_text: str, instruction: str, reference
 
     client, supabase = create_clients()
     prompt = build_context_prompt(reference_label, reference_text, instruction, mode=mode)
-    create_article_from_prompt(client, supabase, prompt, instruction or reference_label, mode=mode)
+    seed_urls = re.findall(r"https?://\S+", reference_text)
+    create_article_from_prompt(
+        client,
+        supabase,
+        prompt,
+        instruction or reference_label,
+        mode=mode,
+        seed_urls=seed_urls,
+        reference_query_label=f"{instruction}\n{reference_text[:1200]}",
+    )
 
 def create_article_from_url_with_mode(source_url: str, mode: str = "insight"):
     source_url = source_url.strip()
@@ -1570,7 +2045,15 @@ def create_article_from_url_with_mode(source_url: str, mode: str = "insight"):
 
     client, supabase = create_clients()
     prompt = build_source_url_prompt(source_url, source_text, mode=mode)
-    create_article_from_prompt(client, supabase, prompt, source_url, mode=mode)
+    create_article_from_prompt(
+        client,
+        supabase,
+        prompt,
+        source_url,
+        mode=mode,
+        seed_urls=[source_url],
+        reference_query_label=source_text[:1200],
+    )
 
 if __name__ == "__main__":
     create_article()

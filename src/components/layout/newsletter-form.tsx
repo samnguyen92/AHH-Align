@@ -1,8 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 
 export function NewsletterForm() {
   const [email, setEmail] = useState('');
@@ -14,22 +12,25 @@ export function NewsletterForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2 w-full md:w-auto">
-      <Input
+    <form
+      onSubmit={handleSubmit}
+      className="flex w-full flex-col gap-2 rounded-full bg-white p-1 shadow-sm ring-1 ring-[var(--ahh-border)] sm:w-auto sm:flex-row sm:items-center"
+    >
+      <input
         id="newsletter-email"
         type="email"
         placeholder="Enter your email address"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
         required
-        className="h-10 min-w-[220px] bg-gray-800 border-gray-700 text-white placeholder:text-gray-500 focus-visible:ring-[var(--ahh-blue)]"
+        className="h-10 min-w-0 rounded-full border-0 bg-transparent px-4 text-sm text-[var(--ahh-ink)] outline-none placeholder:text-[var(--ahh-muted-2)] sm:min-w-[260px]"
       />
-      <Button
+      <button
         type="submit"
-        className="h-10 px-6 bg-[var(--ahh-blue)] hover:bg-[var(--ahh-blue-dark)] text-white font-semibold shrink-0"
+        className="h-10 shrink-0 rounded-full bg-[var(--ahh-deep-teal)] px-6 text-sm font-bold text-white transition-colors hover:bg-[var(--ahh-deep-teal-2)]"
       >
         Subscribe
-      </Button>
+      </button>
     </form>
   );
 }

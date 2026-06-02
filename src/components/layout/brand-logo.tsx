@@ -51,9 +51,9 @@ export function BrandLogo({
   const content = (
     <span className={`inline-flex items-center ${className}`}>
       <img
-        src={inverted ? '/brand/ahh-logo-white.svg' : '/brand/ahh-logo-dark.svg'}
+        src={inverted ? '/brand/ahh-logo-upload-white.svg' : '/brand/ahh-logo-upload-dark.svg'}
         alt="Asian Health Hub"
-        className={compact ? 'h-9 w-auto' : 'h-10 w-auto'}
+        className={compact ? 'h-10 w-auto' : 'h-11 w-auto'}
       />
     </span>
   );

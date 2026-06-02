@@ -34,7 +34,7 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
 
   return (
     <Link href={`/clinics/${clinic.slug || clinic.id}`} className="block group">
-      <div className="h-full flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden hover:shadow-md hover:border-[var(--ahh-blue)]/30 transition-all duration-200">
+      <div className="brand-card h-full flex flex-col overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--ahh-deep-teal)]/30 hover:shadow-md">
         <ClinicImage
           src={imageSrc}
           alt={clinic.name}
@@ -61,7 +61,7 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
           </div>
 
           {/* Title */}
-          <h3 className="font-bold text-gray-900 group-hover:text-[var(--ahh-blue)] transition-colors line-clamp-1 mb-1">
+          <h3 className="font-bold text-[var(--ahh-ink)] group-hover:text-[var(--ahh-blue)] transition-colors line-clamp-1 mb-1">
             {clinic.name}
           </h3>
 
@@ -84,13 +84,13 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
           {(clinic.languages.length > 0 || clinic.specialty) && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {clinic.languages.slice(0, 2).map((lang) => (
-                <span key={lang} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-[var(--ahh-blue)]/20 bg-blue-50/50 text-[10px] font-medium text-[var(--ahh-blue)]">
+                <span key={lang} className="brand-chip rounded-md px-2 py-0.5 text-[10px]">
                   <span className="w-2 h-2 rounded-full bg-[var(--ahh-blue)] opacity-70" />
                   {lang}
                 </span>
               ))}
               {clinic.specialty && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-[var(--ahh-blue)]/20 bg-blue-50/50 text-[10px] font-medium text-[var(--ahh-blue)]">
+                <span className="brand-chip rounded-md px-2 py-0.5 text-[10px]">
                   <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
                   {clinic.specialty}
                 </span>

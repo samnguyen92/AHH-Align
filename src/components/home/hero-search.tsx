@@ -2,7 +2,6 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -88,7 +87,7 @@ export function HeroSearch() {
         </div>
 
         {/* Dividers + Selects */}
-        <div className="hidden sm:block w-px bg-gray-200 self-stretch my-1" />
+        <div className="my-1 hidden w-px self-stretch bg-[var(--ahh-border)] sm:block" />
 
         <Select value={specialty} onValueChange={(v) => setSpecialty(v ?? '')}>
           <SelectTrigger id="hero-specialty" className="flex-1 h-10 border-0 bg-transparent text-sm focus:ring-0">
@@ -101,7 +100,7 @@ export function HeroSearch() {
           </SelectContent>
         </Select>
 
-        <div className="hidden sm:block w-px bg-gray-200 self-stretch my-1" />
+        <div className="my-1 hidden w-px self-stretch bg-[var(--ahh-border)] sm:block" />
 
         <Select value={city} onValueChange={(v) => setCity(v ?? '')}>
           <SelectTrigger id="hero-city" className="flex-1 h-10 border-0 bg-transparent text-sm focus:ring-0">
@@ -114,7 +113,7 @@ export function HeroSearch() {
           </SelectContent>
         </Select>
 
-        <div className="hidden sm:block w-px bg-gray-200 self-stretch my-1" />
+        <div className="my-1 hidden w-px self-stretch bg-[var(--ahh-border)] sm:block" />
 
         <Select value={language} onValueChange={(v) => setLanguage(v ?? '')}>
           <SelectTrigger id="hero-language" className="flex-1 h-10 border-0 bg-transparent text-sm focus:ring-0">
@@ -128,14 +127,15 @@ export function HeroSearch() {
         </Select>
 
         {/* Search Button */}
-        <Button
+        <button
+          type="button"
           id="hero-search-button"
           onClick={handleSearch}
-          className="h-10 rounded-full bg-[var(--ahh-lime)] px-6 text-sm font-bold text-[var(--ahh-deep-teal)] transition-all hover:bg-[var(--ahh-soft-yellow)]"
+          className="brand-button h-10 px-6 text-sm"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mr-1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           Search
-        </Button>
+        </button>
       </div>
     </div>
   );
