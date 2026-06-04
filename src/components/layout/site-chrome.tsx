@@ -8,6 +8,7 @@ import { Footer } from "@/components/layout/footer"
 export function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/")
+  const isInsightDetail = /^\/insights\/[^/]+/.test(pathname)
 
   if (isAdmin) {
     return <>{children}</>
@@ -15,7 +16,7 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Header />
+      <Header variant={isInsightDetail ? "overlay" : "default"} />
       <main className="flex-1">{children}</main>
       <BottomCTA />
       <Footer />

@@ -15,9 +15,16 @@ const navLinks: NavLink[] = [
   { href: '#about', label: 'About' },
 ];
 
-export function Header() {
+export function Header({ variant = 'default' }: { variant?: 'default' | 'overlay' }) {
+  const isOverlay = variant === 'overlay';
+
   return (
-    <header className="sticky top-0 z-50 w-full bg-[#92C7AD] px-3 py-3 backdrop-blur-xl">
+    <header
+      className={[
+        'z-50 w-full px-3 py-3 backdrop-blur-xl',
+        isOverlay ? 'fixed left-0 top-0 bg-transparent' : 'sticky top-0 bg-[#92C7AD]',
+      ].join(' ')}
+    >
       <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-4 rounded-[var(--ahh-radius-sm)] border border-[var(--ahh-border)] bg-white/95 px-4 shadow-[0_10px_30px_rgba(0,92,75,0.08)]">
         <BrandLogo compact />
 

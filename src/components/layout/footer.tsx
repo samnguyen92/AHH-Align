@@ -34,7 +34,7 @@ const socialLinks = [
 
 export function Footer() {
   return (
-    <footer className="bg-[var(--ahh-seafoam)] p-1 sm:p-2">
+    <footer className="bg-[#92C7AD] p-1 sm:p-2">
       <section className="rounded-[var(--ahh-radius)] bg-white px-6 py-16 sm:px-10 lg:px-16 lg:py-20">
         <div className="brand-container">
           <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">

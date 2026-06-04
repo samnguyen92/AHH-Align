@@ -426,12 +426,51 @@ function usesKeyTakeawaysStyle(sectionTitle: string) {
   return /\bkey\s+takeaways?\b/i.test(sectionTitle);
 }
 
-function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?: boolean } = {}) {
+type ArticleSectionKind =
+  | 'default'
+  | 'key-takeaways'
+  | 'signs'
+  | 'comparison'
+  | 'steps'
+  | 'checklist'
+  | 'faq'
+  | 'references';
+
+function getArticleSectionKind(sectionTitle: string): ArticleSectionKind {
+  if (usesKeyTakeawaysStyle(sectionTitle)) return 'key-takeaways';
+  if (/\b(signs?|red\s+flags?|warning\s+signs?|what\s+to\s+look\s+for)\b/i.test(sectionTitle)) return 'signs';
+  if (/\b(comparing|compare|comparison|options?|vs\.?|versus)\b/i.test(sectionTitle)) return 'comparison';
+  if (/\b(step[-\s]?by[-\s]?step|steps?|next\s+steps?|guide\s+to\s+finding|how\s+to)\b/i.test(sectionTitle)) return 'steps';
+  if (/\b(checklist|check-list|what\s+to\s+ask|questions?\s+to\s+ask|prepare|preparation)\b/i.test(sectionTitle)) return 'checklist';
+  if (/\bfaqs?\b/i.test(sectionTitle)) return 'faq';
+  if (/\breferences?\b/i.test(sectionTitle)) return 'references';
+  return 'default';
+}
+
+function getArticleSectionClassName(sectionTitle: string) {
+  const kind = getArticleSectionKind(sectionTitle);
+  return [
+    'article-section',
+    `article-section--${kind}`,
+    kind !== 'default' && kind !== 'faq' && kind !== 'references' ? 'article-infographic' : '',
+    kind !== 'default' && kind !== 'faq' && kind !== 'references' ? `article-infographic--${kind}` : '',
+  ].filter(Boolean).join(' ');
+}
+
+function createMarkdownComponents({
+  checkListStyle = false,
+  sectionKind = 'default',
+}: {
+  checkListStyle?: boolean;
+  sectionKind?: ArticleSectionKind;
+} = {}) {
+  const isReferenceSection = sectionKind === 'references';
+
   return {
     h1: ({ children }: { children?: ReactNode }) => (
       <h2
         id={slugifyHeading(textFromNode(children))}
-        className="scroll-mt-24 text-2xl font-semibold leading-snug text-[var(--ahh-ink)]"
+        className="article-heading article-heading--h1 scroll-mt-24"
       >
         {children}
       </h2>
@@ -439,7 +478,7 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
     h2: ({ children }: { children?: ReactNode }) => (
       <h2
         id={slugifyHeading(textFromNode(children))}
-        className="scroll-mt-24 pt-4 text-2xl font-semibold leading-snug text-[var(--ahh-ink)]"
+        className="article-heading article-heading--h2 scroll-mt-24"
       >
         {children}
       </h2>
@@ -447,20 +486,20 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
     h3: ({ children }: { children?: ReactNode }) => (
       <h3
         id={slugifyHeading(textFromNode(children))}
-        className="scroll-mt-24 pt-2 text-lg font-semibold leading-snug text-[var(--ahh-ink)]"
+        className="article-heading article-heading--h3 scroll-mt-24"
       >
         {children}
       </h3>
     ),
     p: ({ children }: { children?: ReactNode }) => (
-      <p className="text-[15px] leading-8 text-[var(--ahh-muted)]">{children}</p>
+      <p className="article-paragraph">{children}</p>
     ),
     ul: ({ children, className }: { children?: ReactNode; className?: string }) => {
       const isTaskList = className?.includes('contains-task-list');
       const listClassName =
         checkListStyle || isTaskList
-          ? 'article-check-list my-5 ml-0 list-none space-y-3'
-          : 'my-5 ml-5 list-disc space-y-2';
+          ? 'article-list article-list--check article-check-list'
+          : 'article-list article-list--bullet';
 
       return <ul className={listClassName}>{children}</ul>;
     },
@@ -477,33 +516,33 @@ function createMarkdownComponents({ checkListStyle = false }: { checkListStyle?:
       )
     ),
     ol: ({ children }: { children?: ReactNode }) => (
-      <ol className="my-5 ml-5 list-decimal space-y-2">{children}</ol>
+      <ol className={isReferenceSection ? 'article-list article-list--references' : 'article-list article-list--numbered'}>{children}</ol>
     ),
     li: ({ children, className }: { children?: ReactNode; className?: string }) => (
       <li
         className={[
-          'text-[15px] leading-7 text-[var(--ahh-muted)]',
-          checkListStyle || className?.includes('task-list-item') ? 'list-none pl-0' : 'pl-1',
+          'article-list-item',
+          checkListStyle || className?.includes('task-list-item') ? 'article-list-item--check list-none' : '',
         ].join(' ')}
       >
         {children}
       </li>
     ),
     table: ({ children }: { children?: ReactNode }) => (
-      <div className="my-8 overflow-x-auto rounded-[var(--ahh-radius-sm)] border border-[var(--ahh-border)] shadow-sm">
-        <table className="w-full border-collapse text-left text-sm">{children}</table>
+      <div className="article-table-wrap">
+        <table className="article-table">{children}</table>
       </div>
     ),
     th: ({ children }: { children?: ReactNode }) => (
-      <th className="border-b border-[var(--ahh-deep-teal)] bg-[var(--ahh-deep-teal)] px-4 py-3 font-semibold text-white">
+      <th className="article-table-head-cell">
         {children}
       </th>
     ),
     td: ({ children }: { children?: ReactNode }) => (
-      <td className="border-b border-[var(--ahh-border)] px-4 py-3">{children}</td>
+      <td className="article-table-cell">{children}</td>
     ),
     blockquote: ({ children }: { children?: ReactNode }) => (
-      <blockquote className="brand-quote my-8 rounded-[var(--ahh-radius-sm)] px-6 py-5 text-base leading-8 text-[var(--ahh-ink)]">
+      <blockquote className="article-quote">
         {children}
       </blockquote>
     ),
@@ -696,22 +735,20 @@ function ArticleMarkdownWithImages({
     <>
       {sections.map((section, index) => {
         const sectionTitle = getMarkdownSectionTitle(section);
-        const isKeyTakeaways = usesKeyTakeawaysStyle(sectionTitle);
+        const sectionKind = getArticleSectionKind(sectionTitle);
 
         return (
           <div
             key={`${index}-${section.slice(0, 20)}`}
             className={[
-              'space-y-6',
-              isKeyTakeaways
-                ? 'rounded-[var(--ahh-radius-sm)] border border-[var(--ahh-deep-teal)] bg-[var(--ahh-mist-2)] px-6 py-6'
-                : '',
+              getArticleSectionClassName(sectionTitle),
             ].join(' ')}
           >
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               components={createMarkdownComponents({
                 checkListStyle: usesCheckListStyle(sectionTitle),
+                sectionKind,
               })}
             >
               {section}
@@ -719,7 +756,7 @@ function ArticleMarkdownWithImages({
 
             {imageSlots.map((imageSrc, imageIndex) =>
               index === imageIndexes[imageIndex] ? (
-                <figure key={imageSrc} className="my-10 overflow-hidden rounded-[var(--ahh-radius)] bg-[var(--ahh-mist)]">
+                <figure key={imageSrc} className="article-image-block article-image-block--inline">
                   <ArticleImage
                     src={imageSrc}
                     alt={`${title} supporting illustration ${imageIndex + 1}`}
@@ -733,51 +770,6 @@ function ArticleMarkdownWithImages({
         );
       })}
     </>
-  );
-}
-
-function RelatedGuides({ articles }: { articles: Article[] }) {
-  if (articles.length === 0) return null;
-
-  return (
-    <section className="brand-section-mist py-14">
-      <div className="brand-container">
-        <div className="mb-8 flex items-end justify-between gap-4">
-          <div>
-            <h2 className="brand-heading-2">Related Guides</h2>
-            <p className="brand-body-copy mt-2 max-w-2xl">
-              Explore similar guides for Vietnamese and Korean patients navigating the US healthcare system.
-            </p>
-          </div>
-          <Link
-            href="/insights"
-            className="brand-button-ghost hidden px-4 py-2 text-xs sm:inline-flex"
-          >
-            See all insights &rarr;
-          </Link>
-        </div>
-        <div className="grid gap-5 sm:grid-cols-3">
-          {articles.slice(0, 3).map((article) => (
-            <Link
-              key={article.id}
-              href={`/insights/${article.slug}`}
-              className="brand-card group overflow-hidden"
-            >
-              <ArticleImage
-                src={article.seo_meta.og_image}
-                alt={article.title}
-                className="aspect-[16/9]"
-              />
-              <div className="p-4">
-                <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-[var(--ahh-ink)] group-hover:text-[var(--ahh-deep-teal)]">
-                  {article.title}
-                </h3>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </section>
   );
 }
 
@@ -837,36 +829,36 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <main className="bg-white">
-        <section className="px-2 pt-4 sm:px-4">
-          <div className="brand-hero brand-container px-7 py-10 sm:px-12 lg:px-16">
-            <div className="relative z-10 grid items-center gap-8 lg:grid-cols-[1fr_280px]">
-              <div className="max-w-3xl">
-                <h1 className="brand-heading-1 text-white">
-                  {selectedView.title}
-                </h1>
-                <p className="mt-4 max-w-2xl text-sm leading-6 text-white/72">
-                  {selectedView.excerpt || getSeoString(selectedView.seoMeta, 'description') || 'A practical guide for Asian American patients navigating care with confidence.'}
-                </p>
-                <div className="mt-5 flex flex-wrap items-center gap-2 text-xs text-white/72">
-                  <span className="rounded-full border border-white/35 px-3 py-1">
-                    {selectedView.category || 'Guide'}
-                  </span>
-                  <span className="rounded-full border border-white/35 px-3 py-1">
-                    {selectedView.tags[0] || 'Community Health'}
-                  </span>
-                  <span className="rounded-full border border-white/35 px-3 py-1">
-                    {selectedView.label}{selectedView.isCurrent ? ' current' : ''}
-                  </span>
-                  <span className="px-1 py-1">{formatDate(selectedView.publishedAt)}</span>
-                </div>
+      <main className="article-detail-page">
+        <section className="article-page-hero">
+          <div className="article-page-hero__panel">
+            <div className="article-page-hero__inner brand-container">
+              <nav aria-label="Breadcrumb" className="article-breadcrumbs">
+                <Link href="/">Home</Link>
+                <span>/</span>
+                <Link href="/insights">Insights</Link>
+                <span>/</span>
+                <span>{selectedView.category || 'Patient Guides'}</span>
+              </nav>
+
+              <div className="article-hero-tags">
+                <span>{selectedView.category || 'Patient Guide'}</span>
+                <span>{selectedView.tags[0] || 'Asian Health'}</span>
+                <span>{formatDate(selectedView.publishedAt)}</span>
+                <span>{readMinutes} min read</span>
               </div>
-              <ArticleImage
-                src={heroImageSrc}
-                alt={selectedView.title}
-                className="hidden aspect-[4/3] rounded-[var(--ahh-radius-sm)] bg-white p-0 lg:block"
-                iconSize={72}
-              />
+
+              <h1 className="article-page-hero__title">
+                {selectedView.title}
+              </h1>
+
+              <div className="article-author-card">
+                <span className="article-author-avatar">AH</span>
+                <span>
+                  <strong>Asian Health Hub Editorial Team</strong>
+                  <small>Patient guidance · culturally informed care</small>
+                </span>
+              </div>
             </div>
           </div>
         </section>
@@ -878,35 +870,54 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
           currentVersion={currentView}
         />
 
-        <article className="brand-container grid gap-12 py-10 lg:grid-cols-[minmax(0,760px)_280px]">
-          <div>
-            <ShareRow title={selectedView.title} shareUrl={shareUrl} />
+        <section className="article-content-section">
+          <article className="article-detail-shell brand-container grid gap-10 lg:grid-cols-[minmax(0,868px)_288px]">
+            <div>
+              <header className="article-detail-header">
+                <ArticleImage
+                  src={heroImageSrc}
+                  alt={selectedView.title}
+                  className="article-hero-image aspect-[16/8]"
+                  iconSize={92}
+                />
+                <p className="article-excerpt">
+                  {selectedView.excerpt || getSeoString(selectedView.seoMeta, 'description') || 'A practical guide for Asian American patients navigating care with confidence.'}
+                </p>
+              </header>
 
-            <div id="article-content" className="mt-8 space-y-6 text-sm leading-7 text-[var(--ahh-muted)]">
-              <ArticleMarkdownWithImages
-                preparedContent={preparedContent}
-                imageSources={contentImageSources}
-                title={selectedView.title}
-              />
+              <div className="mt-5">
+                <ShareRow title={selectedView.title} shareUrl={shareUrl} />
+              </div>
+
+              <div id="article-content" className="article-content">
+                <ArticleMarkdownWithImages
+                  preparedContent={preparedContent}
+                  imageSources={contentImageSources}
+                  title={selectedView.title}
+                />
+              </div>
+
+              <NewsletterInline />
+
+              {selectedView.tags.length > 0 && (
+                <div className="mt-10 flex flex-wrap gap-2 border-t border-[var(--ahh-border)] pt-6">
+                  {selectedView.tags.map((tag) => (
+                    <span key={tag} className="brand-chip">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <NewsletterInline />
-
-            {selectedView.tags.length > 0 && (
-              <div className="mt-10 flex flex-wrap gap-2 border-t border-[var(--ahh-border)] pt-6">
-                {selectedView.tags.map((tag) => (
-                  <span key={tag} className="brand-chip">
-                    #{tag}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <ArticleProgressSidebar outline={outline} readMinutes={readMinutes} wordCount={wordCount} />
-        </article>
-
-        <RelatedGuides articles={relatedArticles} />
+            <ArticleProgressSidebar
+              outline={outline}
+              readMinutes={readMinutes}
+              wordCount={wordCount}
+              relatedArticles={relatedArticles}
+            />
+          </article>
+        </section>
       </main>
     </>
   );

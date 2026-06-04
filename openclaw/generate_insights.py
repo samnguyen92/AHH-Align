@@ -404,6 +404,24 @@ def build_reference_style_rules() -> str:
     - If only the organization and page title are known from verified evidence, cite only those accurately.
     """
 
+def build_article_visual_contract(mode: str = "insight") -> str:
+    return """
+    Article visual/template contract for the frontend:
+    - The frontend renders Markdown into typed visual blocks. Do not write raw HTML or custom class attributes in `content`.
+    - Use stable H2 heading patterns so the renderer can apply the correct infographic class:
+      - "## Key Takeaways" -> `article-section--key-takeaways` and `article-infographic--key-takeaways`.
+      - Headings containing "Signs", "Warning Signs", or "What to Look For" -> `article-infographic--signs`.
+      - Headings containing "Comparing", "Comparison", "Options", "vs", or "Versus" -> `article-infographic--comparison`.
+      - Headings containing "Step-by-Step", "Steps", "Next Steps", or "How to" -> `article-infographic--steps`.
+      - Headings containing "Checklist", "What to Ask", "Questions to Ask", "Prepare", or "Preparation" -> `article-infographic--checklist`.
+      - "## References" -> `article-section--references`.
+    - Include one comparison table in a comparison/options section when useful; do not put tables in the opening summary.
+    - Include one quote-style callout using Markdown blockquote (`> ...`) only when it adds patient meaning.
+    - Use lists for practical signs, checklist items, and steps; these will be styled as infographic cards.
+    - Use normal paragraphs for explanations before and after visual blocks.
+    - References must stay as a numbered Markdown list so the frontend can style them as compact citations.
+    """
+
 def build_guide_structure_rules(mode: str = "insight") -> str:
     if mode != "guide":
         return ""
@@ -544,6 +562,7 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
+    visual_contract_rules = build_article_visual_contract(mode)
     guide_structure_rules = build_guide_structure_rules(mode)
     guide_generation_rules = build_guide_generation_rules(mode)
 
@@ -595,6 +614,7 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {visual_contract_rules}
     {guide_structure_rules}
     {guide_generation_rules}
     Image requirements:
@@ -627,6 +647,7 @@ def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insi
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
+    visual_contract_rules = build_article_visual_contract(mode)
     guide_structure_rules = build_guide_structure_rules(mode)
     guide_generation_rules = build_guide_generation_rules(mode)
     content_type = "Pillar Content guide" if is_guide else "SEO healthcare insight article"
@@ -658,6 +679,7 @@ def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insi
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {visual_contract_rules}
     {guide_structure_rules}
     {guide_generation_rules}
     - Include a final "## References" section with the source URL and any other source names clearly supported by the reference text.
@@ -694,6 +716,7 @@ def build_context_prompt(reference_label: str, reference_text: str, instruction:
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
+    visual_contract_rules = build_article_visual_contract(mode)
     guide_structure_rules = build_guide_structure_rules(mode)
     guide_generation_rules = build_guide_generation_rules(mode)
     content_type = "Pillar Content guide" if is_guide else "SEO healthcare insight article"
@@ -728,6 +751,7 @@ def build_context_prompt(reference_label: str, reference_text: str, instruction:
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {visual_contract_rules}
     {guide_structure_rules}
     {guide_generation_rules}
     - Include a final "## References" section using the source URLs or source names from the memory when available.
@@ -763,6 +787,7 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
+    visual_contract_rules = build_article_visual_contract(mode)
     guide_structure_rules = build_guide_structure_rules(mode)
     guide_generation_rules = build_guide_generation_rules(mode)
     word_count = CONTENT_WORD_TARGETS["guide" if is_guide else "insight"]["label"]
@@ -810,6 +835,7 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {visual_contract_rules}
     {guide_structure_rules}
     {guide_generation_rules}
     Image requirements:
@@ -1196,6 +1222,7 @@ def build_similarity_retry_prompt(
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
     reference_style_rules = build_reference_style_rules()
+    visual_contract_rules = build_article_visual_contract(mode)
     guide_structure_rules = build_guide_structure_rules(mode)
     existing_content = str(article.get("content") or "")
     current_headings = extract_markdown_headings(existing_content)
@@ -1240,6 +1267,7 @@ def build_similarity_retry_prompt(
     {trust_rules}
     {depth_quality_rules}
     {reference_style_rules}
+    {visual_contract_rules}
     {guide_structure_rules}
 
     Output ONLY valid JSON.
@@ -1403,6 +1431,7 @@ def build_metadata_outline_prompt(
     category = "guide" if is_guide else "insight"
     target = CONTENT_WORD_TARGETS[category]
     outline_count = "10-14" if is_guide else "5-7"
+    visual_contract_rules = build_article_visual_contract(mode)
     rewrite_context = ""
     if article:
         rewrite_context = f"""
@@ -1435,6 +1464,8 @@ def build_metadata_outline_prompt(
     - Use {outline_count} substantive H2 headings before References.
     - For guide mode, make the first outline item exactly "Key Takeaways", then include "FAQs", "Next Steps", and "References" as final outline items.
     - For insight mode, make the first outline item exactly "Key Takeaways", then include "FAQs" and "References" near the end.
+    - Follow this frontend visual contract when choosing section headings:
+    {visual_contract_rules}
     - Choose one primary keyword and 4-7 secondary keywords.
     - Write medically cautious, SEO-friendly metadata for Asian American patients and families.
     - Provide 3-5 distinct image prompts. Every prompt must say no text, no logos, no watermarks.
@@ -1485,6 +1516,7 @@ def build_section_prompt(
         per_section_words = "120-220"
     elif heading.lower() in {"faqs", "next steps"}:
         per_section_words = "260-420" if is_guide else "180-280"
+    visual_contract_rules = build_article_visual_contract(mode)
 
     rewrite_context = ""
     if article:
@@ -1541,6 +1573,8 @@ def build_section_prompt(
     - If this is "FAQs", include 4-6 H3 questions with concise answers.
     - If this is "Next Steps", include a practical checklist.
     - If this is "References", use a numbered Markdown citation list with credible source names and links when supported by the brief.
+    - Follow this frontend visual contract for Markdown block types and stable headings:
+    {visual_contract_rules}
     - Do not repeat previous outline sections. Stay focused on this heading.
     """
 
