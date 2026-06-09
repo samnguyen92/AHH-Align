@@ -31,13 +31,16 @@ export function ArticleProgressSidebar({
 
   useEffect(() => {
     const updateProgress = () => {
-      const article = document.getElementById('article-content');
-      if (!article) return;
+      const readingArea = document.getElementById('article-reading-area') ?? document.getElementById('article-content');
+      if (!readingArea) return;
 
-      const rect = article.getBoundingClientRect();
+      const rect = readingArea.getBoundingClientRect();
       const pageTop = window.scrollY + rect.top;
-      const readableHeight = Math.max(1, article.offsetHeight - window.innerHeight * 0.45);
-      const readDistance = window.scrollY + window.innerHeight * 0.22 - pageTop;
+      const pageBottom = pageTop + readingArea.offsetHeight;
+      const start = pageTop - window.innerHeight * 0.25;
+      const end = pageBottom - window.innerHeight * 0.75;
+      const readableHeight = Math.max(1, end - start);
+      const readDistance = window.scrollY - start;
       setProgress(clamp(Math.round((readDistance / readableHeight) * 100)));
 
       const current = outline
@@ -62,8 +65,8 @@ export function ArticleProgressSidebar({
   }, [outline]);
 
   return (
-    <aside className="article-sidebar hidden lg:block">
-      <div className="article-sidebar__inner sticky top-24 space-y-6">
+    <aside className="article-sidebar hidden self-start lg:sticky lg:top-24 lg:block">
+      <div className="article-sidebar__inner space-y-6">
         <div className="article-toc-card">
           <p className="article-toc-card__eyebrow">In this article</p>
           <p className="article-toc-card__progress">{progress}% read</p>

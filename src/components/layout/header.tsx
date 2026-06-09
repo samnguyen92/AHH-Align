@@ -21,7 +21,7 @@ export function Header({ variant = 'default' }: { variant?: 'default' | 'overlay
   return (
     <header
       className={[
-        'z-50 w-full px-3 py-3 backdrop-blur-xl',
+        'z-50 w-full px-3 py-3 ',
         isOverlay ? 'fixed left-0 top-0 bg-transparent' : 'sticky top-0 bg-[#92C7AD]',
       ].join(' ')}
     >

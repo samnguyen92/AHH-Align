@@ -872,7 +872,7 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
 
         <section className="article-content-section">
           <article className="article-detail-shell brand-container grid gap-10 lg:grid-cols-[minmax(0,868px)_288px]">
-            <div>
+            <div id="article-reading-area">
               <header className="article-detail-header">
                 <ArticleImage
                   src={heroImageSrc}

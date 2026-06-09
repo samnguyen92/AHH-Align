@@ -378,7 +378,7 @@ body {
 
 :where(.article-page-hero__inner),
 :where(.article-detail-shell.brand-container) {
-  width: min(100% - 2rem, 1280px);
+  width: min(100%, 1280px);
 }
 
 :where(.article-page-hero) {
@@ -638,7 +638,7 @@ body {
 }
 
 :where(.article-list-item--check) {
-  display: flex;
+  /* display: flex; */
   align-items: flex-start;
   gap: 0.35rem;
 }
@@ -737,6 +737,17 @@ body {
   left: 0;
   color: var(--ahh-deep-teal);
   font-weight: 700;
+}
+
+:where(.article-detail-page) .article-sidebar {
+  position: sticky;
+  top: 6rem;
+  align-self: start;
+  max-height: calc(100vh - 7rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 0.25rem;
+  scrollbar-gutter: stable;
 }
 
 :where(.article-sidebar__inner) {
