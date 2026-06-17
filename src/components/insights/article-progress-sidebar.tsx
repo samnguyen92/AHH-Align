@@ -65,7 +65,7 @@ export function ArticleProgressSidebar({
   }, [outline]);
 
   return (
-    <aside className="article-sidebar hidden self-start lg:sticky lg:top-24 lg:block">
+    <aside className="article-sidebar self-start lg:sticky lg:top-24">
       <div className="article-sidebar__inner space-y-6">
         <div className="article-toc-card">
           <p className="article-toc-card__eyebrow">In this article</p>

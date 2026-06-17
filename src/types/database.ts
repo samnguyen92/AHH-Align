@@ -22,14 +22,24 @@ export interface ClinicMetadata {
   reviews?: Review[];
   working_hours?: WorkingHours;
   services?: string[];
+  services_offered?: ServiceOffering[];
   rating?: number;
   rating_count?: number;
   images?: string[];
+  gallery_images?: string[];
   insurance_accepted?: string[];
+  insurance?: InsuranceInfo;
   conditions_treated?: string[];
   accepting_new_patients?: boolean | null;
   provider_credentials?: ProviderCredentials;
+  team_members?: TeamMember[];
+  highlights?: HighlightItem[];
+  pricing?: PricingItem[];
+  appointment?: AppointmentInfo;
+  review_profile?: ReviewProfile;
   language_note?: string;
+  cultural_context?: string;
+  about_highlight?: string;
   review_summary?: string;
   faqs?: ClinicFaq[];
   website?: string;
@@ -46,12 +56,98 @@ export interface ClinicMetadata {
   google_primary_type?: string;
   google_types?: string[];
   google_photo_attributions?: unknown[];
+  third_party_profiles?: ThirdPartyProfile[];
+  external_sources?: ExternalSource[];
   location?: {
     latitude?: number;
     longitude?: number;
     lat?: number;
     lng?: number;
+    address?: string;
+    city?: string;
+    state?: string;
+    zip_code?: string;
+    parking?: string | null;
+    transit?: string | null;
+    nearby_landmarks?: string[];
+    map_url?: string | null;
   };
+}
+
+export interface HighlightItem {
+  title: string;
+  detail?: string | null;
+  category?: string | null;
+}
+
+export interface ServiceOffering {
+  name: string;
+  category?: string | null;
+  description?: string | null;
+  patient_fit?: string | null;
+  is_featured?: boolean;
+}
+
+export interface InsuranceInfo {
+  accepted_networks?: string[];
+  accepts_medicaid?: boolean;
+  accepts_medicare?: boolean;
+  accepts_private_insurance?: boolean;
+  out_of_network_available?: boolean | null;
+  notes?: string | null;
+}
+
+export interface TeamMember {
+  name: string;
+  role?: string | null;
+  languages_spoken?: string[];
+  bio_snippet?: string | null;
+}
+
+export interface PricingItem {
+  name: string;
+  price?: string | null;
+  price_range?: string | null;
+  notes?: string | null;
+  category?: string | null;
+}
+
+export interface AppointmentInfo {
+  appointment_url?: string | null;
+  booking_note?: string | null;
+  free_consultation_available?: boolean | null;
+  phone_booking_available?: boolean | null;
+  online_booking_available?: boolean | null;
+  new_patient_note?: string | null;
+}
+
+export interface ReviewProfile {
+  rating?: number | null;
+  review_count?: number | null;
+  source?: string | null;
+  summary?: string | null;
+  positive_themes?: string[];
+  concern_themes?: string[];
+  featured_reviews?: Review[];
+}
+
+export interface ExternalSource {
+  source?: string;
+  url?: string;
+}
+
+export interface ThirdPartyProfile {
+  source: 'zocdoc' | 'healthgrades' | 'webmd' | 'vitals' | string;
+  url: string;
+  profile_name?: string | null;
+  rating?: number | null;
+  review_count?: number | null;
+  specialties?: string[];
+  languages?: string[];
+  insurance_networks?: string[];
+  appointment_url?: string | null;
+  review_snippets?: Review[];
+  summary?: string | null;
 }
 
 export interface ProviderCredentials {
@@ -70,7 +166,7 @@ export interface ClinicFaq {
 }
 
 export interface Review {
-  source: 'google' | 'yelp' | 'internal';
+  source: 'google' | 'yelp' | 'internal' | 'zocdoc' | 'healthgrades' | 'webmd' | 'vitals' | string;
   author: string;
   author_url?: string;
   rating: number;

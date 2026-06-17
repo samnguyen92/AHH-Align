@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Northside Hospital Gwinnett",
+    "domain": "northside.com",
+    "notes": "Main Gwinnett campus",
+    "force_refresh": false
+  },
+  {
+    "name": "Northside Hospital Duluth",
+    "domain": "northside.com",
+    "notes": "Duluth Medical Center campus",
+    "force_refresh": false
+  },
+  {
+    "name": "Piedmont Eastside Medical Center",
+    "domain": "piedmont.org",
+    "notes": "Piedmont Health Snellville/Eastside",
+    "force_refresh": false
+  },
+  {
+    "name": "Emory Johns Creek Hospital",
+    "domain": "emoryhealthcare.org",
+    "notes": "Emory Healthcare Johns Creek campus",
+    "force_refresh": false
+  },
+  {
+    "name": "Northeast Georgia Medical Center Braselton",
+    "domain": "nghs.com",
+    "notes": "NGMC Braselton campus",
+    "force_refresh": false
+  }
+]

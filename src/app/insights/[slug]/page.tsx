@@ -344,7 +344,7 @@ function VersionSwitcher({
 
 function NewsletterInline() {
   return (
-    <aside className="my-10 rounded-[var(--ahh-radius)] bg-[var(--ahh-deep-teal)] px-6 py-6 text-center text-white">
+    <aside className="article-newsletter-inline my-10 rounded-[var(--ahh-radius)] bg-[var(--ahh-deep-teal)] px-6 py-6 text-center text-white">
       <h2 className="text-lg font-semibold">AHH Pulse Newsletter</h2>
       <p className="mx-auto mt-1 max-w-md text-xs text-white/70">
         Monthly healthcare guides, clinic spotlights, and practical tips for Asian American patients.

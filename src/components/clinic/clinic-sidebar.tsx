@@ -25,13 +25,17 @@ function getClinicMapEmbedUrl(clinic: Clinic) {
 }
 
 export function ClinicSidebar({ clinic }: ClinicSidebarProps) {
+  const metadata = clinic.metadata || {};
+  const appointment = metadata.appointment;
+  const appointmentUrl = appointment?.appointment_url || metadata.appointment_url || metadata.website || clinic.metadata?.google_website_url;
+  const websiteUrl = metadata.website || clinic.metadata?.google_website_url;
   const addressString = [clinic.address, clinic.city, clinic.state, clinic.zip_code]
     .filter(Boolean)
     .join(', ');
-  const googleMapsUrl = clinic.metadata?.google_maps_url;
+  const googleMapsUrl = metadata.google_maps_url;
   const mapEmbedUrl = getClinicMapEmbedUrl(clinic);
 
-  const hours = clinic.metadata?.working_hours || {
+  const hours = metadata.working_hours || {
     monday: '8:00 AM - 5:00 PM',
     tuesday: '8:00 AM - 5:00 PM',
     wednesday: '8:00 AM - 5:00 PM',
@@ -43,6 +47,49 @@ export function ClinicSidebar({ clinic }: ClinicSidebarProps) {
 
   return (
     <aside className="w-full lg:w-80 shrink-0 space-y-6">
+      <div className="brand-card p-5">
+        <h3 className="font-bold text-[var(--ahh-ink)] mb-2">Book an appointment</h3>
+        {appointment?.booking_note && (
+          <p className="mb-4 text-xs leading-5 text-[var(--ahh-muted)]">{appointment.booking_note}</p>
+        )}
+        {appointmentUrl ? (
+          <Link
+            href={appointmentUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="brand-button w-full justify-center text-xs"
+          >
+            Book or request a visit
+          </Link>
+        ) : (
+          <p className="text-sm text-[var(--ahh-muted)]">Online booking is not listed.</p>
+        )}
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          {clinic.phone && (
+            <a
+              href={`tel:${clinic.phone.replace(/[^0-9]/g, '')}`}
+              className="rounded-lg border border-gray-200 px-3 py-2 text-center font-semibold text-[var(--ahh-blue)] hover:bg-blue-50"
+            >
+              Call clinic
+            </a>
+          )}
+          {websiteUrl && (
+            <Link
+              href={websiteUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-gray-200 px-3 py-2 text-center font-semibold text-[var(--ahh-blue)] hover:bg-blue-50"
+            >
+              Website
+            </Link>
+          )}
+        </div>
+        <div className="mt-4 space-y-2 text-xs text-[var(--ahh-muted)]">
+          {appointment?.free_consultation_available && <p>Free consultation listed</p>}
+          {appointment?.online_booking_available && <p>Online booking available</p>}
+          {appointment?.new_patient_note && <p>{appointment.new_patient_note}</p>}
+        </div>
+      </div>
       
       {/* Clinic Information Card */}
       <div className="brand-card p-5">
@@ -64,18 +111,20 @@ export function ClinicSidebar({ clinic }: ClinicSidebarProps) {
             <div className="w-full">
               <p className="text-xs font-semibold text-[var(--ahh-ink)] uppercase tracking-wider mb-1">Working Hours</p>
               <div className="space-y-1">
-                <div className="flex justify-between text-xs text-[var(--ahh-muted)]">
-                  <span>Mon - Fri</span>
-                  <span>{hours.monday}</span>
-                </div>
-                <div className="flex justify-between text-xs text-[var(--ahh-muted)]">
-                  <span>Saturday</span>
-                  <span>{hours.saturday}</span>
-                </div>
-                <div className="flex justify-between text-xs text-[var(--ahh-muted)]">
-                  <span>Sunday</span>
-                  <span>{hours.sunday}</span>
-                </div>
+                {[
+                  ['Mon', hours.monday],
+                  ['Tue', hours.tuesday],
+                  ['Wed', hours.wednesday],
+                  ['Thu', hours.thursday],
+                  ['Fri', hours.friday],
+                  ['Sat', hours.saturday],
+                  ['Sun', hours.sunday],
+                ].map(([day, value]) => (
+                  <div key={day} className="flex justify-between gap-3 text-xs text-[var(--ahh-muted)]">
+                    <span>{day}</span>
+                    <span className="text-right">{value || 'Not listed'}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -98,9 +147,21 @@ export function ClinicSidebar({ clinic }: ClinicSidebarProps) {
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-blue)" strokeWidth="2" className="shrink-0 mt-0.5"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             <div>
               <p className="text-xs font-semibold text-[var(--ahh-ink)] uppercase tracking-wider mb-1">Provider</p>
-              <p className="text-sm text-[var(--ahh-muted)]">Accepts New Patients</p>
+              <p className="text-sm text-[var(--ahh-muted)]">
+                {metadata.accepting_new_patients === false ? 'New patient status not listed' : 'Accepts new patients'}
+              </p>
             </div>
           </div>
+
+          {metadata.insurance?.notes && (
+            <div className="flex gap-3">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-blue)" strokeWidth="2" className="shrink-0 mt-0.5"><rect width="18" height="14" x="3" y="5" rx="2"/><path d="M3 10h18"/></svg>
+              <div>
+                <p className="text-xs font-semibold text-[var(--ahh-ink)] uppercase tracking-wider mb-1">Insurance</p>
+                <p className="text-sm text-[var(--ahh-muted)]">{metadata.insurance.notes}</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -53,7 +53,7 @@ export function BrandLogo({
       <img
         src={inverted ? '/brand/ahh-logo-upload-white.svg' : '/brand/ahh-logo-upload-dark.svg'}
         alt="Asian Health Hub"
-        className={compact ? 'h-10 w-auto' : 'h-11 w-auto'}
+        className={compact ? 'h-7 w-auto md:h-10' : 'h-9 w-auto md:h-11'}
       />
     </span>
   );

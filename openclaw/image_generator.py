@@ -7,6 +7,11 @@ from openai import OpenAI
 from storage import upload_image_value
 
 IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
+NATURAL_PHOTO_STYLE = (
+    "Shot on Sony A7R IV, 50mm lens, f/2.8 depth of field. "
+    "Natural skin texture, subtle wrinkles, unretouched, candid, highly detailed, "
+    "photorealistic, everyday life."
+)
 
 
 def slugify(text: str) -> str:
@@ -74,9 +79,11 @@ def generate_clinic_image(clinic_data: dict) -> Optional[str]:
 
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
     prompt = (
-        "Create a realistic, polished editorial photo-style image for a healthcare directory card. "
-        "Show a welcoming modern clinic interior or exterior, warm natural light, clean medical environment, "
-        "diverse Asian American patients or staff when people are present, no logos, no text, no readable signage. "
+        "Create a photorealistic documentary-style editorial healthcare photograph for a directory card. "
+        "It must look like a credible real photo, not AI art: welcoming modern clinic interior or exterior, warm natural light, clean medical environment, "
+        "authentic human expressions, natural skin texture, subtle wrinkles, unretouched candid faces, believable hands, diverse Asian American patients or staff when people are present. "
+        f"{NATURAL_PHOTO_STYLE} "
+        "No logos, no text, no readable signage, no illustration, no cartoon, no 3D render, no infographic, no plastic skin, no exaggerated stock-photo posing. "
         f"Clinic context: {name}, {specialty}, {city}. Languages: {languages}."
     )
 

@@ -56,12 +56,31 @@ def insert_clinic(clinic_data: dict):
         "provider_credentials",
         "language_note",
         "review_summary",
+        "reviews",
+        "rating",
+        "rating_count",
         "faqs",
         "website",
         "appointment_url",
         "email",
         "fax",
         "source_url",
+        "json_ld_schemas",
+        "important_links",
+        "iframe_sources",
+        "about_highlight",
+        "cultural_context",
+        "services_offered",
+        "insurance",
+        "team_members",
+        "highlights",
+        "pricing",
+        "location",
+        "appointment",
+        "review_profile",
+        "gallery_images",
+        "third_party_profiles",
+        "external_sources",
     ]
     for field in metadata_fields:
         value = clinic_data.get(field)
@@ -95,7 +114,7 @@ def insert_clinic(clinic_data: dict):
             existing_row = existing.data[0]
             existing_metadata = existing_row.get("metadata") or {}
             merged_metadata = {**existing_metadata, **incoming_metadata}
-            for list_key in ["images", "reviews", "services", "insurance_accepted", "conditions_treated", "faqs"]:
+            for list_key in ["images", "reviews", "services", "insurance_accepted", "conditions_treated", "faqs", "third_party_profiles", "external_sources"]:
                 if existing_metadata.get(list_key) and incoming_metadata.get(list_key):
                     merged_metadata[list_key] = _merge_lists(existing_metadata[list_key], incoming_metadata[list_key])
                 elif existing_metadata.get(list_key) and not incoming_metadata.get(list_key):

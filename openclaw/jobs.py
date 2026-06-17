@@ -1,5 +1,7 @@
 import contextlib
 import io
+import logging
+import logging.handlers
 import os
 import sys
 import traceback
@@ -13,6 +15,19 @@ load_dotenv("../.env.local")
 
 
 LOG_PATH = os.path.join(os.path.dirname(__file__), "openclaw.log")
+
+# Rotating log handler: max 5 MB per file, keep 3 backups
+_log_handler = logging.handlers.RotatingFileHandler(
+    LOG_PATH,
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3,
+    encoding="utf-8",
+)
+_log_handler.setFormatter(logging.Formatter("%(message)s"))
+_openclaw_logger = logging.getLogger("openclaw")
+_openclaw_logger.setLevel(logging.DEBUG)
+if not _openclaw_logger.handlers:
+    _openclaw_logger.addHandler(_log_handler)
 
 
 class TeeWriter:
@@ -34,8 +49,7 @@ class TeeWriter:
 
 def _write_log(text: str) -> None:
     timestamp = datetime.now().isoformat(timespec="seconds")
-    with open(LOG_PATH, "a", encoding="utf-8") as log_file:
-        log_file.write(f"\n[{timestamp}]\n{text}\n")
+    _openclaw_logger.info("\n[%s]\n%s", timestamp, text)
 
 
 def _run_with_captured_output(name: str, fn: Callable[[], None]) -> str:
@@ -81,6 +95,15 @@ def repair_article_images_job() -> str:
     from repair_article_images import main
 
     return _run_with_captured_output("repair_article_images", main)
+
+
+def regenerate_article_images_job(identifier: str, image_count: int = 3) -> str:
+    from repair_article_images import regenerate_article_images
+
+    return _run_with_captured_output(
+        "regenerate_article_images",
+        lambda: regenerate_article_images(identifier, image_count=image_count),
+    )
 
 
 def repair_article_slugs_job() -> str:

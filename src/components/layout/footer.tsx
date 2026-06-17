@@ -34,12 +34,12 @@ const socialLinks = [
 
 export function Footer() {
   return (
-    <footer className="bg-[#92C7AD] p-1 sm:p-2">
-      <section className="rounded-[var(--ahh-radius)] bg-white px-6 py-16 sm:px-10 lg:px-16 lg:py-20">
+    <footer className="home-footer bg-[#92C7AD] px-[10px] pb-[10px] pt-[10px]">
+      <section className="home-newsletter mx-auto flex min-h-[299px] w-full max-w-[1420px] items-center rounded-[16px] bg-white px-5 py-12 sm:px-10 lg:px-20">
         <div className="brand-container">
           <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
             <div className="max-w-xl">
-              <h3 className="brand-heading-2 text-[var(--ahh-ink)]">Subscribe to AHH Pulse</h3>
+              <h3 className="text-[32px] font-medium leading-tight text-[var(--ahh-ink)]">Subscribe to AHH Pulse</h3>
               <p className="mt-2 text-sm leading-relaxed text-[var(--ahh-muted)]">
                 Monthly health insights, directory updates, and community resources.
               </p>
@@ -50,8 +50,8 @@ export function Footer() {
       </section>
 
       <section
-        className="relative isolate mt-2 min-h-[520px] overflow-hidden rounded-[var(--ahh-radius)] px-6 py-10 sm:px-10 lg:min-h-[560px] lg:px-16"
-        style={{ backgroundColor: '#F5FAF7' }}
+        className="home-footer-panel relative isolate mx-auto mt-[10px] min-h-[520px] w-full max-w-[1420px] overflow-hidden rounded-[16px] px-5 py-10 sm:px-10 lg:min-h-[560px] lg:px-20"
+        style={{ backgroundColor: '#FFFFFF' }}
       >
         <div className="brand-container relative z-10">
           <div

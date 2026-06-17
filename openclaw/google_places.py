@@ -1,11 +1,14 @@
 import json
 import os
 import re
+import ssl
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+import certifi
 from dotenv import load_dotenv
+from openai import OpenAI
 
 from storage import safe_storage_name, upload_image_value
 
@@ -13,6 +16,8 @@ load_dotenv(".env")
 load_dotenv("../.env.local")
 
 PLACES_BASE_URL = "https://places.googleapis.com/v1"
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+REVIEW_SUMMARY_MODEL = os.environ.get("OPENCLAW_REVIEW_SUMMARY_MODEL", "deepseek/deepseek-chat")
 
 
 def get_google_places_key() -> Optional[str]:
@@ -30,7 +35,7 @@ def request_json(url: str, api_key: str, method: str = "GET", body: Optional[dic
         data = json.dumps(body).encode("utf-8")
 
     request = Request(url, data=data, headers=headers, method=method)
-    with urlopen(request, timeout=30) as response:
+    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -73,7 +78,7 @@ def text_search_place(clinic_data: dict, api_key: str) -> Optional[dict]:
         method="POST",
     )
 
-    with urlopen(request, timeout=30) as response:
+    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
         payload = json.loads(response.read().decode("utf-8"))
 
     places = payload.get("places") or []
@@ -111,7 +116,7 @@ def get_place_details(place_id: str, api_key: str) -> dict:
         },
         method="GET",
     )
-    with urlopen(request, timeout=30) as response:
+    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -167,11 +172,127 @@ def normalize_reviews(details: dict) -> List[dict]:
     return reviews
 
 
+def _fallback_review_themes(reviews: List[dict], limit: int = 4) -> List[str]:
+    rules = [
+        ("Compassionate care", ["compassion", "kind", "caring", "patient care"]),
+        ("Friendly staff", ["friendly", "welcoming", "staff", "team", "front desk"]),
+        ("Clear explanations", ["explain", "explained", "explanation", "answered", "thorough", "informative", "detail"]),
+        ("Comfortable visits", ["comfortable", "gentle", "relaxed", "pain free", "easy"]),
+        ("Strong results", ["result", "improved", "beautiful", "recommend", "excellent"]),
+    ]
+    text = " ".join(str(review.get("text") or "") for review in reviews).lower()
+    if not text:
+        return []
+
+    themes = []
+    for label, keywords in rules:
+        if any(keyword in text for keyword in keywords):
+            themes.append(label)
+        if len(themes) >= limit:
+            break
+    return themes
+
+
+def _fallback_review_summary(clinic_name: str, reviews: List[dict], rating: Optional[float], rating_count: Optional[int]) -> dict:
+    themes = _fallback_review_themes(reviews)
+    if rating:
+        count_text = f" from {rating_count} Google reviews" if rating_count else ""
+        theme_text = f" Patients commonly mention {', '.join(theme.lower() for theme in themes)}." if themes else ""
+        summary = f"{clinic_name} has a {rating:.1f} star Google rating{count_text}.{theme_text}"
+    elif themes:
+        summary = f"Google review snippets for {clinic_name} highlight {', '.join(theme.lower() for theme in themes)}."
+    else:
+        summary = f"Google review snippets are available for {clinic_name}."
+
+    return {
+        "summary": summary,
+        "positive_themes": themes,
+        "concern_themes": [],
+    }
+
+
+def summarize_reviews_with_ai(
+    clinic_name: str,
+    reviews: List[dict],
+    rating: Optional[float] = None,
+    rating_count: Optional[int] = None,
+) -> Optional[dict]:
+    """
+    Summarize Google review snippets for the clinic detail UI.
+    This runs after review scraping/enrichment and falls back cleanly if AI is unavailable.
+    """
+    if not reviews:
+        return None
+
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    fallback = _fallback_review_summary(clinic_name, reviews, rating, rating_count)
+    if not api_key:
+        print("[*] OPENROUTER_API_KEY is not set; using fallback review summary.")
+        return fallback
+
+    compact_reviews = [
+        {
+            "author": review.get("author"),
+            "rating": review.get("rating"),
+            "date": review.get("date"),
+            "text": (review.get("text") or "")[:900],
+        }
+        for review in reviews[:8]
+        if review.get("text")
+    ]
+    if not compact_reviews:
+        return fallback
+
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key, timeout=45.0)
+    prompt_payload = {
+        "clinic_name": clinic_name,
+        "rating": rating,
+        "rating_count": rating_count,
+        "reviews": compact_reviews,
+    }
+
+    try:
+        print(f"[*] Summarizing {len(compact_reviews)} Google reviews with AI...")
+        response = client.chat.completions.create(
+            model=REVIEW_SUMMARY_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You summarize patient reviews for a healthcare directory UI. "
+                        "Use only the supplied review text. Return strict JSON with keys: "
+                        "summary, positive_themes, concern_themes. The summary must be 1-2 concise "
+                        "patient-facing sentences. Themes must be short labels. Do not invent facts."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(prompt_payload, ensure_ascii=False),
+                },
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        content = response.choices[0].message.content or "{}"
+        data = json.loads(content)
+        summary = str(data.get("summary") or fallback["summary"]).strip()
+        positive_themes = data.get("positive_themes") if isinstance(data.get("positive_themes"), list) else []
+        concern_themes = data.get("concern_themes") if isinstance(data.get("concern_themes"), list) else []
+        return {
+            "summary": summary,
+            "positive_themes": [str(theme).strip() for theme in positive_themes if str(theme).strip()][:5],
+            "concern_themes": [str(theme).strip() for theme in concern_themes if str(theme).strip()][:5],
+        }
+    except Exception as exc:
+        print(f"[!] AI review summary failed for {clinic_name}: {exc}")
+        return fallback
+
+
 def upload_place_photos(details: dict, clinic_data: dict, api_key: str) -> List[str]:
     images = []
     clinic_slug = safe_storage_name(clinic_data.get("name") or details.get("id") or "clinic")
 
-    for index, photo in enumerate((details.get("photos") or [])[:3], start=1):
+    for index, photo in enumerate((details.get("photos") or [])[:5], start=1):
         photo_name = photo.get("name")
         if not photo_name:
             continue
@@ -230,6 +351,14 @@ def enrich_clinic_with_google_places(clinic_data: dict) -> dict:
             existing_images = clinic_data.get("images") or []
             clinic_data["images"] = google_images + [img for img in existing_images if img not in google_images]
 
+        google_reviews = normalize_reviews(details)
+        review_ai = summarize_reviews_with_ai(
+            clinic_data.get("name") or (details.get("displayName") or {}).get("text") or "Clinic",
+            google_reviews,
+            details.get("rating"),
+            details.get("userRatingCount"),
+        )
+
         google_metadata = {
             "google_place_id": details.get("id"),
             "google_maps_url": details.get("googleMapsUri"),
@@ -240,11 +369,25 @@ def enrich_clinic_with_google_places(clinic_data: dict) -> dict:
             "google_types": details.get("types"),
             "rating": details.get("rating"),
             "rating_count": details.get("userRatingCount"),
-            "reviews": normalize_reviews(details),
+            "reviews": google_reviews,
             "google_photo_attributions": [
-                photo.get("authorAttributions") or [] for photo in (details.get("photos") or [])[:3]
+                photo.get("authorAttributions") or [] for photo in (details.get("photos") or [])[:5]
             ],
         }
+
+        if review_ai:
+            existing_review_profile = clinic_data.get("review_profile") or {}
+            google_metadata["review_summary"] = review_ai["summary"]
+            google_metadata["review_profile"] = {
+                **existing_review_profile,
+                "rating": details.get("rating") or existing_review_profile.get("rating"),
+                "review_count": details.get("userRatingCount") or existing_review_profile.get("review_count"),
+                "source": "google",
+                "summary": review_ai["summary"],
+                "positive_themes": review_ai.get("positive_themes") or existing_review_profile.get("positive_themes") or [],
+                "concern_themes": review_ai.get("concern_themes") or existing_review_profile.get("concern_themes") or [],
+                "featured_reviews": google_reviews or existing_review_profile.get("featured_reviews") or [],
+            }
 
         if details.get("location"):
             google_metadata["location"] = details["location"]

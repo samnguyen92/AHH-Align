@@ -29,12 +29,14 @@ load_dotenv(".env")
 load_dotenv("../.env.local")
 
 PLANNER_MODEL = os.environ.get("OPENCLAW_RESEARCH_PLANNER_MODEL", "deepseek/deepseek-v4-flash")
-DEEP_MODEL = os.environ.get("OPENCLAW_RESEARCH_DEEP_MODEL", "deepseek-v3.2:cloud")
+DEEP_MODEL = os.environ.get("OPENCLAW_RESEARCH_DEEP_MODEL", "deepseek/deepseek-chat")
 REQUEST_TIMEOUT_SECONDS = int(os.environ.get("OPENCLAW_RESEARCH_TIMEOUT", "60"))
 REQUEST_RETRIES = int(os.environ.get("OPENCLAW_RESEARCH_RETRIES", "3"))
 DEFAULT_TARGET_LINKS = int(os.environ.get("OPENCLAW_RESEARCH_TARGET_LINKS", "12"))
 FACT_WORKERS = int(os.environ.get("OPENCLAW_RESEARCH_FACT_WORKERS", "3"))
 USE_DDGS_API = os.environ.get("OPENCLAW_USE_DDGS_API", "").strip().lower() in {"1", "true", "yes"}
+BRAVE_SEARCH_API_KEY = os.environ.get("BRAVE_SEARCH_API_KEY", "").strip()
+USE_BRAVE_SEARCH = bool(BRAVE_SEARCH_API_KEY) and os.environ.get("OPENCLAW_USE_BRAVE_SEARCH", "true").strip().lower() not in {"0", "false", "no"}
 
 BLOCKED_DOMAINS = [
     "facebook.com",
@@ -180,6 +182,53 @@ def search_duckduckgo_api(query: str, max_results: int) -> List[dict]:
     )
 
 
+def search_brave_api(query: str, max_results: int) -> List[dict]:
+    if not BRAVE_SEARCH_API_KEY:
+        return []
+
+    search_url = "https://api.search.brave.com/res/v1/web/search?" + urllib.parse.urlencode(
+        {
+            "q": query,
+            "count": min(max_results, 20),
+            "search_lang": "en",
+            "country": "US",
+        }
+    )
+    request = urllib.request.Request(
+        search_url,
+        headers={
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": BRAVE_SEARCH_API_KEY,
+            "User-Agent": "OpenClaw/1.0",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            raw = response.read()
+            if response.headers.get("content-encoding", "").lower() == "gzip":
+                import gzip
+
+                raw = gzip.decompress(raw)
+            payload = json.loads(raw.decode("utf-8", errors="ignore"))
+    except Exception as exc:
+        print(f"[!] Brave Search API failed: {exc}")
+        return []
+
+    web_results = (payload.get("web") or {}).get("results") or []
+    return dedupe_results(
+        [
+            {
+                "title": item.get("title"),
+                "url": item.get("url"),
+                "snippet": item.get("description") or item.get("snippet") or "",
+            }
+            for item in web_results
+        ]
+    )
+
+
 def search_duckduckgo_html(query: str, max_results: int) -> List[dict]:
     search_url = "https://duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query})
     try:
@@ -247,6 +296,8 @@ def search_web(query: str, max_results: int = 30) -> List[dict]:
         ("DuckDuckGo HTML", search_duckduckgo_html),
         ("Bing HTML", search_bing_html),
     ]
+    if USE_BRAVE_SEARCH:
+        providers.insert(0, ("Brave Search API", search_brave_api))
     if USE_DDGS_API:
         providers.append(("DuckDuckGo API", search_duckduckgo_api))
 

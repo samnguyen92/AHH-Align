@@ -3,22 +3,32 @@ import json
 import re
 import base64
 import copy
+import time
+import threading
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 import urllib.request
 from openai import OpenAI
 from supabase import create_client, Client
 from dotenv import load_dotenv
 from storage import upload_image_value
+from progress import report_progress
 
 # Load env vars
 load_dotenv(".env")
 load_dotenv("../.env.local")
 
 IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
+
+NATURAL_PHOTO_STYLE = (
+    "Shot on Sony A7R IV, 50mm lens, f/2.8 depth of field. "
+    "Natural skin texture, subtle wrinkles, unretouched, candid, highly detailed, "
+    "photorealistic, everyday life."
+)
 TEXT_MODEL = "deepseek/deepseek-v4-flash"
 CONTENT_WORD_TARGETS = {
     "insight": {"min": 1200, "max": 1500, "label": "1,200-1,500 words"},
@@ -38,6 +48,8 @@ ARTICLE_VERSION_META_KEYS = {
 TRUSTED_HEALTH_SOURCE_NAMES = [
     "American Dental Association",
     "National Institute of Dental and Craniofacial Research",
+    "National Cancer Institute",
+    "U.S. Preventive Services Task Force",
     "CDC",
     "NIH",
     "Pew Research Center",
@@ -49,6 +61,8 @@ TRUSTED_HEALTH_SOURCES = [
     {"name": "NIH", "domain": "nih.gov"},
     {"name": "MedlinePlus", "domain": "medlineplus.gov"},
     {"name": "National Institute of Dental and Craniofacial Research", "domain": "nidcr.nih.gov"},
+    {"name": "National Cancer Institute", "domain": "cancer.gov"},
+    {"name": "U.S. Preventive Services Task Force", "domain": "uspreventiveservicestaskforce.org"},
     {"name": "American Dental Association", "domain": "ada.org"},
     {"name": "AHRQ", "domain": "ahrq.gov"},
     {"name": "Office of Minority Health", "domain": "minorityhealth.hhs.gov"},
@@ -78,6 +92,67 @@ DEFAULT_TOPICS = [
     "Mental Health Care Access for Asian American Patients",
 ]
 
+GENERIC_TOPIC_FILLER_WORDS = {
+    "a",
+    "an",
+    "the",
+    "one",
+    "mot",
+    "một",
+    "me",
+    "my",
+    "for",
+    "to",
+    "cho",
+    "toi",
+    "tôi",
+    "giup",
+    "giúp",
+    "please",
+    "pls",
+    "article",
+    "bai",
+    "bài",
+    "blog",
+    "content",
+    "guide",
+    "huong",
+    "hướng",
+    "dan",
+    "dẫn",
+    "insight",
+    "pillar",
+    "post",
+    "write",
+    "create",
+    "generate",
+    "tao",
+    "tạo",
+    "viet",
+    "viết",
+}
+GENERIC_TOPIC_PHRASES = [
+    "write an guide insight for me",
+    "write a guide for me",
+    "write an insight for me",
+    "write a blog for me",
+    "generate guide for me",
+    "generate insight for me",
+    "generate blog for me",
+    "create guide for me",
+    "create insight for me",
+    "viet 1 bai insight blog cho toi",
+    "viet mot bai insight blog cho toi",
+    "viet mot bai guide cho toi",
+    "tao mot bai guide cho toi",
+    "tao mot bai insight cho toi",
+    "viết 1 bài insight blog cho tôi",
+    "viết một bài insight blog cho tôi",
+    "viết một bài guide cho tôi",
+    "tạo một bài guide cho tôi",
+    "tạo một bài insight cho tôi",
+]
+
 def generate_slug(text: str) -> str:
     text = text.replace("Đ", "D").replace("đ", "d")
     text = unicodedata.normalize("NFKD", text)
@@ -104,6 +179,89 @@ def normalize_for_similarity(content: str) -> str:
     plain_text = re.sub(r"[^a-zA-Z0-9\s]", " ", plain_text)
     plain_text = re.sub(r"\s+", " ", plain_text).strip().lower()
     return plain_text
+
+def normalize_topic_request(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text or "")
+    text = re.sub(r"https?://\S+", " ", text)
+    text = re.sub(r"[^0-9A-Za-zÀ-ỹ\s/-]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip().lower()
+    return text
+
+def looks_like_generic_content_request(text: str) -> bool:
+    normalized = normalize_topic_request(text)
+    if not normalized:
+        return True
+
+    if normalized in GENERIC_TOPIC_PHRASES:
+        return True
+
+    words = re.findall(r"[0-9A-Za-zÀ-ỹ]+", normalized)
+    meaningful_words = [
+        word
+        for word in words
+        if word not in GENERIC_TOPIC_FILLER_WORDS and not word.isdigit()
+    ]
+    return len(meaningful_words) == 0
+
+def clean_requested_topic(topic: Optional[str], mode: str = "insight") -> str:
+    raw_topic = (topic or "").strip()
+    if not raw_topic:
+        return ""
+
+    normalized = raw_topic.lower()
+    for marker in [" về ", " ve ", " about ", " topic "]:
+        index = normalized.find(marker)
+        if index >= 0:
+            candidate = raw_topic[index + len(marker):].strip(" :.-")
+            return "" if looks_like_generic_content_request(candidate) else candidate
+
+    prefixes = [
+        "/generate_insight",
+        "/generate_blog",
+        "/generate_guide",
+        "viết 1 bài insight blog",
+        "viet 1 bai insight blog",
+        "viết một bài insight blog",
+        "viet mot bai insight blog",
+        "tạo một bài insight",
+        "tao mot bai insight",
+        "viết một bài insight",
+        "viet mot bai insight",
+        "viết 1 bài insight",
+        "viet 1 bai insight",
+        "generate insight",
+        "create insight",
+        "write insight",
+        "write an insight",
+        "write a insight",
+        "tạo một bài blog",
+        "tao mot bai blog",
+        "viết một bài blog",
+        "viet mot bai blog",
+        "viết 1 bài blog",
+        "viet 1 bai blog",
+        "generate blog",
+        "create blog",
+        "write blog",
+        "write a blog",
+        "tạo một bài guide",
+        "tao mot bai guide",
+        "viết một bài guide",
+        "viet mot bai guide",
+        "viết 1 bài guide",
+        "viet 1 bai guide",
+        "generate guide",
+        "create guide",
+        "write guide",
+        "write a guide",
+        "write an guide",
+    ]
+    for prefix in prefixes:
+        if normalized.startswith(prefix):
+            candidate = raw_topic[len(prefix):].strip(" :.-")
+            return "" if looks_like_generic_content_request(candidate) else candidate
+
+    return "" if looks_like_generic_content_request(raw_topic) else raw_topic
 
 def content_similarity(left: str, right: str) -> float:
     left_normalized = normalize_for_similarity(left)
@@ -188,27 +346,113 @@ def should_skip_image_generation(instruction: str) -> bool:
     return any(phrase in normalized for phrase in no_image_phrases)
 
 def build_rewrite_reference_label(article: dict) -> str:
-    heading_text = " ".join(extract_markdown_headings(article.get("content") or "", limit=10))
-    parts = [
-        article.get("title") or "",
-        article.get("excerpt") or "",
-        heading_text,
-    ]
-    return " ".join(part for part in parts if str(part).strip())
+    title = article.get("title") or ""
+    return clean_reference_search_label(title, max_len=80)
 
 def is_key_takeaways_heading(heading: str) -> bool:
-    normalized = re.sub(r"[^a-z\s]", " ", heading or "").lower()
+    normalized = unicodedata.normalize("NFKD", heading or "")
+    normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+    normalized = re.sub(r"[^a-z\s]", " ", normalized.lower())
     normalized = re.sub(r"\s+", " ", normalized).strip()
+    
+    banned_words = {"takeaway", "takeaways", "summary", "summaries", "recap"}
+    words = set(normalized.split())
+    if words.intersection(banned_words):
+        return True
+        
     return normalized in {
-        "key takeaway",
-        "key takeaways",
-        "main takeaway",
-        "main takeaways",
-        "summary",
-        "article summary",
+        "key points",
+        "key point",
+        "main points",
+        "main point",
         "quick summary",
-        "summery",
-    } or normalized.startswith("key takeaways ")
+        "highlights",
+        "article highlights",
+    }
+
+def is_faq_heading(heading: str) -> bool:
+    normalized = unicodedata.normalize("NFKD", heading or "")
+    normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+    normalized = re.sub(r"[^a-z\s]", " ", normalized.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    
+    words = normalized.split()
+    if "faq" in words or "faqs" in words:
+        return True
+    if "frequently asked" in normalized:
+        return True
+    return False
+
+def is_next_steps_heading(heading: str) -> bool:
+    normalized = unicodedata.normalize("NFKD", heading or "")
+    normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+    normalized = re.sub(r"[^a-z\s]", " ", normalized.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    
+    if "next step" in normalized or "next steps" in normalized:
+        return True
+    return False
+
+def is_references_heading(heading: str) -> bool:
+    normalized = unicodedata.normalize("NFKD", heading or "")
+    normalized = "".join(c for c in normalized if not unicodedata.combining(c))
+    normalized = re.sub(r"[^a-z\s]", " ", normalized.lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    
+    if "reference" in normalized or "references" in normalized or "source" in normalized or "sources" in normalized:
+        return True
+    return False
+
+def get_prioritized_sources(label: str) -> List[dict]:
+    label_lower = label.lower()
+    prioritized = []
+    others = []
+    
+    is_dental = any(w in label_lower for w in ["dental", "teeth", "tooth", "oral", "nha khoa", "răng", "nướu"])
+    is_cancer_screening = any(w in label_lower for w in ["cancer", "colorectal", "colon", "rectal", "mammogram", "screening"])
+    is_medicare_policy = any(w in label_lower for w in ["medicare", "insurance", "policy", "cost", "enrollment", "bảo hiểm", "học phí", "chi phí"])
+    
+    for source in TRUSTED_HEALTH_SOURCES:
+        domain = source["domain"].lower()
+        if is_dental:
+            if domain in ["ada.org", "nidcr.nih.gov"]:
+                prioritized.append(source)
+            else:
+                others.append(source)
+        elif is_cancer_screening:
+            if domain in ["cdc.gov", "cancer.gov", "medlineplus.gov", "uspreventiveservicestaskforce.org", "nih.gov"]:
+                prioritized.append(source)
+            else:
+                others.append(source)
+        elif is_medicare_policy:
+            if domain in ["medicare.gov", "cms.gov", "healthcare.gov", "kff.org", "hhs.gov", "ahrq.gov"]:
+                prioritized.append(source)
+            else:
+                others.append(source)
+        else:
+            if domain in ["cdc.gov", "nih.gov", "medlineplus.gov"]:
+                prioritized.append(source)
+            else:
+                others.append(source)
+                
+    return prioritized + others
+
+def get_direct_reference_urls(label: str) -> List[str]:
+    label_lower = label.lower()
+    urls: List[str] = []
+
+    if any(w in label_lower for w in ["colorectal", "colon cancer", "rectal cancer"]):
+        urls.extend(
+            [
+                "https://www.cdc.gov/colorectal-cancer/screening/index.html",
+                "https://www.cdc.gov/colorectal-cancer/statistics/index.html",
+                "https://www.cancer.gov/types/colorectal/screening-fact-sheet",
+                "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/colorectal-cancer-screening",
+                "https://medlineplus.gov/colorectalcancer.html",
+            ]
+        )
+
+    return urls
 
 def extract_image_value(message) -> Optional[str]:
     """
@@ -520,9 +764,13 @@ def pick_trending_topic(client: OpenAI, supabase: Client, mode: str = "insight")
 def create_article(topic: Optional[str] = None):
     print("[*] Start generate blog.")
     client, supabase = create_clients()
-    requested_topic = (topic or os.environ.get("OPENCLAW_ARTICLE_TOPIC") or "").strip()
+    raw_requested_topic = (topic or os.environ.get("OPENCLAW_ARTICLE_TOPIC") or "").strip()
+    requested_topic = clean_requested_topic(raw_requested_topic, mode="insight")
     if requested_topic:
         print(f"[*] Using requested blog topic: {requested_topic}")
+    elif raw_requested_topic:
+        print(f"[*] Request did not include a specific blog topic: {raw_requested_topic}")
+        print("[*] Getting topic for blog...")
     else:
         print("[*] Getting topic for blog...")
     topic = requested_topic or pick_trending_topic(client, supabase, mode="insight")
@@ -534,9 +782,13 @@ def create_article(topic: Optional[str] = None):
 def create_guide(topic: Optional[str] = None):
     print("[*] Start generate guide.")
     client, supabase = create_clients()
-    requested_topic = (topic or os.environ.get("OPENCLAW_GUIDE_TOPIC") or "").strip()
+    raw_requested_topic = (topic or os.environ.get("OPENCLAW_GUIDE_TOPIC") or "").strip()
+    requested_topic = clean_requested_topic(raw_requested_topic, mode="guide")
     if requested_topic:
         print(f"[*] Using requested guide topic: {requested_topic}")
+    elif raw_requested_topic:
+        print(f"[*] Request did not include a specific guide topic: {raw_requested_topic}")
+        print("[*] Getting topic for guide...")
     else:
         print("[*] Getting topic for guide...")
     topic = requested_topic or pick_trending_topic(client, supabase, mode="guide")
@@ -618,10 +870,13 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
     {guide_structure_rules}
     {guide_generation_rules}
     Image requirements:
-    - Provide 3-5 distinct image prompts in `image_prompts`, choosing the count based on the article depth and section variety.
+    - Provide 3-5 distinct photorealistic editorial photo prompts in `image_prompts`, choosing the count based on the article depth and section variety.
     - First prompt is for the hero image.
     - Remaining prompts are for inline supporting images tied to different major sections of the article.
-    - Every prompt must be visually distinct and must say no text, no logos, no watermarks.
+    - Every prompt must describe a realistic healthcare or everyday patient scene with natural light, real people when relevant, believable clinic/home details, and human warmth.
+    - Every prompt must include this natural photo style: {NATURAL_PHOTO_STYLE}
+    - Do not request illustrations, icons, diagrams, vector art, 3D renderings, cartoons, infographics, posters, text overlays, floating UI, or symbolic/metaphorical scenes.
+    - Every prompt must be visually distinct and must say: photorealistic, documentary-style editorial photography, no text, no logos, no watermarks.
 
     Output ONLY valid JSON in this exact structure:
     {{
@@ -634,15 +889,15 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
       "primary_keyword": "primary keyword here",
       "secondary_keywords": ["keyword one", "keyword two"],
       "image_prompts": [
-        "Hero image prompt for this exact article, no text, no logos, no watermarks",
-        "Inline supporting image prompt for section one, no text, no logos, no watermarks",
-        "Inline supporting image prompt for section two, no text, no logos, no watermarks"
+        "Photorealistic hero image prompt for this exact article, documentary-style editorial photography, no text, no logos, no watermarks",
+        "Photorealistic inline supporting image prompt for section one, documentary-style editorial photography, no text, no logos, no watermarks",
+        "Photorealistic inline supporting image prompt for section two, documentary-style editorial photography, no text, no logos, no watermarks"
       ]
     }}
     """
 
 def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insight") -> str:
-    safe_text = source_text[:24000]
+    safe_text = source_text[:40000]
     is_guide = mode == "guide"
     trust_rules = build_trust_and_culture_rules(mode)
     depth_quality_rules = build_authoritative_depth_rules(mode)
@@ -683,7 +938,11 @@ def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insi
     {guide_structure_rules}
     {guide_generation_rules}
     - Include a final "## References" section with the source URL and any other source names clearly supported by the reference text.
-    - Provide 3-5 AI image prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections. All must specify no text, no logos, no watermarks.
+    - Provide 3-5 photorealistic editorial photo prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections.
+    - Image prompts must feel like believable documentary healthcare photography: real people when relevant, natural light, realistic clinic/home environments, grounded emotion, and no staged stock-photo exaggeration.
+    - Every prompt must include this natural photo style: {NATURAL_PHOTO_STYLE}
+    - Do not request illustrations, icons, diagrams, vector art, 3D renderings, cartoons, infographics, posters, text overlays, floating UI, or symbolic/metaphorical scenes.
+    - All image prompts must specify: photorealistic, documentary-style editorial photography, no text, no logos, no watermarks.
     - The article should be in Markdown format.
     - Do not include a top-level H1 title inside `content`; the website already renders the title above the article.
     - Start `content` with the opening paragraph or the first H2 section.
@@ -755,7 +1014,11 @@ def build_context_prompt(reference_label: str, reference_text: str, instruction:
     {guide_structure_rules}
     {guide_generation_rules}
     - Include a final "## References" section using the source URLs or source names from the memory when available.
-    - Provide 3-5 AI image prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections. All must specify no text, no logos, no watermarks.
+    - Provide 3-5 photorealistic editorial photo prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections.
+    - Image prompts must feel like believable documentary healthcare photography: real people when relevant, natural light, realistic clinic/home environments, grounded emotion, and no staged stock-photo exaggeration.
+    - Every prompt must include this natural photo style: {NATURAL_PHOTO_STYLE}
+    - Do not request illustrations, icons, diagrams, vector art, 3D renderings, cartoons, infographics, posters, text overlays, floating UI, or symbolic/metaphorical scenes.
+    - All image prompts must specify: photorealistic, documentary-style editorial photography, no text, no logos, no watermarks.
     - The article should be in Markdown format.
     - Do not include a top-level H1 title inside `content`; the website already renders the title above the article.
     - Start `content` with the opening paragraph or the first H2 section.
@@ -839,10 +1102,13 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     {guide_structure_rules}
     {guide_generation_rules}
     Image requirements:
-    - Provide 3-5 distinct image prompts in `image_prompts`, choosing the count based on the rewritten article depth and section variety.
+    - Provide 3-5 distinct photorealistic editorial photo prompts in `image_prompts`, choosing the count based on the rewritten article depth and section variety.
     - First prompt is for the hero image.
     - Remaining prompts are for inline supporting images tied to different major sections of the rewritten article.
-    - Every prompt must be visually distinct and must say no text, no logos, no watermarks.
+    - Every prompt must describe a realistic healthcare or everyday patient scene with natural light, real people when relevant, believable clinic/home details, and human warmth.
+    - Every prompt must include this natural photo style: {NATURAL_PHOTO_STYLE}
+    - Do not request illustrations, icons, diagrams, vector art, 3D renderings, cartoons, infographics, posters, text overlays, floating UI, or symbolic/metaphorical scenes.
+    - Every prompt must be visually distinct and must say: photorealistic, documentary-style editorial photography, no text, no logos, no watermarks.
 
     Output ONLY valid JSON in this exact structure:
     {{
@@ -855,9 +1121,9 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
       "primary_keyword": "primary keyword here",
       "secondary_keywords": ["keyword one", "keyword two"],
       "image_prompts": [
-        "Hero image prompt for this exact rewritten article, no text, no logos, no watermarks",
-        "Inline supporting image prompt for section one, no text, no logos, no watermarks",
-        "Inline supporting image prompt for section two, no text, no logos, no watermarks"
+        "Photorealistic hero image prompt for this exact rewritten article, documentary-style editorial photography, no text, no logos, no watermarks",
+        "Photorealistic inline supporting image prompt for section one, documentary-style editorial photography, no text, no logos, no watermarks",
+        "Photorealistic inline supporting image prompt for section two, documentary-style editorial photography, no text, no logos, no watermarks"
       ]
     }}
     """
@@ -920,14 +1186,14 @@ def normalize_image_prompts(data: dict) -> List[str]:
 
     if not cleaned:
         cleaned.append(
-            f"Professional healthcare editorial hero illustration for {data.get('title', 'Asian Health Hub article')}, diverse Asian American patients, no text, no logos, no watermarks"
+            f"Photorealistic documentary-style editorial healthcare photo for {data.get('title', 'Asian Health Hub article')}, diverse Asian American patients in a believable real-world setting, natural light, {NATURAL_PHOTO_STYLE} no text, no logos, no watermarks"
         )
 
     fallback_prompts = [
-        "Supportive patient education illustration showing a culturally sensitive conversation with an Asian American clinician, no text, no logos, no watermarks",
-        "Practical healthcare navigation illustration showing a family reviewing care options at home, no text, no logos, no watermarks",
-        "Preventive care illustration in a clean clinic setting with diverse Asian American patients, no text, no logos, no watermarks",
-        "Community health illustration focused on preparation, questions, and patient confidence, no text, no logos, no watermarks",
+        f"Photorealistic documentary-style editorial photo of an Asian American patient having a culturally sensitive conversation with a clinician in a real clinic exam room, natural window light, {NATURAL_PHOTO_STYLE} no text, no logos, no watermarks",
+        f"Photorealistic documentary-style editorial photo of a family reviewing healthcare options together at a kitchen table, realistic home details, warm natural light, {NATURAL_PHOTO_STYLE} no text, no logos, no watermarks",
+        f"Photorealistic documentary-style editorial photo of preventive care in a clean modern clinic with diverse Asian American patients and staff, realistic candid moment, {NATURAL_PHOTO_STYLE} no text, no logos, no watermarks",
+        f"Photorealistic documentary-style editorial photo focused on patient preparation and confidence before a healthcare visit, believable everyday setting, {NATURAL_PHOTO_STYLE} no text, no logos, no watermarks",
     ]
 
     for fallback in fallback_prompts:
@@ -935,35 +1201,104 @@ def normalize_image_prompts(data: dict) -> List[str]:
             break
         cleaned.append(f"{fallback}. Article topic: {data.get('title', 'Asian Health Hub article')}")
 
-    return cleaned[:5]
+    return [enforce_photorealistic_image_prompt(prompt) for prompt in cleaned[:5]]
+
+def enforce_photorealistic_image_prompt(prompt: str) -> str:
+    """Normalize model-provided prompts away from illustration and toward credible photo output."""
+    text = str(prompt or "").strip()
+    replacements = {
+        "medical illustration": "medical documentary photograph",
+        "healthcare illustration": "healthcare documentary photograph",
+        "professional illustration": "professional editorial photograph",
+        "detailed illustration": "detailed documentary photograph",
+        "illustration": "photograph",
+        "illustrated": "photographed",
+        "cartoon": "documentary photo",
+        "vector": "photo",
+        "3D render": "photo",
+        "3d render": "photo",
+        "rendering": "photograph",
+        "infographic": "real scene",
+    }
+    for old, new in replacements.items():
+        text = re.sub(re.escape(old), new, text, flags=re.IGNORECASE)
+
+    required_style = (
+        "Photorealistic documentary-style editorial healthcare photography; "
+        "real people when relevant, believable clinic or home environment, natural light, authentic human expressions, "
+        "subtle natural imperfections, realistic skin texture, candid composition. "
+        f"{NATURAL_PHOTO_STYLE}"
+    )
+    negative_style = (
+        "Avoid AI-looking faces, plastic skin, over-smoothed features, exaggerated smiles, staged stock-photo poses, "
+        "illustration, cartoon, vector art, 3D render, icons, diagrams, infographics, text overlays, logos, watermarks, "
+        "readable signage, extra fingers, distorted hands."
+    )
+
+    lowered = text.lower()
+    if "photorealistic" not in lowered and "documentary-style" not in lowered:
+        text = f"{required_style} Scene: {text}"
+    if "avoid ai-looking" not in text.lower():
+        text = f"{text}. {negative_style}"
+    if "sony a7r iv" not in text.lower():
+        text = f"{text}. {NATURAL_PHOTO_STYLE}"
+    if "no text" not in text.lower():
+        text = f"{text}, no text"
+    if "no logos" not in text.lower():
+        text = f"{text}, no logos"
+    if "no watermarks" not in text.lower():
+        text = f"{text}, no watermarks"
+    return text
 
 def generate_article_images(client: OpenAI, data: dict, slug: str) -> List[str]:
-    image_urls = []
+    """Generate all article images in parallel (max 2 concurrent) to respect rate limits."""
     image_prompts = normalize_image_prompts(data)
     suffixes = ["hero", "inline-1", "inline-2", "inline-3", "inline-4"]
+    run_id = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    total = len(image_prompts)
+    results: dict[int, str] = {}
+    semaphore = threading.Semaphore(2)  # max 2 concurrent image requests
+    report_progress(f"🎨 Đang tạo {total} hình ảnh cho bài viết...")
 
-    for index, image_prompt in enumerate(image_prompts):
-        print(f"[*] Generating image {index + 1}/{len(image_prompts)} via {IMAGE_MODEL} using prompt: {image_prompt}")
-        image_response = client.chat.completions.create(
-            model=IMAGE_MODEL,
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        "Create a polished editorial healthcare illustration for Asian Health Hub. "
-                        "Use a clean, trustworthy medical style, natural light, diverse Asian American patients when people are shown, "
-                        "accurate healthcare context, and no text, logos, or watermarks in the image. Topic: "
-                        f"{image_prompt}"
-                    ),
-                }
-            ],
-        )
-        image_value = extract_image_value(image_response.choices[0].message)
-        image_url = save_generated_image(image_value, slug, suffixes[index])
-        if image_url:
-            image_urls.append(image_url)
+    def generate_one(index: int, prompt: str) -> tuple[int, str]:
+        with semaphore:
+            print(f"[*] Generating image {index + 1}/{total} via {IMAGE_MODEL} using prompt: {prompt}")
+            try:
+                image_response = client.chat.completions.create(
+                    model=IMAGE_MODEL,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": (
+                                "Create a photorealistic documentary-style editorial healthcare photograph for Asian Health Hub. "
+                                "The image must look like a credible real photograph, not AI art: natural available light, realistic clinic or home details, "
+                                "authentic human expressions, natural skin texture, subtle wrinkles, unretouched candid faces, believable hands, diverse Asian American patients when people are shown, "
+                                f"{NATURAL_PHOTO_STYLE} "
+                                "accurate healthcare context, no text, no logos, no watermarks, no illustration, no cartoon, no 3D render, no infographic. Topic: "
+                                f"{prompt}"
+                            ),
+                        }
+                    ],
+                )
+                image_value = extract_image_value(image_response.choices[0].message)
+                url = save_generated_image(image_value, slug, f"{suffixes[index]}-{run_id}")
+                return index, url or ""
+            except Exception as exc:
+                print(f"[!] Image {index + 1}/{total} failed: {exc}")
+                return index, ""
 
-    return image_urls
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(generate_one, i, prompt)
+            for i, prompt in enumerate(image_prompts)
+        ]
+        for future in as_completed(futures):
+            idx, url = future.result()
+            if url:
+                results[idx] = url
+
+    # Return in original index order (hero first)
+    return [results[i] for i in sorted(results)]
 
 def clean_markdown_supplement(content: str) -> str:
     content = content.strip()
@@ -1343,6 +1678,36 @@ def call_text_model(client: OpenAI, prompt: str, temperature: float, max_tokens:
     )
     return (response.choices[0].message.content or "").strip()
 
+
+def generate_section_with_retries(
+    client: OpenAI,
+    section_prompt: str,
+    heading: str,
+    mode: str,
+    max_retries: int = 2,
+) -> str:
+    """Call the text model for one section, retrying on transient errors.
+
+    Raises RuntimeError if all attempts fail — caller should let the job
+    fail rather than publishing an article with a missing section.
+    """
+    last_error: Optional[Exception] = None
+    max_tokens = 3200 if mode == "guide" else 2200
+
+    for attempt in range(1, max_retries + 2):
+        try:
+            section = call_text_model(client, section_prompt, SECTION_TEMPERATURE, max_tokens)
+            return clean_markdown_supplement(section)
+        except Exception as exc:
+            last_error = exc
+            print(f"[!] Section '{heading}' attempt {attempt}/{max_retries + 1} failed: {exc}")
+            if attempt <= max_retries:
+                time.sleep(3 * attempt)
+
+    raise RuntimeError(
+        f"Section '{heading}' failed after {max_retries + 1} attempts: {last_error}"
+    )
+
 def normalize_outline(raw_outline: Any, mode: str) -> List[str]:
     """Coerce an LLM outline into a clean list of H2 heading names."""
     if isinstance(raw_outline, list):
@@ -1369,6 +1734,16 @@ def normalize_outline(raw_outline: Any, mode: str) -> List[str]:
         seen.add(key)
         headings.append(heading)
 
+    # Clean out duplicate-prone headings from headings first
+    headings = [
+        heading
+        for heading in headings
+        if not is_key_takeaways_heading(heading)
+        and not is_faq_heading(heading)
+        and not is_references_heading(heading)
+        and not is_next_steps_heading(heading)
+    ]
+
     if mode == "guide":
         fallback_headings = [
             "What This Healthcare Topic Means",
@@ -1382,42 +1757,15 @@ def normalize_outline(raw_outline: Any, mode: str) -> List[str]:
             "Comparison of Care Options",
         ]
         for heading in fallback_headings:
-            if len([item for item in headings if item.lower() not in {"faqs", "next steps", "references"}]) >= 10:
+            if len(headings) >= 10:
                 break
-            if heading.lower() not in seen:
-                seen.add(heading.lower())
+            normalized_fallback = clean_reference_search_label(heading, max_len=80).lower()
+            if not any(clean_reference_search_label(h, max_len=80).lower() == normalized_fallback for h in headings):
                 headings.append(heading)
-        headings = [
-            heading
-            for heading in headings
-            if not is_key_takeaways_heading(heading)
-        ]
-        if not any(heading.lower() == "faqs" for heading in headings):
-            headings.append("FAQs")
-        if not any(heading.lower() == "next steps" for heading in headings):
-            headings.append("Next Steps")
-        if not any(heading.lower() == "references" for heading in headings):
-            headings.append("References")
-        regular_headings = [
-            heading for heading in headings
-            if heading.lower() not in {"faqs", "next steps", "references"}
-        ]
-        return [KEY_TAKEAWAYS_HEADING] + regular_headings[:14] + ["FAQs", "Next Steps", "References"]
+        return [KEY_TAKEAWAYS_HEADING] + headings[:10] + ["FAQs", "Next Steps", "References"]
 
-    headings = [
-        heading
-        for heading in headings
-        if not is_key_takeaways_heading(heading)
-    ]
-    if not any(heading.lower() == "faqs" for heading in headings):
-        headings.append("FAQs")
-    if not any(heading.lower() == "references" for heading in headings):
-        headings.append("References")
-    regular_headings = [
-        heading for heading in headings
-        if heading.lower() not in {"faqs", "references"}
-    ]
-    return [KEY_TAKEAWAYS_HEADING] + regular_headings[:7] + ["FAQs", "References"]
+    # Insight mode: limit to 5 regular headings to keep word count targeted (1200-1500 words)
+    return [KEY_TAKEAWAYS_HEADING] + headings[:5] + ["FAQs", "References"]
 
 def build_metadata_outline_prompt(
     writing_brief: str,
@@ -1430,7 +1778,7 @@ def build_metadata_outline_prompt(
     is_guide = mode == "guide"
     category = "guide" if is_guide else "insight"
     target = CONTENT_WORD_TARGETS[category]
-    outline_count = "10-14" if is_guide else "5-7"
+    outline_count = "8-10" if is_guide else "5-7"
     visual_contract_rules = build_article_visual_contract(mode)
     rewrite_context = ""
     if article:
@@ -1469,6 +1817,7 @@ def build_metadata_outline_prompt(
     - Choose one primary keyword and 4-7 secondary keywords.
     - Write medically cautious, SEO-friendly metadata for Asian American patients and families.
     - Provide 3-5 distinct image prompts. Every prompt must say no text, no logos, no watermarks.
+    - Every image prompt must include this natural photo style: {NATURAL_PHOTO_STYLE}
 
     JSON schema:
     {{
@@ -1509,13 +1858,16 @@ def build_section_prompt(
         index == 1 and bool(outline) and is_key_takeaways_heading(outline[0])
     )
     is_guide = mode == "guide"
-    per_section_words = "260-380" if is_guide else "180-260"
+    
     if is_takeaways:
-        per_section_words = "90-140"
+        per_section_words = "90-120"
     elif heading.lower() == "references":
-        per_section_words = "120-220"
+        per_section_words = "80-120"
     elif heading.lower() in {"faqs", "next steps"}:
-        per_section_words = "260-420" if is_guide else "180-280"
+        per_section_words = "220-280" if is_guide else "140-180"
+    else:
+        per_section_words = "220-280" if is_guide else "140-180"
+        
     visual_contract_rules = build_article_visual_contract(mode)
 
     rewrite_context = ""
@@ -1538,6 +1890,8 @@ def build_section_prompt(
         if is_takeaways
         else ""
     )
+
+    max_words_cap = per_section_words.split("-")[1]
 
     return f"""
     Write ONLY Markdown for one section of an Asian Health Hub article.
@@ -1566,7 +1920,7 @@ def build_section_prompt(
     {first_section_rule}
     {key_takeaways_rule}
     - Include the section heading exactly as `## {heading}` unless it is preceded by the first-section intro paragraphs.
-    - Write {per_section_words} words for this section.
+    - Write exactly {per_section_words} words for this section. Do NOT exceed {max_words_cap} words. Keep content extremely concise, dense, and avoid fluff.
     - Use medically cautious language; avoid unsupported claims and fabricated statistics.
     - Make advice practical for Asian American patients and families in the U.S.
     - Include culturally specific context when relevant, without stereotyping.
@@ -1587,6 +1941,18 @@ def generate_chunked_article_data(
     instruction: str = "",
 ) -> dict:
     """Generate article metadata first, then section Markdown from the outline."""
+    metadata, outline = generate_article_metadata_outline(client, writing_brief, label, mode, article, instruction)
+    return generate_article_sections_data(client, writing_brief, metadata, outline, mode, article, instruction)
+
+def generate_article_metadata_outline(
+    client: OpenAI,
+    writing_brief: str,
+    label: str,
+    mode: str,
+    article: Optional[dict] = None,
+    instruction: str = "",
+) -> tuple[dict, List[str]]:
+    """Generate article metadata and outline without reference evidence side effects."""
     print("[*] Step 1/2: Generating metadata and outline...")
     metadata_prompt = build_metadata_outline_prompt(writing_brief, label, mode, article, instruction)
     metadata_text = call_text_model(client, metadata_prompt, JSON_TEMPERATURE, 3200)
@@ -1616,19 +1982,29 @@ def generate_chunked_article_data(
     metadata["image_prompts"] = normalize_image_prompts(metadata)
     print(f"[*] Metadata ready: {metadata['title']}")
     print(f"[*] Outline ready: {len(outline)} sections")
+    return metadata, outline
 
-    print(f"[*] Step 2/2: Generating {len(outline)} Markdown sections...")
+def generate_article_sections_data(
+    client: OpenAI,
+    writing_brief: str,
+    metadata: dict,
+    outline: List[str],
+    mode: str,
+    article: Optional[dict] = None,
+    instruction: str = "",
+) -> dict:
+    """Generate section Markdown using prepared metadata, outline, and writing brief."""
+    total = len(outline)
+    print(f"[*] Step 2/2: Generating {total} Markdown sections...")
     sections: List[str] = []
     for index, heading in enumerate(outline):
-        print(f"[*] Generating section {index + 1}/{len(outline)}: {heading}")
+        print(f"[*] Generating section {index + 1}/{total}: {heading}")
+        # Send a progress ping to Telegram every 3 sections
+        if index > 0 and index % 3 == 0:
+            report_progress(f"⏳ Đang viết bài... ({index}/{total} sections xong)")
         section_prompt = build_section_prompt(metadata, outline, heading, index, writing_brief, mode, article, instruction)
-        section = call_text_model(
-            client,
-            section_prompt,
-            SECTION_TEMPERATURE,
-            3200 if mode == "guide" else 2200,
-        )
-        sections.append(clean_markdown_supplement(section))
+        section = generate_section_with_retries(client, section_prompt, heading, mode)
+        sections.append(section)
 
     metadata["outline"] = outline
     metadata["content"] = clean_generated_article_content("\n\n".join(sections), mode)
@@ -1652,9 +2028,15 @@ def create_article_from_prompt(
     print(f"[*] Content mode: {mode}")
 
     try:
-        evidence = gather_reference_evidence(client, reference_query_label or label, mode, seed_urls=seed_urls)
+        metadata, outline = generate_article_metadata_outline(client, prompt, label, mode)
+        evidence_label = build_reference_query_label_from_metadata(
+            metadata,
+            reference_query_label or label,
+        )
+        print(f"[*] Reference search label: {evidence_label}")
+        evidence = gather_reference_evidence(client, evidence_label, mode, seed_urls=seed_urls)
         verified_prompt = add_reference_evidence_to_prompt(prompt, evidence)
-        data = generate_chunked_article_data(client, verified_prompt, label, mode)
+        data = generate_article_sections_data(client, verified_prompt, metadata, outline, mode)
         data["content"] = enforce_verified_references(data["content"], evidence)
         
         base_slug = generate_slug(data["title"])
@@ -1821,22 +2203,73 @@ def is_supported_reference_url(url: str) -> bool:
     path = parsed.path.lower()
     return not path.endswith((".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip"))
 
-def clean_reference_search_label(label: str) -> str:
+def clean_reference_search_label(label: str, max_len: int = 80) -> str:
     label = re.sub(r"https?://\S+", " ", label or "")
     label = re.sub(r"[^a-zA-Z0-9\s,/-]", " ", label)
     label = re.sub(r"\s+", " ", label).strip()
-    return label[:180] or "Asian American healthcare"
+    return label[:max_len] or "Asian American healthcare"
+
+def build_core_reference_search_label(label: str) -> str:
+    core = clean_reference_search_label(label, max_len=100)
+    removable_phrases = [
+        "Asian American",
+        "Asian Americans",
+        "Vietnamese American",
+        "Vietnamese Americans",
+        "Korean American",
+        "Korean Americans",
+        "culturally adapted",
+        "culturally tailored",
+        "for Asian Americans",
+        "for Asian American patients",
+    ]
+    for phrase in removable_phrases:
+        core = re.sub(rf"\b{re.escape(phrase)}\b", " ", core, flags=re.IGNORECASE)
+    core = re.sub(r"\s+", " ", core).strip(" ,-")
+    return clean_reference_search_label(core or label, max_len=80)
+
+def build_reference_query_label_from_metadata(metadata: dict, fallback_label: str = "") -> str:
+    pk = metadata.get("primary_keyword")
+    if pk and len(pk.strip()) > 3:
+        label = pk.strip()
+    else:
+        label = metadata.get("title") or fallback_label or "Asian American healthcare"
+    return clean_reference_search_label(label, max_len=80)
 
 def build_reference_search_queries(label: str, mode: str = "insight") -> List[str]:
-    safe_label = clean_reference_search_label(label)
-    core_terms = "Asian American patients United States healthcare"
-    if mode == "guide":
-        core_terms += " patient guide"
-
+    safe_label = clean_reference_search_label(label, max_len=80)
+    core_label = build_core_reference_search_label(safe_label)
+    prioritized_sources = get_prioritized_sources(f"{safe_label} {core_label}")
+    
     queries = []
-    for source in TRUSTED_HEALTH_SOURCES:
-        queries.append(f"{safe_label} {core_terms} site:{source['domain']}")
-    return queries
+    
+    # 1. Fallback broad queries without site: (we filter URLs in gather_reference_evidence)
+    queries.append(f"{safe_label}")
+    queries.append(f"{safe_label} Asian American health")
+    if core_label != safe_label:
+        queries.append(f"{core_label}")
+        queries.append(f"{core_label} guidelines")
+    
+    # 2. Targeted site: queries with prioritized domains first
+    for source in prioritized_sources[:6]:
+        queries.append(f"{safe_label} site:{source['domain']}")
+        if core_label != safe_label:
+            queries.append(f"{core_label} site:{source['domain']}")
+    for source in prioritized_sources[:6]:
+        queries.append(f"{safe_label} health site:{source['domain']}")
+    for source in prioritized_sources[6:]:
+        queries.append(f"{safe_label} site:{source['domain']}")
+        
+    # Deduplicate queries while preserving order
+    seen_queries = set()
+    deduped_queries = []
+    for q in queries:
+        q_clean = q.strip()
+        if q_clean and q_clean not in seen_queries:
+            seen_queries.add(q_clean)
+            deduped_queries.append(q_clean)
+            
+    return deduped_queries
 
 def fetch_reference_text_fast(url: str) -> Optional[dict]:
     try:
@@ -1932,6 +2365,24 @@ def gather_reference_evidence(
             evidence.append(scraped)
             domain_counts[domain] = domain_counts.get(domain, 0) + 1
 
+    for direct_url in get_direct_reference_urls(label):
+        if len(evidence) >= REFERENCE_EVIDENCE_TARGET:
+            break
+        if direct_url in seen_urls:
+            continue
+        domain = reference_source_key(direct_url)
+        if domain_counts.get(domain, 0) >= REFERENCE_MAX_PER_DOMAIN:
+            continue
+        seen_urls.add(direct_url)
+        source = trusted_source_for_url(direct_url)
+        scraped = scrape_reference_url(
+            direct_url,
+            source_name=(source or {}).get("name") or "Direct trusted source",
+        )
+        if scraped:
+            evidence.append(scraped)
+            domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
     if len(evidence) >= REFERENCE_EVIDENCE_TARGET:
         return evidence[:REFERENCE_EVIDENCE_TARGET]
 
@@ -1941,11 +2392,22 @@ def gather_reference_evidence(
         print(f"[!] Reference search unavailable; continuing with provided sources only: {exc}")
         return evidence
 
+    consecutive_empty = 0
+    max_consecutive_empty = int(os.environ.get("OPENCLAW_REFERENCE_MAX_CONSECUTIVE_EMPTY", "6"))
+
     for query in build_reference_search_queries(label, mode):
         if len(evidence) >= REFERENCE_EVIDENCE_TARGET:
             break
 
+        if consecutive_empty >= max_consecutive_empty:
+            print(
+                f"[*] Reference search early-stopped after {consecutive_empty} "
+                "consecutive queries yielded no scrapable sources."
+            )
+            break
+
         results = search_web(query, max_results=REFERENCE_SEARCH_MAX_RESULTS)
+        scraped_this_round = 0
         for result in results:
             if len(evidence) >= REFERENCE_EVIDENCE_TARGET:
                 break
@@ -1969,6 +2431,12 @@ def gather_reference_evidence(
                 evidence.append(scraped)
                 scraped_domain = reference_source_key(scraped.get("url") or url)
                 domain_counts[scraped_domain] = domain_counts.get(scraped_domain, 0) + 1
+                scraped_this_round += 1
+
+        if scraped_this_round == 0:
+            consecutive_empty += 1
+        else:
+            consecutive_empty = 0
 
     if len(evidence) < REFERENCE_EVIDENCE_MINIMUM:
         print(

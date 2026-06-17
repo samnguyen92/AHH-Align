@@ -2,12 +2,14 @@ import base64
 import mimetypes
 import os
 import re
+import ssl
 import unicodedata
 from io import BytesIO
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+import certifi
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
@@ -15,6 +17,7 @@ load_dotenv(".env")
 load_dotenv("../.env.local")
 
 DEFAULT_BUCKET = "generated-images"
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 
 def safe_storage_name(value: str) -> str:
@@ -57,7 +60,7 @@ def download_image(image_url: str) -> Optional[Tuple[bytes, str, str]]:
         return None
 
     request = Request(image_url, headers={"User-Agent": "AsianHealthHubOpenClaw/1.0"})
-    with urlopen(request, timeout=30) as response:
+    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
         body = response.read()
         content_type = response.headers.get("content-type", "").split(";")[0]
 

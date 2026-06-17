@@ -211,14 +211,14 @@ function SectionHeader({
   return (
     <div className="mb-8 flex items-end justify-between gap-4">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight text-[var(--ahh-ink)]">{title}</h2>
+        <h2 className="text-[32px] font-medium leading-tight tracking-normal text-[var(--ahh-ink)]">{title}</h2>
         {description && (
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--ahh-muted)]">{description}</p>
+          <p className="mt-3 max-w-2xl text-[15px] leading-6 text-[var(--ahh-muted)]">{description}</p>
         )}
       </div>
       {href && (
-        <Link href={href} className="shrink-0 text-xs font-bold text-[var(--ahh-deep-teal)] hover:underline">
-          View all
+        <Link href={href} className="shrink-0 text-sm font-normal text-[var(--ahh-muted)] hover:text-[var(--ahh-deep-teal)]">
+          View all ›
         </Link>
       )}
     </div>
@@ -228,29 +228,29 @@ function SectionHeader({
 function SearchBar({ compact = false }: { compact?: boolean }) {
   return (
     <form action="/search" className={compact ? 'w-full' : 'relative z-20 w-full'}>
-      <div className="flex flex-col gap-2 rounded-[var(--ahh-radius-sm)] border border-[var(--ahh-border)] bg-white p-2 shadow-[0_18px_50px_rgba(0,92,75,0.18)] sm:flex-row sm:items-center">
-        <div className="flex min-h-11 flex-1 items-center gap-2 px-3">
+      <div className="rounded-[20px] bg-[var(--ahh-mist)] p-3 shadow-[0_18px_50px_rgba(2,78,68,0.14)]">
+        <div className="flex flex-col overflow-hidden rounded-[12px] border border-[#C5DCD84D] bg-white sm:flex-row sm:items-center">
+          <div className="flex min-h-14 flex-1 items-center gap-2 border-b border-[var(--ahh-border)] px-6 sm:border-b-0 sm:border-r">
+            <input
+              name="query"
+              placeholder="Specialty (e.g. Primary Care)"
+              className="w-full bg-transparent text-[15px] text-[var(--ahh-ink)] outline-none placeholder:text-[var(--ahh-muted-2)]"
+            />
+          </div>
           <input
-            name="query"
-            placeholder="Specialty (e.g. Primary Care)"
-            className="w-full bg-transparent text-sm text-[var(--ahh-ink)] outline-none placeholder:text-[var(--ahh-muted-2)]"
+            name="city"
+            placeholder="City"
+            className="min-h-14 w-full border-b border-[var(--ahh-border)] bg-transparent px-5 text-[15px] outline-none placeholder:text-[var(--ahh-muted)] sm:w-[131px] sm:border-b-0 sm:border-r"
           />
+          <input
+            name="language"
+            placeholder="Language"
+            className="min-h-14 w-full border-b border-[var(--ahh-border)] bg-transparent px-5 text-[15px] outline-none placeholder:text-neutral-700 sm:w-[162px] sm:border-b-0 sm:border-r"
+          />
+          <button className="min-h-14 bg-[var(--ahh-deep-teal)] px-8 text-[15px] font-medium text-white sm:w-[117px]" type="submit">
+            Search
+          </button>
         </div>
-        <div className="hidden h-6 w-px bg-[var(--ahh-border)] sm:block" />
-        <input
-          name="city"
-          placeholder="City"
-          className="min-h-11 w-full rounded-md bg-transparent px-3 text-sm outline-none placeholder:text-[var(--ahh-muted)] sm:w-32"
-        />
-        <div className="hidden h-6 w-px bg-[var(--ahh-border)] sm:block" />
-        <input
-          name="language"
-          placeholder="Language"
-          className="min-h-11 w-full rounded-md bg-transparent px-3 text-sm outline-none placeholder:text-[var(--ahh-muted)] sm:w-36"
-        />
-        <button className="brand-button-secondary min-h-11 px-6" type="submit">
-          Search
-        </button>
       </div>
     </form>
   );
@@ -269,21 +269,18 @@ export default async function HomePage() {
   const clinics = clinicResult.data.length > 0 ? clinicResult.data.slice(0, 4) : FALLBACK_CLINICS;
 
   return (
-    <div className="bg-[#92C7AD] p-1 sm:p-2">
+    <div className="bg-[#92C7AD] px-[10px] pb-[10px]">
       <div className="home-shell">
       <section className="home-hero">
         <div className="home-hero-grid">
           <div className="home-hero-copy">
-            <h1 className="max-w-2xl text-4xl font-normal leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
-              Find a Health Clinic That Speaks Your Language
+            <h1 className="max-w-[780px] text-[48px] font-light leading-[1.08] tracking-normal sm:text-[58px] lg:text-[68px]">
+              Find a Health Clinic<br className="hidden sm:block" /> That Speaks Your<br className="hidden sm:block" /> Language
             </h1>
-            <p className="mt-6 max-w-xl text-sm leading-7 text-white/72 sm:text-base">
+            <p className="mt-7 max-w-[600px] text-[17px] leading-7 text-white/65">
               Asian Health Hub connects Vietnamese and Korean-speaking patients with trusted clinics across
               the United States. Search by specialty, city, or language and get care you truly understand.
             </p>
-            <div className="home-hero-search">
-              <SearchBar />
-            </div>
           </div>
 
           <div className="home-hero-media">
@@ -296,23 +293,26 @@ export default async function HomePage() {
               className="home-hero-image"
             />
           </div>
+          <div className="home-hero-search">
+            <SearchBar />
+          </div>
         </div>
       </section>
 
       <section className="home-stats-grid">
         {STATS.map((stat) => (
-          <div key={stat.label} className={`${stat.className} min-h-32 rounded-[var(--ahh-radius)] p-5`}>
-            <div className="text-4xl font-semibold leading-none">{stat.value}</div>
-            <p className="mt-3 text-sm font-bold">{stat.label}</p>
-            <p className="mt-1 text-xs leading-5 opacity-70">{stat.detail}</p>
+          <div key={stat.label} className={`${stat.className} min-h-[233px] rounded-[20px] p-7`}>
+            <div className="text-[68px] font-bold leading-none">{stat.value}</div>
+            <p className="mt-4 max-w-[292px] text-2xl font-medium leading-tight">{stat.label}</p>
+            <p className="mt-3 text-[13px] leading-5 opacity-80">{stat.detail}</p>
           </div>
         ))}
       </section>
 
-      <section className="mt-1 rounded-[var(--ahh-radius)] bg-white px-6 py-14 sm:px-10 lg:px-16">
+      <section className="home-section rounded-[16px] bg-white px-5 py-20 sm:px-10 lg:px-20 lg:py-[120px]">
         <SectionHeader
           title="Top Trusted Care Near You"
-          description="Find high-quality Asian health clinics with language support, reviews, and practical profile details."
+          description="Finding the right clinic can feel difficult when language, location, and healthcare needs all matter. Asian Health Hub makes the search easier."
           href="/search"
         />
         <div className="home-card-grid home-card-grid-four">
@@ -349,7 +349,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="mt-1 rounded-[var(--ahh-radius)] bg-[var(--ahh-mist-2)] px-6 py-14 sm:px-10 lg:px-16">
+      <section className="home-section rounded-[16px] bg-[var(--ahh-mist-2)] px-5 py-16 sm:px-10 lg:px-20 lg:py-[82px]">
         <SectionHeader
           title="Top-searched specialties"
           description="Jump into care categories Asian families commonly search for."
@@ -361,20 +361,20 @@ export default async function HomePage() {
               key={specialty.name}
               href={specialty.href}
               className={[
-                'group flex min-h-24 flex-col items-center justify-center rounded-[var(--ahh-radius-sm)] border border-[var(--ahh-border)] px-2 text-center text-xs font-bold transition hover:-translate-y-0.5 hover:shadow-sm',
+                'group flex min-h-28 flex-col items-start justify-start rounded-[18px] border border-[var(--ahh-border)] p-4 text-left text-sm font-medium transition hover:-translate-y-0.5 hover:shadow-sm',
                 'active' in specialty && specialty.active
                   ? 'bg-[var(--ahh-deep-teal)] text-white'
                   : 'bg-white text-[var(--ahh-ink)]',
               ].join(' ')}
             >
-              <span className="text-xl">{specialty.emoji}</span>
-              <span className="mt-2 line-clamp-2">{specialty.name}</span>
+              <span className="text-2xl">{specialty.emoji}</span>
+              <span className="mt-4 line-clamp-2">{specialty.name}</span>
             </Link>
           ))}
         </div>
       </section>
 
-      <section className="mt-1 rounded-[var(--ahh-radius)] bg-white px-6 py-14 sm:px-10 lg:px-16">
+      <section className="home-section rounded-[16px] bg-white px-5 py-20 sm:px-10 lg:px-20 lg:py-[110px]">
         <SectionHeader
           title="Find Clinics in Your City"
           description="Browse clinics in major US cities with large Asian American communities."
@@ -385,7 +385,7 @@ export default async function HomePage() {
             <Link
               key={city.name}
               href={city.href}
-              className="group relative aspect-[1.2/1] overflow-hidden rounded-[var(--ahh-radius)] bg-[var(--ahh-mist)]"
+              className="group relative aspect-[1.18/1] overflow-hidden rounded-[20px] bg-[var(--ahh-mist)]"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -403,10 +403,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="mt-1 rounded-[var(--ahh-radius)] bg-[var(--ahh-mist-2)] px-6 py-16 sm:px-10 lg:px-16">
+      <section className="home-section rounded-[16px] bg-[var(--ahh-mist)] px-5 py-20 sm:px-10 lg:px-20 lg:py-24">
         <div className="grid items-center gap-10 lg:grid-cols-[1fr_1fr]">
           <div>
-            <h2 className="max-w-md text-3xl font-semibold leading-tight text-[var(--ahh-ink)]">
+            <h2 className="max-w-lg text-[42px] font-light leading-[1.08] text-[var(--ahh-ink)] lg:text-[64px]">
               Healthcare is personal. Language shouldn&apos;t be a barrier.
             </h2>
             <p className="mt-5 max-w-lg text-sm leading-7 text-[var(--ahh-muted)]">
@@ -432,7 +432,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="mt-1 rounded-[var(--ahh-radius)] bg-white px-6 py-16 sm:px-10 lg:px-16">
+      <section className="home-section rounded-[16px] bg-white px-5 py-20 sm:px-10 lg:px-20 lg:py-24">
         <div className="mb-10 text-center">
           <h2 className="text-2xl font-semibold text-[var(--ahh-ink)]">What Patients Are Saying</h2>
           <p className="mt-2 text-sm text-[var(--ahh-muted)]">
@@ -455,10 +455,10 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="mt-1 rounded-[var(--ahh-radius)] bg-[var(--ahh-deep-teal)] px-6 py-12 text-white sm:px-10 lg:px-16">
+      <section className="home-section rounded-[16px] bg-[var(--ahh-deep-teal)] px-5 py-12 text-white sm:px-10 lg:min-h-[276px] lg:px-20">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold">Are You a Clinic Serving the Asian Community?</h2>
+            <h2 className="max-w-[720px] text-[42px] font-light leading-tight lg:text-[52px]">Help patients find your clinic in the language they trust.</h2>
             <p className="mt-3 max-w-xl text-sm leading-7 text-white/70">
               Claim your profile, keep clinic information accurate, and help patients find care they can understand.
             </p>
@@ -474,7 +474,7 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="mt-1 rounded-[var(--ahh-radius)] bg-[var(--ahh-mist-2)] px-6 py-14 sm:px-10 lg:px-16">
+      <section className="home-section rounded-[16px] bg-white px-5 py-20 sm:px-10 lg:px-20 lg:py-[100px]">
         <SectionHeader
           title="Health Insights & Guide for Patients"
           description="Actionable articles to help you understand access, prevention, insurance, and language support."

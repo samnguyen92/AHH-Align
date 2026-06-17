@@ -26,6 +26,7 @@ from jobs import (
     repair_article_images_job,
     repair_clinic_images_job,
     repair_article_slugs_job,
+    regenerate_article_images_job,
     research_job,
     rewrite_article_job,
     run_batch_job,
@@ -59,6 +60,8 @@ class TelegramBot:
         self.running_jobs: dict[str, threading.Thread] = {}
         self.pending_actions: dict[int, dict] = {}
         self.chat_memory: dict[int, dict] = self.load_memory()
+        self._memory_lock = threading.RLock()  # RLock: reentrant, safe for nested acquire
+        self._pending_lock = threading.Lock()
 
     def load_memory(self) -> dict[int, dict]:
         if not os.path.exists(MEMORY_PATH):
@@ -73,22 +76,24 @@ class TelegramBot:
             return {}
 
     def save_memory(self) -> None:
-        try:
-            with open(MEMORY_PATH, "w", encoding="utf-8") as memory_file:
-                json.dump({str(chat_id): value for chat_id, value in self.chat_memory.items()}, memory_file, ensure_ascii=False, indent=2)
-        except Exception as exc:
-            print(f"[!] Could not save Telegram memory: {exc}")
+        with self._memory_lock:
+            try:
+                with open(MEMORY_PATH, "w", encoding="utf-8") as memory_file:
+                    json.dump({str(chat_id): value for chat_id, value in self.chat_memory.items()}, memory_file, ensure_ascii=False, indent=2)
+            except Exception as exc:
+                print(f"[!] Could not save Telegram memory: {exc}")
 
     def remember_job_output(self, chat_id: int, name: str, output: str, action_type: str = "job") -> None:
         if not output:
             return
 
-        self.chat_memory[chat_id] = {
-            "type": action_type,
-            "name": name,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "text": output[-MAX_MEMORY_CHARS:],
-        }
+        with self._memory_lock:
+            self.chat_memory[chat_id] = {
+                "type": action_type,
+                "name": name,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "text": output[-MAX_MEMORY_CHARS:],
+            }
         self.save_memory()
 
     def request(self, method: str, payload: Optional[dict] = None) -> dict:
@@ -265,6 +270,8 @@ class TelegramBot:
             return
 
         def target() -> None:
+            from progress import set_progress_callback, clear_progress_callback
+            set_progress_callback(lambda msg: self.send_message(chat_id, msg))
             try:
                 self.send_message(chat_id, f"Started {name}. I will report back when it finishes.")
                 output = fn()
@@ -289,6 +296,7 @@ class TelegramBot:
             except Exception as exc:
                 print(f"[!] Telegram job thread failed for {name}: {exc}")
             finally:
+                clear_progress_callback()
                 self.running_jobs.pop(name, None)
 
         thread = threading.Thread(target=target, daemon=True)
@@ -446,6 +454,33 @@ class TelegramBot:
             ]
         )
 
+    def wants_regenerate_article_images_request(self, normalized: str) -> bool:
+        has_image_word = any(word in normalized for word in ["image", "images", "photo", "photos", "hình", "hinh", "ảnh", "anh"])
+        has_article_word = any(word in normalized for word in ["article", "blog", "insight", "bài viết", "bai viet", "bài", "bai"])
+        has_change_word = any(
+            word in normalized
+            for word in [
+                "change",
+                "replace",
+                "regenerate",
+                "update image",
+                "update photo",
+                "thay đổi",
+                "thay doi",
+                "đổi hình",
+                "doi hinh",
+                "đổi ảnh",
+                "doi anh",
+                "tạo lại hình",
+                "tao lai hinh",
+                "tạo lại ảnh",
+                "tao lai anh",
+                "regenerate image",
+                "regenerate photo",
+            ]
+        )
+        return has_image_word and has_article_word and has_change_word
+
     def extract_rewrite_target(self, text: str) -> Optional[str]:
         stripped = text.strip()
         quoted = re.findall(r'"([^"]+)"|“([^”]+)”|' + r"'([^']+)'", stripped)
@@ -543,6 +578,47 @@ class TelegramBot:
             ]
         )
 
+    def looks_like_generic_content_topic(self, text: str) -> bool:
+        normalized = re.sub(r"https?://\S+", " ", text or "")
+        normalized = re.sub(r"[^0-9A-Za-zÀ-ỹ\s/-]", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip().lower()
+        if not normalized:
+            return True
+
+        generic_phrases = {
+            "write an guide insight for me",
+            "write a guide for me",
+            "write an insight for me",
+            "write a blog for me",
+            "generate guide for me",
+            "generate insight for me",
+            "generate blog for me",
+            "create guide for me",
+            "create insight for me",
+            "viet 1 bai insight blog cho toi",
+            "viet mot bai insight blog cho toi",
+            "viet mot bai guide cho toi",
+            "tao mot bai guide cho toi",
+            "tao mot bai insight cho toi",
+            "viết 1 bài insight blog cho tôi",
+            "viết một bài insight blog cho tôi",
+            "viết một bài guide cho tôi",
+            "tạo một bài guide cho tôi",
+            "tạo một bài insight cho tôi",
+        }
+        if normalized in generic_phrases:
+            return True
+
+        filler_words = {
+            "a", "an", "the", "one", "mot", "một", "me", "my", "for", "to", "cho", "toi", "tôi",
+            "giup", "giúp", "please", "pls", "article", "bai", "bài", "blog", "content",
+            "guide", "huong", "hướng", "dan", "dẫn", "insight", "pillar", "post", "write",
+            "create", "generate", "tao", "tạo", "viet", "viết",
+        }
+        words = re.findall(r"[0-9A-Za-zÀ-ỹ]+", normalized)
+        meaningful_words = [word for word in words if word not in filler_words and not word.isdigit()]
+        return len(meaningful_words) == 0
+
     def wants_memory_reference(self, normalized: str) -> bool:
         return any(
             keyword in normalized
@@ -583,9 +659,14 @@ class TelegramBot:
         for marker in [" về ", " ve ", " about ", " topic "]:
             index = lowered.find(marker)
             if index >= 0:
-                return normalized[index + len(marker):].strip(" :.-") or None
+                candidate = normalized[index + len(marker):].strip(" :.-")
+                return None if self.looks_like_generic_content_topic(candidate) else candidate
 
         prefixes = [
+            "viết 1 bài insight blog",
+            "viet 1 bai insight blog",
+            "viết một bài insight blog",
+            "viet mot bai insight blog",
             "tạo một bài insight",
             "tao mot bai insight",
             "viết một bài insight",
@@ -607,16 +688,18 @@ class TelegramBot:
             "generate guide",
             "create guide",
             "write guide",
+            "write a guide",
+            "write an guide",
         ]
         for prefix in prefixes:
             if lowered.startswith(prefix):
                 cleaned = normalized[len(prefix):].strip(" :.-")
-                return cleaned or None
+                return None if self.looks_like_generic_content_topic(cleaned) else cleaned
 
         if mode == "guide" and lowered in {"viết một bài guide cho tôi", "viet mot bai guide cho toi", "write a guide"}:
             return None
 
-        return normalized
+        return None if self.looks_like_generic_content_topic(normalized) else normalized
 
     def analyze_request_with_worker(
         self,
@@ -644,6 +727,7 @@ Allowed actions:
 - repair_clinic_images
 - enrich_clinics_google
 - repair_article_images
+- regenerate_article_images
 - repair_article_slugs
 - delete_article
 - delete_clinic
@@ -653,7 +737,8 @@ Allowed actions:
 
 Rules:
 - Decision priority:
-  1. If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, choose rewrite_article.
+  1. If the user asks to change, replace, update, regenerate, or "thay đổi" images/photos for one specific article/blog/insight, choose regenerate_article_images.
+  2. If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, choose rewrite_article.
   2. If memory is available and the user asks to write/create a blog, article, insight, or guide based on previous/current research/report/content, choose generate_insight_from_memory or generate_guide_from_memory.
   3. If the user asks to perform NEW research/investigation/source gathering, choose multi_agent_research.
   4. If the user asks for an insight/blog/article without referring to memory, choose generate_insight unless they ask for guide/pillar/deep guide.
@@ -665,12 +750,14 @@ Rules:
 - If the user asks to delete/remove/xoá an article/blog/insight, action is delete_article and target is the clean id, slug, or title.
 - If the user asks to delete/remove/xoá a clinic/directory profile, action is delete_clinic and target is the clean id, slug, or clinic name.
 - If the user asks to rewrite, revise, update, edit, regenerate, improve, or "viết lại" an existing article/blog/insight, action is rewrite_article.
+- If the user asks to change/replace/regenerate images/photos for a specific article/blog/insight, action is regenerate_article_images. Target must be the article id, slug, or title.
 - For rewrite_article, target must be the article id, slug, or title. rewrite_instruction must include all requested edits.
 - If the user asks to fix/repair slugs or URL 404 caused by Vietnamese/non-ASCII slugs, action is repair_article_slugs.
 - If the user asks to add Google reviews, Google Maps location, Google rating, or Google photos to clinics, action is enrich_clinics_google.
 - If the user says "based on this", "dựa trên thông tin này", "dựa trên research/báo cáo", or similar, and memory is available, use generate_insight_from_memory or generate_guide_from_memory.
 - Examples:
   - "viết lại bài Navigating Seasonal Flu and COVID-19 Vaccines..., loại bỏ table content ở đầu bài blog, thêm 2 reference và thêm bản so sánh với American culture" => rewrite_article, target "Navigating Seasonal Flu and COVID-19 Vaccines...", rewrite_instruction includes removing opening table, adding 2 references, adding comparison with American culture.
+  - "thay đổi hình ảnh cho bài viết \"Colorectal Cancer Screening...\"" => regenerate_article_images, target "Colorectal Cancer Screening..."
   - "dựa trên nội dung nghiên cứu để viết bài blog" + memory available => generate_insight_from_memory, use_memory true.
   - "dựa trên báo cáo này viết guide chuyên sâu" + memory available => generate_guide_from_memory, use_memory true.
   - "nghiên cứu về Top 10 phòng khám nói tiếng Việt tại San Jose" => multi_agent_research.
@@ -711,7 +798,7 @@ Return JSON:
             client = OpenAI(
                 base_url="https://openrouter.ai/api/v1",
                 api_key=api_key,
-                timeout=20,
+                timeout=30,
             )
             response = client.chat.completions.create(
                 model=INTENT_MODEL,
@@ -793,6 +880,7 @@ Return JSON:
         if action == "generate_insight":
             topic = data.get("topic")
             topic = str(topic).strip() if topic else None
+            topic = self.clean_content_topic(topic, mode="insight") if topic else None
             if data.get("use_memory"):
                 memory_action = self.build_memory_content_action(original_text.strip(), memory or {}, mode="insight")
                 if memory_action:
@@ -801,6 +889,7 @@ Return JSON:
         if action == "generate_guide":
             topic = data.get("topic")
             topic = str(topic).strip() if topic else None
+            topic = self.clean_content_topic(topic, mode="guide") if topic else None
             if data.get("use_memory"):
                 memory_action = self.build_memory_content_action(original_text.strip(), memory or {}, mode="guide")
                 if memory_action:
@@ -852,6 +941,10 @@ Return JSON:
                     "Reply `approve` to continue."
                 ),
             }
+        if action == "regenerate_article_images":
+            target = str(data.get("target") or data.get("topic") or "").strip()
+            if target:
+                return self.build_regenerate_article_images_action(target)
         if action == "repair_article_slugs":
             return self.build_repair_article_slugs_action()
         if action == "delete_article":
@@ -921,6 +1014,25 @@ Return JSON:
             ),
         }
 
+    def build_regenerate_article_images_action(self, target: str, image_count: int = 3) -> dict:
+        return {
+            "type": "regenerate_article_images",
+            "name": f"regenerate_article_images: {target[:48]}",
+            "target": target,
+            "image_count": image_count,
+            "summary": (
+                "You want OpenClaw to replace the images for one specific article/insight, correct?\n\n"
+                f"Target article: {target}\n"
+                f"New images: {image_count} photorealistic editorial healthcare photos\n\n"
+                "If you approve, OpenClaw will:\n"
+                "1. Find the article by id, slug, or exact title.\n"
+                "2. Generate new photorealistic images with Gemini image-preview.\n"
+                "3. Replace `articles.seo_meta.og_image` and `articles.seo_meta.images` for that article.\n"
+                "4. Keep the old image URLs in `seo_meta.previous_images` for rollback/reference.\n\n"
+                "This will update Supabase data and use OpenRouter/Gemini quota. Reply `approve` to continue."
+            ),
+        }
+
     def build_url_content_action(self, urls: Union[str, list[str]], mode: str) -> dict:
         if isinstance(urls, str):
             url_list = [urls]
@@ -969,7 +1081,7 @@ Return JSON:
             "summary": (
                 f"You want OpenClaw to create one {content_label}, correct?\n\n"
                 f"Topic: {topic_label}\n\n"
-                "If you approve, OpenClaw will generate content, generate 3-5 images, create a unique slug, and publish it to Supabase.\n"
+                "If you approve, OpenClaw will choose/generate metadata when needed, search trusted health sources for verified references, generate content from those references, generate 3-5 images, create a unique slug, and publish it to Supabase.\n"
                 "Reply `approve` to continue. If you want to use reference URLs, send them before approving."
             ),
         }
@@ -1007,6 +1119,12 @@ Return JSON:
         wants_research = self.wants_research_request(normalized)
         wants_auto_topic = self.wants_auto_topic_request(normalized)
         wants_rewrite = self.wants_rewrite_request(normalized)
+        wants_regenerate_article_images = self.wants_regenerate_article_images_request(normalized)
+
+        if wants_regenerate_article_images:
+            target = self.extract_rewrite_target(text)
+            if target:
+                return self.build_regenerate_article_images_action(target)
 
         worker_action = self.analyze_request_with_worker(text, pending_action, memory)
         if worker_action:
@@ -1198,6 +1316,13 @@ Return JSON:
             self.run_job(chat_id, action["name"], enrich_clinics_google_job, action_type=action_type)
         elif action_type == "repair_article_images":
             self.run_job(chat_id, action["name"], repair_article_images_job, action_type=action_type)
+        elif action_type == "regenerate_article_images":
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: regenerate_article_images_job(action["target"], action.get("image_count", 3)),
+                action_type=action_type,
+            )
         elif action_type == "repair_article_slugs":
             self.run_job(chat_id, action["name"], repair_article_slugs_job, action_type=action_type)
         elif action_type == "delete_article":
@@ -1332,7 +1457,8 @@ Return JSON:
 
     def handle_chat(self, chat_id: int, text: str) -> None:
         if self.is_approval(text):
-            action = self.pending_actions.pop(chat_id, None)
+            with self._pending_lock:
+                action = self.pending_actions.pop(chat_id, None)
             if not action:
                 self.send_message(chat_id, "There is no pending action waiting for approval.")
                 return
@@ -1342,20 +1468,28 @@ Return JSON:
             return
 
         if self.is_rejection(text):
-            action = self.pending_actions.pop(chat_id, None)
+            with self._pending_lock:
+                action = self.pending_actions.pop(chat_id, None)
             if action:
                 self.send_message(chat_id, f"Pending action canceled: {action['name']}")
             else:
                 self.send_message(chat_id, "There is no pending action to cancel.")
             return
 
-        action = self.analyze_request(text, self.pending_actions.get(chat_id), self.chat_memory.get(chat_id))
+        with self._pending_lock:
+            current_pending = self.pending_actions.get(chat_id)
+        with self._memory_lock:
+            current_memory = self.chat_memory.get(chat_id)
+
+        action = self.analyze_request(text, current_pending, current_memory)
         if action:
-            self.pending_actions[chat_id] = action
+            with self._pending_lock:
+                self.pending_actions[chat_id] = action
             self.send_message(chat_id, action["summary"])
             return
 
-        self.pending_actions.pop(chat_id, None)
+        with self._pending_lock:
+            self.pending_actions.pop(chat_id, None)
         self.send_message(chat_id, ask_openclaw_agent(text))
 
     def run_forever(self) -> None:

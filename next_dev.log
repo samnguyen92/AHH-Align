@@ -1,0 +1,15 @@
+/Users/sam92/Desktop/Projects/asian-health-hub/node_modules/next/dist/bin/next:178
+program.command('experimental-test').description(`Execute \`next/experimental/testmode\` tests using a specified test runner. The test runner defaults to 'playwright' if the \`experimental.defaultTestRunner\` configuration option or the \`--test-runner\` option are not set.`).argument('[directory]', `A Next.js project directory to execute the test runner on. ${(0, _picocolors.italic)('If no directory is provided, the current directory will be used.')}`).argument('[test-runner-args...]', 'Any additional arguments or options to pass down to the test runner `test` command.').option('--test-runner [test-runner]', `Any supported test runner. Options: ${(0, _picocolors.bold)(_nexttest.SUPPORTED_TEST_RUNNERS_LIST.join(', '))}. ${(0, _picocolors.italic)("If no test runner is provided, the Next.js config option `experimental.defaultTestRunner`, or 'playwright' will be used.")}`).allowUnknownOption().action((directory, testRunnerArgs, options)=>{
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ^
+
+TypeError: Cannot read properties of undefined (reading 'join')
+    at Object.<anonymous> (/Users/sam92/Desktop/Projects/asian-health-hub/node_modules/next/dist/bin/next:178:717)
+    at Module._compile (node:internal/modules/cjs/loader:1830:14)
+    at Object..js (node:internal/modules/cjs/loader:1961:10)
+    at Module.load (node:internal/modules/cjs/loader:1553:32)
+    at Module._load (node:internal/modules/cjs/loader:1355:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+    at node:internal/main/run_main_module:33:47
+
+Node.js v24.15.0

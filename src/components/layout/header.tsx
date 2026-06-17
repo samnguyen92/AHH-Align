@@ -15,26 +15,31 @@ const navLinks: NavLink[] = [
   { href: '#about', label: 'About' },
 ];
 
-export function Header({ variant = 'default' }: { variant?: 'default' | 'overlay' }) {
+export function Header({ variant = 'default' }: { variant?: 'default' | 'overlay' | 'home' }) {
   const isOverlay = variant === 'overlay';
+  const isHome = variant === 'home';
 
   return (
     <header
       className={[
-        'z-50 w-full px-3 py-3 ',
-        isOverlay ? 'fixed left-0 top-0 bg-transparent' : 'sticky top-0 bg-[#92C7AD]',
+        'z-50 w-full px-[10px] py-[10px] ',
+        isHome
+          ? 'absolute left-0 top-0 bg-transparent'
+          : isOverlay
+            ? 'fixed left-0 top-0 bg-transparent'
+            : 'sticky top-0 bg-[#92C7AD]',
       ].join(' ')}
     >
-      <div className="mx-auto flex h-16 w-full max-w-[1440px] items-center justify-between gap-4 rounded-[var(--ahh-radius-sm)] border border-[var(--ahh-border)] bg-white/95 px-4 shadow-[0_10px_30px_rgba(0,92,75,0.08)]">
+      <div className="mx-auto flex h-[42px] w-full max-w-[1399px] items-center justify-between gap-3 rounded-[4px] border border-white/70 bg-white/95 px-2 shadow-[0_18px_50px_rgba(2,78,68,0.14)] md:h-[62px] md:rounded-[12px] md:px-3 md:pl-8">
         <BrandLogo compact />
 
         {/* Desktop Nav */}
-        <nav className="hidden min-w-0 items-center gap-5 lg:flex">
+        <nav className="hidden min-w-0 items-center gap-1 lg:flex">
           {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="flex items-center gap-1 text-sm font-semibold text-[var(--ahh-muted)] transition-colors hover:text-[var(--ahh-deep-teal)]"
+              className="rounded-lg px-3.5 py-2 text-sm font-normal text-neutral-700 transition-colors hover:bg-[var(--ahh-mist)] hover:text-[var(--ahh-deep-teal)]"
             >
               {link.label}
             </Link>
@@ -42,7 +47,7 @@ export function Header({ variant = 'default' }: { variant?: 'default' | 'overlay
           <span className="h-6 w-px bg-[var(--ahh-border)]" />
           <Link
             href="/claim"
-            className="text-sm font-semibold text-[var(--ahh-muted)] transition-colors hover:text-[var(--ahh-deep-teal)]"
+            className="rounded-lg px-3.5 py-2 text-sm font-normal text-neutral-700 transition-colors hover:bg-[var(--ahh-mist)] hover:text-[var(--ahh-deep-teal)]"
           >
             Claim a Free Profile
           </Link>
@@ -51,7 +56,7 @@ export function Header({ variant = 'default' }: { variant?: 'default' | 'overlay
         {/* Right Actions */}
         <div className="flex shrink-0 items-center gap-2">
           {/* Language */}
-          <button className="hidden items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold text-[var(--ahh-muted)] transition-colors hover:bg-white hover:text-[var(--ahh-deep-teal)] md:flex">
+          <button className="hidden items-center gap-1 rounded-lg px-3 py-2 text-[13px] font-normal text-[var(--ahh-muted)] transition-colors hover:bg-[var(--ahh-mist)] hover:text-[var(--ahh-deep-teal)] md:flex">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
             English
           </button>
@@ -59,7 +64,7 @@ export function Header({ variant = 'default' }: { variant?: 'default' | 'overlay
           {/* Search CTA */}
           <Link
             href="/search"
-            className="brand-button-secondary min-h-10 whitespace-nowrap px-5 py-2"
+            className="home-header-cta brand-button-secondary hidden min-h-[38px] whitespace-nowrap px-5 py-2 text-sm font-medium lg:inline-flex"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
             Find a Clinic

@@ -29,7 +29,10 @@ function StarRating({ rating }: { rating: number }) {
 
 export function ClinicHero({ clinic }: ClinicHeroProps) {
   const rating = clinic.metadata?.rating || 0;
-  const imageSrc = clinic.metadata?.images?.[0] || null;
+  const ratingCount = clinic.metadata?.rating_count || clinic.metadata?.review_profile?.review_count || 0;
+  const imageSrc = clinic.metadata?.gallery_images?.[0] || clinic.metadata?.images?.[0] || null;
+  const appointmentUrl = clinic.metadata?.appointment?.appointment_url || clinic.metadata?.appointment_url;
+  const websiteUrl = clinic.metadata?.website || clinic.metadata?.google_website_url;
 
   return (
     <section className="bg-[var(--ahh-deep-teal)] px-4 py-14 sm:px-6 lg:px-8">
@@ -41,13 +44,14 @@ export function ClinicHero({ clinic }: ClinicHeroProps) {
             {clinic.name}
           </h1>
           <p className="text-blue-100 text-sm md:text-base max-w-2xl mb-4">
-            {clinic.description || `${clinic.name} is a trusted ${clinic.specialty?.toLowerCase() || 'primary care'} clinic in ${clinic.city}.`}
+            {clinic.metadata?.about_highlight || clinic.description || `${clinic.name} is a trusted ${clinic.specialty?.toLowerCase() || 'primary care'} clinic in ${clinic.city}.`}
           </p>
 
           {/* Rating */}
           <div className="flex items-center gap-2 mb-6">
             <StarRating rating={rating} />
             <span className="text-sm font-semibold text-white">{rating.toFixed(1)}</span>
+            {ratingCount > 0 && <span className="text-sm text-blue-100">({ratingCount} reviews)</span>}
           </div>
 
           {/* Tags */}
@@ -77,6 +81,13 @@ export function ClinicHero({ clinic }: ClinicHeroProps) {
                 Telehealth Available
               </div>
             )}
+
+            {clinic.metadata?.pricing && clinic.metadata.pricing.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                Pricing listed
+              </div>
+            )}
           </div>
 
           {/* Buttons */}
@@ -98,14 +109,24 @@ export function ClinicHero({ clinic }: ClinicHeroProps) {
               </Link>
             )}
             
-            {clinic.org_id && (
+            {appointmentUrl && (
               <a
-                href="#"
+                href={appointmentUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="brand-button-ghost border-white/30 bg-transparent text-white hover:bg-white/10"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+                Book Online
+              </a>
+            )}
+            {!appointmentUrl && websiteUrl && (
+              <a
+                href={websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="brand-button-ghost border-white/30 bg-transparent text-white hover:bg-white/10"
+              >
                 Visit Website
               </a>
             )}
