@@ -175,8 +175,8 @@ export function ClinicMainContent({ clinic }: ClinicMainContentProps) {
   });
   const location = metadata.location;
   const galleryImages = [
-    ...(metadata.gallery_images || []),
     ...(metadata.images || []),
+    ...(metadata.gallery_images || []),
   ].filter((image, index, images) => image && images.indexOf(image) === index);
   const aboutText = metadata.about_highlight || clinic.description || FALLBACK_ABOUT;
   const culturalContext = metadata.cultural_context || metadata.language_note;

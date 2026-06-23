@@ -85,6 +85,49 @@ def text_search_place(clinic_data: dict, api_key: str) -> Optional[dict]:
     return places[0] if places else None
 
 
+def search_places_by_text(query: str, api_key: str, limit: int = 5) -> List[dict]:
+    """
+    Search Google Places by free-text query and return lightweight place records.
+    Used by the Scout pipeline before scraping official clinic websites.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    url = f"{PLACES_BASE_URL}/places:searchText"
+    field_mask = ",".join(
+        [
+            "places.id",
+            "places.displayName",
+            "places.formattedAddress",
+            "places.location",
+            "places.rating",
+            "places.userRatingCount",
+            "places.googleMapsUri",
+            "places.nationalPhoneNumber",
+            "places.websiteUri",
+            "places.primaryTypeDisplayName",
+            "places.types",
+            "places.businessStatus",
+        ]
+    )
+    request = Request(
+        url,
+        data=json.dumps({"textQuery": query, "maxResultCount": max(1, min(limit, 20))}).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": api_key,
+            "X-Goog-FieldMask": field_mask,
+        },
+        method="POST",
+    )
+
+    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    return payload.get("places") or []
+
+
 def get_place_details(place_id: str, api_key: str) -> dict:
     fields = ",".join(
         [

@@ -38,6 +38,7 @@ yarn-error.log*
 
 # python / openclaw local runtime
 openclaw/venv/
+openclaw/venv312/
 openclaw/__pycache__/
 openclaw/*.pyc
 openclaw/openclaw.log

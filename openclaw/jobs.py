@@ -79,6 +79,32 @@ def run_batch_job() -> str:
     return _run_with_captured_output("run_batch", main)
 
 
+def scout_pipeline_job(query: str, limit: int = 1, telegram_updater_callback=None) -> str:
+    from run_scout import run_scout_pipeline
+
+    return _run_with_captured_output(
+        "find_clinics",
+        lambda: print(run_scout_pipeline(query, limit=limit, telegram_updater_callback=telegram_updater_callback)),
+    )
+
+
+def scrape_clinic_url_job(name: str, url: str, telegram_updater_callback=None) -> str:
+    from run_single_clinic_url import run_single_clinic_url
+
+    return _run_with_captured_output(
+        "scrape_clinic_url",
+        lambda: print(
+            {
+                "saved": run_single_clinic_url(
+                    name,
+                    url,
+                    progress_callback=telegram_updater_callback,
+                )
+            }
+        ),
+    )
+
+
 def repair_clinic_images_job() -> str:
     from repair_clinic_images import main
 

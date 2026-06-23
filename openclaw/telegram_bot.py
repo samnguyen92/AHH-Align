@@ -30,6 +30,8 @@ from jobs import (
     research_job,
     rewrite_article_job,
     run_batch_job,
+    scout_pipeline_job,
+    scrape_clinic_url_job,
     tail_log,
 )
 
@@ -310,6 +312,8 @@ class TelegramBot:
             "Commands\n"
             "/status - check env, Supabase counts, and log path\n"
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
+            "/find_clinics <query> | [limit] - scout Google Places, scrape websites, extract clinic data, and save new clinics\n"
+            "/scrape_clinic_url <clinic name> | <url> - scrape one known clinic website and save/update it\n"
             "/enrich_clinics_google - add Google Places photos, rating, reviews, and Maps links to existing clinics\n"
             "/repair_clinic_images - generate missing clinic directory images\n"
             "/repair_article_images - generate missing article images\n"
@@ -733,26 +737,32 @@ Allowed actions:
 - delete_clinic
 - rewrite_article
 - run_batch
+- find_clinics
+- scrape_clinic_url
 - multi_agent_research
 
 Rules:
 - Decision priority:
-  1. If the user asks to change, replace, update, regenerate, or "thay đổi" images/photos for one specific article/blog/insight, choose regenerate_article_images.
-  2. If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, choose rewrite_article.
-  2. If memory is available and the user asks to write/create a blog, article, insight, or guide based on previous/current research/report/content, choose generate_insight_from_memory or generate_guide_from_memory.
-  3. If the user asks to perform NEW research/investigation/source gathering, choose multi_agent_research.
-  4. If the user asks for an insight/blog/article without referring to memory, choose generate_insight unless they ask for guide/pillar/deep guide.
-  5. If the user asks for a guide/pillar/chuyên sâu without referring to memory, choose generate_guide.
+  1. If the user asks to scrape, add, import, save, or create a clinic/directory profile from one exact clinic website URL, choose scrape_clinic_url.
+  2. If the user asks to change, replace, update, regenerate, or "thay đổi" images/photos for one specific article/blog/insight, choose regenerate_article_images.
+  3. If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, choose rewrite_article.
+  4. If memory is available and the user asks to write/create a blog, article, insight, or guide based on previous/current research/report/content, choose generate_insight_from_memory or generate_guide_from_memory.
+  5. If the user asks to perform NEW research/investigation/source gathering, choose multi_agent_research.
+  6. If the user asks for an insight/blog/article without referring to memory, choose generate_insight unless they ask for guide/pillar/deep guide.
+  7. If the user asks for a guide/pillar/chuyên sâu without referring to memory, choose generate_guide.
 - The word "nghiên cứu" does NOT automatically mean multi_agent_research. In "dựa trên nội dung nghiên cứu để viết bài blog", the user wants content from memory, not new research.
 - If the user says research/nghiên cứu/nguyên cứu/tìm hiểu/báo cáo and asks to gather/analyze/find sources, action is multi_agent_research.
 - If the user asks for a guide/pillar/chuyên sâu, action is generate_guide.
-- If URLs are present, use *_from_urls action and include all URLs.
+- If URLs are present for article/blog/guide content requests, use *_from_urls action and include all URLs.
+- If a URL is a clinic website and the user asks to scrape, add, import, save, or create a clinic profile/directory record from that URL, choose scrape_clinic_url. Do not use article/guide URL actions for clinic profile ingestion.
 - If the user asks to delete/remove/xoá an article/blog/insight, action is delete_article and target is the clean id, slug, or title.
 - If the user asks to delete/remove/xoá a clinic/directory profile, action is delete_clinic and target is the clean id, slug, or clinic name.
 - If the user asks to rewrite, revise, update, edit, regenerate, improve, or "viết lại" an existing article/blog/insight, action is rewrite_article.
 - If the user asks to change/replace/regenerate images/photos for a specific article/blog/insight, action is regenerate_article_images. Target must be the article id, slug, or title.
 - For rewrite_article, target must be the article id, slug, or title. rewrite_instruction must include all requested edits.
 - If the user asks to fix/repair slugs or URL 404 caused by Vietnamese/non-ASCII slugs, action is repair_article_slugs.
+- If the user asks to find, scout, discover, add, or import new clinics from Google Places, action is find_clinics. Extract a clean search query and optional limit.
+- If the user asks to scrape/add/import one exact clinic website URL, action is scrape_clinic_url. Extract urls[0] and a clinic name when provided.
 - If the user asks to add Google reviews, Google Maps location, Google rating, or Google photos to clinics, action is enrich_clinics_google.
 - If the user says "based on this", "dựa trên thông tin này", "dựa trên research/báo cáo", or similar, and memory is available, use generate_insight_from_memory or generate_guide_from_memory.
 - Examples:
@@ -785,10 +795,13 @@ Return JSON:
 {{
   "action": "generate_insight",
   "confidence": 0.0,
+  "query": null,
   "topic": null,
   "target": null,
   "urls": [],
+  "clinic_name": null,
   "use_memory": false,
+  "limit": null,
   "rewrite_instruction": null,
   "reason": "short internal reason"
 }}
@@ -897,6 +910,14 @@ Return JSON:
             return self.build_topic_content_action(topic, mode="guide")
         if action == "multi_agent_research":
             return self.build_research_action(self.clean_research_request(original_text))
+        if action == "find_clinics":
+            query = str(data.get("query") or data.get("topic") or data.get("target") or "").strip()
+            limit = self.parse_limit_value(data.get("limit"), default=1)
+            if query:
+                return self.build_find_clinics_action(query, limit)
+        if action == "scrape_clinic_url" and urls:
+            name = str(data.get("clinic_name") or data.get("target") or data.get("topic") or "").strip()
+            return self.build_scrape_clinic_url_action(name, urls[0])
         if action == "run_batch":
             return {
                 "type": "run_batch",
@@ -1105,6 +1126,101 @@ Return JSON:
             ),
         }
 
+    def parse_limit_value(self, value, default: int = 1) -> int:
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            limit = default
+        return max(1, min(limit, 10))
+
+    def parse_find_clinics_payload(self, payload: str) -> tuple[str, int]:
+        payload = (payload or "").strip()
+        if not payload:
+            return "", 1
+
+        query = payload
+        limit = 1
+        if "|" in payload:
+            query_part, limit_part = payload.rsplit("|", 1)
+            query = query_part.strip()
+            limit = self.parse_limit_value(limit_part.strip(), default=1)
+        else:
+            match = re.search(r"\s+(?:limit|top|count)\s*[:=]?\s*(\d+)\s*$", payload, flags=re.IGNORECASE)
+            if match:
+                limit = self.parse_limit_value(match.group(1), default=1)
+                query = payload[: match.start()].strip()
+
+        return query, limit
+
+    def build_find_clinics_action(self, query: str, limit: int = 1) -> dict:
+        limit = self.parse_limit_value(limit, default=1)
+        return {
+            "type": "find_clinics",
+            "name": f"find_clinics: {query[:48]}",
+            "query": query,
+            "limit": limit,
+            "summary": (
+                "You want OpenClaw to scout Google Places for new clinics, correct?\n\n"
+                f"Query: {query}\n"
+                f"Limit: {limit}\n\n"
+                "If you approve, OpenClaw will search Google Places, skip clinics already in Supabase, scrape official websites, "
+                "extract strict source-grounded clinic data, enrich with Google metadata/images, and save new clinics.\n\n"
+                "This may call Google Places, OpenRouter/Gemini, scrape websites, and update Supabase. Reply `approve` to continue."
+            ),
+        }
+
+    def infer_clinic_name_from_url(self, url: str) -> str:
+        domain = urllib.parse.urlparse(url).netloc.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        domain = domain.split(":")[0]
+        return f"Clinic from {domain}" if domain else "Clinic from URL"
+
+    def parse_scrape_clinic_url_payload(self, payload: str) -> tuple[str, Optional[str]]:
+        payload = (payload or "").strip()
+        urls = self.extract_urls(payload)
+        if not urls:
+            return "", None
+
+        url = urls[0]
+        name = payload.replace(url, "").strip(" |:-\"'“”")
+        if "|" in payload:
+            name_part, url_part = [part.strip() for part in payload.split("|", 1)]
+            parsed_urls = self.extract_urls(url_part)
+            if parsed_urls:
+                url = parsed_urls[0]
+                name = name_part.strip(" \"'“”")
+
+        name = re.sub(
+            r"\b(please|pls|vui lòng|vui long|hãy|hay|giúp|giup|scrape|crawl|import|add|save|create|from|thêm|them|lưu|luu|cào|cao|clinic|phòng khám|phong kham|profile|directory|url|website)\b",
+            " ",
+            name,
+            flags=re.IGNORECASE,
+        )
+        name = re.sub(r"\s+", " ", name).strip(" |:-\"'“”")
+
+        if not name:
+            name = self.infer_clinic_name_from_url(url)
+
+        return name, url
+
+    def build_scrape_clinic_url_action(self, name: str, url: str) -> dict:
+        clinic_name = (name or "").strip() or self.infer_clinic_name_from_url(url)
+        return {
+            "type": "scrape_clinic_url",
+            "name": f"scrape_clinic_url: {clinic_name[:48]}",
+            "clinic_name": clinic_name,
+            "url": url,
+            "summary": (
+                "Bạn muốn OpenClaw scrape một clinic từ URL chính xác này, đúng không?\n\n"
+                f"Clinic: {clinic_name}\n"
+                f"URL: {url}\n\n"
+                "Nếu bạn duyệt, OpenClaw sẽ scrape website này, trích xuất dữ liệu clinic có kiểm chứng từ nội dung nguồn, "
+                "enrich bằng Google Places/images, rồi save hoặc update clinic trong Supabase.\n\n"
+                "Việc này có thể gọi OpenRouter/Gemini, Google Places, scrape website và cập nhật Supabase. Reply `approve` để chạy."
+            ),
+        }
+
     def analyze_request(
         self,
         text: str,
@@ -1126,6 +1242,27 @@ Return JSON:
             if target:
                 return self.build_regenerate_article_images_action(target)
 
+        if urls and (
+            ("clinic" in normalized or "directory" in normalized or "profile" in normalized or "phòng khám" in normalized or "phong kham" in normalized)
+            and (
+                "scrape" in normalized
+                or "crawl" in normalized
+                or "import" in normalized
+                or "add" in normalized
+                or "save" in normalized
+                or "create" in normalized
+                or "thêm" in normalized
+                or "them" in normalized
+                or "lưu" in normalized
+                or "luu" in normalized
+                or "cào" in normalized
+                or "cao" in normalized
+            )
+        ):
+            name, clinic_url = self.parse_scrape_clinic_url_payload(text)
+            if clinic_url:
+                return self.build_scrape_clinic_url_action(name, clinic_url)
+
         worker_action = self.analyze_request_with_worker(text, pending_action, memory)
         if worker_action:
             return worker_action
@@ -1141,6 +1278,16 @@ Return JSON:
 
         if wants_research:
             return self.build_research_action(self.clean_research_request(text))
+
+        if (
+            ("find" in normalized or "scout" in normalized or "discover" in normalized or "import" in normalized or "add" in normalized)
+            and ("clinic" in normalized or "clinics" in normalized or "phòng khám" in normalized or "phong kham" in normalized)
+            and ("google" in normalized or "places" in normalized or "near" in normalized or "in " in normalized)
+        ):
+            query = re.sub(r"\b(find|scout|discover|import|add)\b", "", text, flags=re.IGNORECASE).strip(" :.-")
+            query, limit = self.parse_find_clinics_payload(query)
+            if query:
+                return self.build_find_clinics_action(query, limit)
 
         if pending_action:
             pending_urls = pending_action.get("urls") or ([pending_action["url"]] if pending_action.get("url") else [])
@@ -1338,6 +1485,28 @@ Return JSON:
             )
         elif action_type == "run_batch":
             self.run_job(chat_id, action["name"], run_batch_job, action_type=action_type)
+        elif action_type == "find_clinics":
+            query = action["query"]
+            limit = action.get("limit", 1)
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: scout_pipeline_job(query, limit, telegram_updater_callback=lambda msg: self.send_message(chat_id, msg)),
+                action_type=action_type,
+            )
+        elif action_type == "scrape_clinic_url":
+            clinic_name = action["clinic_name"]
+            clinic_url = action["url"]
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: scrape_clinic_url_job(
+                    clinic_name,
+                    clinic_url,
+                    telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
+                ),
+                action_type=action_type,
+            )
         elif action_type == "generate_insight":
             self.run_job(chat_id, action["name"], lambda: generate_insight_job(action.get("topic")), action_type=action_type)
         elif action_type == "generate_guide":
@@ -1372,6 +1541,36 @@ Return JSON:
                 self.send_message(chat_id, ask_openclaw_agent(question))
         elif command == "/run_batch":
             self.run_job(chat_id, "run_batch", run_batch_job, action_type="run_batch")
+        elif command == "/find_clinics":
+            payload = re.sub(r"^/find_clinics(?:@\w+)?", "", text, count=1).strip()
+            query, limit = self.parse_find_clinics_payload(payload)
+            if not query:
+                self.send_message(chat_id, "Use: /find_clinics Vietnamese dentist in Houston | 3")
+            else:
+                self.send_message(chat_id, f"Đã nhận lệnh. Đang trinh sát Google Places cho từ khóa: '{query}'...")
+                self.run_job(
+                    chat_id,
+                    f"find_clinics: {query[:48]}",
+                    lambda: scout_pipeline_job(query, limit, telegram_updater_callback=lambda msg: self.send_message(chat_id, msg)),
+                    action_type="find_clinics",
+                )
+        elif command == "/scrape_clinic_url":
+            payload = re.sub(r"^/scrape_clinic_url(?:@\w+)?", "", text, count=1).strip()
+            clinic_name, clinic_url = self.parse_scrape_clinic_url_payload(payload)
+            if not clinic_url:
+                self.send_message(chat_id, "Use: /scrape_clinic_url Dr. Van Tran Family Practice | https://www.drvantran.com/")
+            else:
+                self.send_message(chat_id, f"Đã nhận lệnh. Đang scrape clinic từ URL: {clinic_url}")
+                self.run_job(
+                    chat_id,
+                    f"scrape_clinic_url: {clinic_name[:48]}",
+                    lambda: scrape_clinic_url_job(
+                        clinic_name,
+                        clinic_url,
+                        telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
+                    ),
+                    action_type="scrape_clinic_url",
+                )
         elif command == "/repair_clinic_images":
             self.run_job(chat_id, "repair_clinic_images", repair_clinic_images_job, action_type="repair_clinic_images")
         elif command == "/enrich_clinics_google":

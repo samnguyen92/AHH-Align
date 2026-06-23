@@ -30,7 +30,7 @@ function StarRating({ rating }: { rating: number }) {
 export function ClinicHero({ clinic }: ClinicHeroProps) {
   const rating = clinic.metadata?.rating || 0;
   const ratingCount = clinic.metadata?.rating_count || clinic.metadata?.review_profile?.review_count || 0;
-  const imageSrc = clinic.metadata?.gallery_images?.[0] || clinic.metadata?.images?.[0] || null;
+  const imageSrc = clinic.metadata?.images?.[0] || clinic.metadata?.gallery_images?.[0] || null;
   const appointmentUrl = clinic.metadata?.appointment?.appointment_url || clinic.metadata?.appointment_url;
   const websiteUrl = clinic.metadata?.website || clinic.metadata?.google_website_url;
 

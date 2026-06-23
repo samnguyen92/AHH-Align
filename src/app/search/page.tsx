@@ -50,10 +50,11 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const totalPages = Math.ceil(result.total / result.limit);
 
   return (
-    <main className="brand-section-mist">
+    <main className="bg-[#92C7AD] px-[10px] pb-[10px]">
+      <div className="home-shell">
       {/* Search Hero */}
-      <section className="px-4 pt-8 sm:px-6 lg:px-8">
-        <div className="brand-hero brand-container px-6 py-10 sm:px-10">
+      <section className="pt-0">
+        <div className="brand-hero px-6 pb-12 pt-28 sm:px-10 lg:px-20 lg:pt-32">
           <h1 className="brand-heading-1 text-white">
             Find an Asian Clinic<br />That Speaks Your Language
           </h1>
@@ -64,8 +65,8 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       </section>
 
       {/* Search Bar */}
-      <section className="relative z-10 -mt-5 px-4 sm:px-6 lg:px-8">
-        <div className="brand-input-shell mx-auto max-w-6xl p-2">
+      <section className="relative z-10 -mt-5 px-4 sm:px-8 lg:px-16">
+        <div className="brand-input-shell mx-auto max-w-[1360px] p-2">
           <div className="flex flex-col items-stretch gap-2 rounded-lg bg-white sm:flex-row">
             <div className="flex-[2] relative">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-deep-teal)" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -85,8 +86,8 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       </section>
 
       {/* Main Content */}
-      <section className="px-4 pb-16 pt-8 sm:px-6 lg:px-8">
-        <div className="brand-container">
+      <section className="home-section rounded-[16px] bg-[var(--ahh-mist-2)] px-5 pb-16 pt-12 sm:px-10 lg:px-20">
+        <div>
           <div className="flex items-center justify-between mb-6">
             <h2 className="brand-heading-2 text-[var(--ahh-ink)]">Explore Clinics</h2>
             <span className="text-sm text-gray-500">
@@ -111,6 +112,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
           </div>
         </div>
       </section>
+      </div>
     </main>
   );
 }

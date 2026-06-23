@@ -115,7 +115,7 @@ export function Footer() {
               <ul className="space-y-2">
                 {[
                   { href: '/insights', label: 'Health Guide' },
-                  { href: '/insights', label: 'Clinical Resources' },
+                  { href: '/pulse', label: 'AHH Pulse' },
                   { href: '#faq', label: 'Patient FAQ' },
                   { href: '/claim', label: 'For Providers' },
                 ].map((link) => (
@@ -150,8 +150,8 @@ export function Footer() {
               <h4 className="mb-3 text-xs font-extrabold uppercase text-[var(--ahh-deep-teal)]">Company</h4>
               <ul className="space-y-2">
                 {[
-                  { href: '#about', label: 'About Us' },
-                  { href: '#about', label: 'Our Mission' },
+                  { href: '/about', label: 'About Us' },
+                  { href: '/about#mission', label: 'Our Mission' },
                   { href: '/insights', label: 'Press' },
                   { href: '/claim', label: 'Contact' },
                 ].map((link) => (

@@ -25,9 +25,16 @@ load_dotenv("../.env.local")
 IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
 
 NATURAL_PHOTO_STYLE = (
-    "Shot on Sony A7R IV, 50mm lens, f/2.8 depth of field. "
-    "Natural skin texture, subtle wrinkles, unretouched, candid, highly detailed, "
-    "photorealistic, everyday life."
+    "Natural documentary healthcare photography, available window or overhead clinic light, "
+    "35mm editorial framing, realistic color, mild film grain, imperfect everyday composition, "
+    "natural skin texture, subtle wrinkles, pores, flyaway hair, unretouched candid faces, "
+    "believable hands, ordinary clothing, real clinic or home details."
+)
+REALISTIC_PHOTO_NEGATIVE_STYLE = (
+    "Do not make it look like AI art, a stock-photo setup, advertising, a 3D render, or an illustration. "
+    "Avoid plastic skin, waxy faces, over-smoothed features, perfect symmetry, exaggerated smiles, "
+    "glamour lighting, hyper-sharp HDR, surreal depth of field, distorted hands, extra fingers, "
+    "fake medical equipment, unreadable gibberish text, logos, watermarks, captions, posters, and signage."
 )
 TEXT_MODEL = "deepseek/deepseek-v4-flash"
 CONTENT_WORD_TARGETS = {
@@ -1219,28 +1226,30 @@ def enforce_photorealistic_image_prompt(prompt: str) -> str:
         "3d render": "photo",
         "rendering": "photograph",
         "infographic": "real scene",
+        "cinematic": "documentary",
+        "dramatic lighting": "natural available light",
+        "studio lighting": "available clinic or home light",
+        "perfect lighting": "imperfect natural light",
+        "glossy": "unretouched",
+        "polished": "natural",
     }
     for old, new in replacements.items():
         text = re.sub(re.escape(old), new, text, flags=re.IGNORECASE)
 
     required_style = (
-        "Photorealistic documentary-style editorial healthcare photography; "
-        "real people when relevant, believable clinic or home environment, natural light, authentic human expressions, "
-        "subtle natural imperfections, realistic skin texture, candid composition. "
+        "Realistic documentary-style editorial healthcare photograph of one plausible moment; "
+        "real people when relevant, believable clinic or home environment, natural available light, "
+        "authentic human expressions, subtle natural imperfections, realistic skin texture, candid composition, "
+        "no staged stock-photo posing. "
         f"{NATURAL_PHOTO_STYLE}"
-    )
-    negative_style = (
-        "Avoid AI-looking faces, plastic skin, over-smoothed features, exaggerated smiles, staged stock-photo poses, "
-        "illustration, cartoon, vector art, 3D render, icons, diagrams, infographics, text overlays, logos, watermarks, "
-        "readable signage, extra fingers, distorted hands."
     )
 
     lowered = text.lower()
     if "photorealistic" not in lowered and "documentary-style" not in lowered:
         text = f"{required_style} Scene: {text}"
-    if "avoid ai-looking" not in text.lower():
-        text = f"{text}. {negative_style}"
-    if "sony a7r iv" not in text.lower():
+    if "do not make it look like ai art" not in text.lower():
+        text = f"{text}. {REALISTIC_PHOTO_NEGATIVE_STYLE}"
+    if "natural documentary healthcare photography" not in text.lower():
         text = f"{text}. {NATURAL_PHOTO_STYLE}"
     if "no text" not in text.lower():
         text = f"{text}, no text"
@@ -1270,11 +1279,14 @@ def generate_article_images(client: OpenAI, data: dict, slug: str) -> List[str]:
                         {
                             "role": "user",
                             "content": (
-                                "Create a photorealistic documentary-style editorial healthcare photograph for Asian Health Hub. "
-                                "The image must look like a credible real photograph, not AI art: natural available light, realistic clinic or home details, "
-                                "authentic human expressions, natural skin texture, subtle wrinkles, unretouched candid faces, believable hands, diverse Asian American patients when people are shown, "
+                                "Create one realistic documentary-style editorial healthcare photograph for Asian Health Hub. "
+                                "Make it feel like a real candid photo taken during an ordinary healthcare or family-care moment, not an AI-generated scene. "
+                                "Use natural available light, realistic clinic or home details, grounded emotion, ordinary clothing, authentic human expressions, "
+                                "natural skin texture, subtle wrinkles, unretouched faces, believable hands, and diverse Asian American patients or clinicians when people are shown. "
+                                "Keep the composition slightly imperfect and observational, with realistic color and mild grain. "
                                 f"{NATURAL_PHOTO_STYLE} "
-                                "accurate healthcare context, no text, no logos, no watermarks, no illustration, no cartoon, no 3D render, no infographic. Topic: "
+                                f"{REALISTIC_PHOTO_NEGATIVE_STYLE} "
+                                "Accurate healthcare context, no text, no logos, no watermarks. Topic: "
                                 f"{prompt}"
                             ),
                         }

@@ -9,6 +9,10 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/")
   const isHome = pathname === "/"
+  const isAbout = pathname === "/about"
+  const isPulse = pathname === "/pulse" || pathname.startsWith("/pulse/")
+  const isSearch = pathname === "/search"
+  const isInsightsIndex = pathname === "/insights"
   const isInsightDetail = /^\/insights\/[^/]+/.test(pathname)
 
   if (isAdmin) {
@@ -17,7 +21,7 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Header variant={isHome ? "home" : isInsightDetail ? "overlay" : "default"} />
+      <Header variant={isHome || isAbout || isPulse || isSearch || isInsightsIndex ? "home" : isInsightDetail ? "overlay" : "default"} />
       <main className="flex-1">{children}</main>
       <BottomCTA />
       <Footer />

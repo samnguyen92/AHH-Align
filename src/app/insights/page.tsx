@@ -205,7 +205,7 @@ function ArticleSection({
   const compact = showAll ? rest.slice(2) : rest.slice(2, 6);
 
   return (
-    <section className="brand-container">
+    <section className="home-section rounded-[16px] bg-white px-5 py-16 sm:px-10 lg:px-20 lg:py-[88px]">
       <div className="mb-7">
         <div>
           <h2 className="brand-heading-2">{title}</h2>
@@ -282,9 +282,10 @@ export default async function InsightsPage({
     .slice(0, 8);
 
   return (
-    <main className="bg-white">
-      <section className="px-2 pt-4 sm:px-4">
-        <div className="brand-hero brand-container px-7 py-14 sm:px-12 lg:px-20">
+    <main className="bg-[#92C7AD] px-[10px] pb-[10px]">
+      <div className="home-shell">
+      <section className="pt-0">
+        <div className="brand-hero px-7 pb-14 pt-28 sm:px-12 lg:px-20 lg:pt-32">
           <div className="relative z-10 grid items-center gap-10 lg:grid-cols-[1fr_280px]">
             <div className="max-w-3xl">
               <h1 className="brand-heading-display text-white">
@@ -320,7 +321,7 @@ export default async function InsightsPage({
         </div>
       </section>
 
-      <section className="brand-container relative z-10 -mt-8">
+      <section className="home-section relative z-10 -mt-8 rounded-[16px] bg-[var(--ahh-mist-2)] px-5 py-10 sm:px-10 lg:px-20">
         <div className="brand-card p-7">
           <h2 className="text-base font-semibold text-[var(--ahh-ink)]">Hot Topic</h2>
           <div className="mt-6 flex flex-wrap gap-2">
@@ -349,7 +350,7 @@ export default async function InsightsPage({
         </div>
       </section>
 
-      <div className="space-y-20 py-12 sm:py-16">
+      <div className="grid gap-[10px]">
         {selectedMode !== 'guide' && (
           <ArticleSection
             title="Latest Insights"
@@ -369,6 +370,7 @@ export default async function InsightsPage({
             showAll={Boolean(categorySlug || tagSlug)}
           />
         )}
+      </div>
       </div>
     </main>
   );
