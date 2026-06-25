@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import { SearchFilters } from '@/components/search/search-filters';
 import { ClinicGrid } from '@/components/search/clinic-grid';
 import { SearchPagination } from '@/components/search/pagination';
-import { searchClinics } from '@/services/clinic-service';
+import { searchClinics, getSearchFilterOptions } from '@/services/clinic-service';
 
 interface SearchPageProps {
   searchParams: Promise<{
@@ -48,6 +48,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   });
 
   const totalPages = Math.ceil(result.total / result.limit);
+  const filterOptions = await getSearchFilterOptions();
 
   return (
     <main className="bg-[#92C7AD] px-[10px] pb-[10px]">
@@ -96,9 +97,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
           </div>
 
           <div className="flex flex-col lg:flex-row gap-8">
-            {/* Filters Sidebar */}
             <Suspense fallback={null}>
-              <SearchFilters />
+              <SearchFilters
+                specialties={filterOptions.specialties}
+                languages={filterOptions.languages}
+                cities={filterOptions.cities}
+              />
             </Suspense>
 
             {/* Results Grid */}

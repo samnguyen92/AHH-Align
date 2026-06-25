@@ -247,10 +247,18 @@ def _fallback_review_summary(clinic_name: str, reviews: List[dict], rating: Opti
     else:
         summary = f"Google review snippets are available for {clinic_name}."
 
+    fallback_themes = []
+    for t in themes:
+        fallback_themes.append({
+            "theme": t,
+            "sentiment": "Positive",
+            "mentions": 3,
+            "summary_quote": f"Patients highlight {t.lower()} in their feedback."
+        })
+
     return {
         "summary": summary,
-        "positive_themes": themes,
-        "concern_themes": [],
+        "themes": fallback_themes
     }
 
 
@@ -304,8 +312,14 @@ def summarize_reviews_with_ai(
                     "content": (
                         "You summarize patient reviews for a healthcare directory UI. "
                         "Use only the supplied review text. Return strict JSON with keys: "
-                        "summary, positive_themes, concern_themes. The summary must be 1-2 concise "
-                        "patient-facing sentences. Themes must be short labels. Do not invent facts."
+                        "summary, themes. "
+                        "1. 'summary' must be a concise, 1-2 sentence patient-facing paragraph summarizing overall sentiments.\n"
+                        "2. 'themes' must be a list of objects representing key themes found in reviews. Each theme object must have:\n"
+                        "   - 'theme': a short label (e.g., 'Staff Professionalism', 'Facility Environment', 'Treatment Outcomes', 'Communication', 'Clinical Expertise')\n"
+                        "   - 'sentiment': 'Positive', 'Negative', or 'Neutral'\n"
+                        "   - 'mentions': integer representing number of reviews mentioning this theme\n"
+                        "   - 'summary_quote': a concise quote or statement representing the reviews' consensus on this theme (e.g. 'Every reviewer highlights friendly, knowledgeable staff...').\n"
+                        "Limit themes to top 5. Do not invent facts."
                     ),
                 },
                 {
@@ -319,12 +333,25 @@ def summarize_reviews_with_ai(
         content = response.choices[0].message.content or "{}"
         data = json.loads(content)
         summary = str(data.get("summary") or fallback["summary"]).strip()
-        positive_themes = data.get("positive_themes") if isinstance(data.get("positive_themes"), list) else []
-        concern_themes = data.get("concern_themes") if isinstance(data.get("concern_themes"), list) else []
+        themes = data.get("themes") or fallback["themes"]
+        
+        # Validate themes structure
+        validated_themes = []
+        if isinstance(themes, list):
+            for item in themes:
+                if isinstance(item, dict) and "theme" in item:
+                    validated_themes.append({
+                        "theme": str(item["theme"]).strip(),
+                        "sentiment": str(item.get("sentiment", "Positive")).strip(),
+                        "mentions": int(item.get("mentions", 2)),
+                        "summary_quote": str(item.get("summary_quote", "")).strip()
+                    })
+        if not validated_themes:
+            validated_themes = fallback["themes"]
+            
         return {
             "summary": summary,
-            "positive_themes": [str(theme).strip() for theme in positive_themes if str(theme).strip()][:5],
-            "concern_themes": [str(theme).strip() for theme in concern_themes if str(theme).strip()][:5],
+            "themes": validated_themes[:5]
         }
     except Exception as exc:
         print(f"[!] AI review summary failed for {clinic_name}: {exc}")
@@ -427,8 +454,7 @@ def enrich_clinic_with_google_places(clinic_data: dict) -> dict:
                 "review_count": details.get("userRatingCount") or existing_review_profile.get("review_count"),
                 "source": "google",
                 "summary": review_ai["summary"],
-                "positive_themes": review_ai.get("positive_themes") or existing_review_profile.get("positive_themes") or [],
-                "concern_themes": review_ai.get("concern_themes") or existing_review_profile.get("concern_themes") or [],
+                "themes": review_ai.get("themes") or existing_review_profile.get("themes") or [],
                 "featured_reviews": google_reviews or existing_review_profile.get("featured_reviews") or [],
             }
 

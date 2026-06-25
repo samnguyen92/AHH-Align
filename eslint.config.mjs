@@ -12,7 +12,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    "openclaw/venv/**",
+    "openclaw/**",
     "@v0-folder/**",
   ]),
 ]);

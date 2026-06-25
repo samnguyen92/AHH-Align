@@ -314,3 +314,90 @@ export async function getTopSpecialtyCombos(limit = 1000): Promise<SpecialtySeoC
     return [];
   }
 }
+
+export interface FilterOption {
+  value: string;
+  count: number;
+}
+
+export interface CityFilterOption extends FilterOption {
+  state: string;
+}
+
+export interface SearchFilterOptions {
+  specialties: FilterOption[];
+  languages: FilterOption[];
+  cities: CityFilterOption[];
+}
+
+export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
+  const supabase = createServerAnonClient();
+
+  if (!supabase) {
+    return { specialties: [], languages: [], cities: [] };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('clinics')
+      .select('specialty, languages, city, state');
+
+    if (error) {
+      throw error;
+    }
+
+    const specialtyCounts: Record<string, number> = {};
+    const languageCounts: Record<string, number> = {};
+    const cityCounts: Record<string, { state: string; count: number }> = {};
+
+    (data ?? []).forEach((clinic) => {
+      // 1. Specialty
+      if (clinic.specialty) {
+        const spec = clinic.specialty.trim();
+        specialtyCounts[spec] = (specialtyCounts[spec] || 0) + 1;
+      }
+
+      // 2. Languages
+      if (clinic.languages && Array.isArray(clinic.languages)) {
+        clinic.languages.forEach((lang: string) => {
+          if (lang) {
+            const l = lang.trim();
+            languageCounts[l] = (languageCounts[l] || 0) + 1;
+          }
+        });
+      }
+
+      // 3. City
+      if (clinic.city && clinic.state) {
+        const city = clinic.city.trim();
+        const state = clinic.state.trim().toUpperCase();
+        const key = `${city}, ${state}`;
+        if (!cityCounts[key]) {
+          cityCounts[key] = { state, count: 0 };
+        }
+        cityCounts[key].count += 1;
+      }
+    });
+
+    const specialties = Object.entries(specialtyCounts)
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+
+    const languages = Object.entries(languageCounts)
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+
+    const cities = Object.entries(cityCounts)
+      .map(([key, item]) => {
+        const city = key.substring(0, key.indexOf(','));
+        return { value: city, state: item.state, count: item.count };
+      })
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+
+    return { specialties, languages, cities };
+  } catch (err) {
+    console.error('[clinic-service] getSearchFilterOptions error:', err);
+    return { specialties: [], languages: [], cities: [] };
+  }
+}
+

@@ -15,13 +15,86 @@ def generate_slug(text):
     return text[:180] or "clinic"
 
 
-def _merge_lists(existing, incoming):
+def _merge_lists(existing, incoming, list_key=None):
     """
     Merge scalar/object lists while preserving order and avoiding exact duplicates.
     """
+    if not existing:
+        return incoming or []
+    if not incoming:
+        return existing or []
+
+    if list_key == "team_members":
+        # Deduplicate by 'name'
+        merged = []
+        by_name = {}
+        for item in existing + incoming:
+            if not isinstance(item, dict) or "name" not in item:
+                merged.append(item)
+                continue
+            name = item["name"].strip().lower()
+            if name in by_name:
+                # Merge fields
+                existing_item = by_name[name]
+                # Combine bio snippets or take the longer/richer one
+                bio1 = existing_item.get("bio_snippet") or ""
+                bio2 = item.get("bio_snippet") or ""
+                best_bio = bio2 if len(bio2) > len(bio1) else bio1
+                existing_item["bio_snippet"] = best_bio or None
+                
+                # Merge roles (prefer longer/richer role description)
+                role1 = existing_item.get("role") or ""
+                role2 = item.get("role") or ""
+                existing_item["role"] = role2 if len(role2) > len(role1) else role1
+                
+                # Merge languages spoken
+                langs1 = existing_item.get("languages_spoken") or []
+                langs2 = item.get("languages_spoken") or []
+                merged_langs = list(set(langs1 + langs2))
+                existing_item["languages_spoken"] = merged_langs
+            else:
+                copied = dict(item)
+                by_name[name] = copied
+                merged.append(copied)
+        return merged
+
+    elif list_key == "faqs":
+        # Deduplicate by 'question'
+        merged = []
+        by_question = {}
+        for item in existing + incoming:
+            if not isinstance(item, dict) or "question" not in item:
+                merged.append(item)
+                continue
+            q = item["question"].strip().lower()
+            if q in by_question:
+                by_question[q]["answer"] = item.get("answer") or by_question[q].get("answer")
+            else:
+                copied = dict(item)
+                by_question[q] = copied
+                merged.append(copied)
+        return merged
+
+    elif list_key == "highlights":
+        # Deduplicate by 'title'
+        merged = []
+        by_title = {}
+        for item in existing + incoming:
+            if not isinstance(item, dict) or "title" not in item:
+                merged.append(item)
+                continue
+            t = item["title"].strip().lower()
+            if t in by_title:
+                by_title[t]["detail"] = item.get("detail") or by_title[t].get("detail")
+            else:
+                copied = dict(item)
+                by_title[t] = copied
+                merged.append(copied)
+        return merged
+
     merged = []
     seen = set()
-    for item in (existing or []) + (incoming or []):
+    for item in existing + incoming:
         key = repr(item)
         if key in seen:
             continue
@@ -69,6 +142,7 @@ def insert_clinic(clinic_data: dict):
         "important_links",
         "iframe_sources",
         "about_highlight",
+        "short_description",
         "cultural_context",
         "services_offered",
         "insurance",
@@ -114,9 +188,9 @@ def insert_clinic(clinic_data: dict):
             existing_row = existing.data[0]
             existing_metadata = existing_row.get("metadata") or {}
             merged_metadata = {**existing_metadata, **incoming_metadata}
-            for list_key in ["images", "reviews", "services", "insurance_accepted", "conditions_treated", "faqs", "third_party_profiles", "external_sources"]:
+            for list_key in ["images", "reviews", "services", "insurance_accepted", "conditions_treated", "faqs", "third_party_profiles", "external_sources", "team_members", "highlights"]:
                 if existing_metadata.get(list_key) and incoming_metadata.get(list_key):
-                    merged_metadata[list_key] = _merge_lists(existing_metadata[list_key], incoming_metadata[list_key])
+                    merged_metadata[list_key] = _merge_lists(existing_metadata[list_key], incoming_metadata[list_key], list_key)
                 elif existing_metadata.get(list_key) and not incoming_metadata.get(list_key):
                     merged_metadata[list_key] = existing_metadata[list_key]
 

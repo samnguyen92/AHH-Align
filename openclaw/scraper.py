@@ -225,6 +225,15 @@ def _discover_high_value_internal_links(soup: BeautifulSoup, page_url: str) -> l
 
         seen.add(absolute_href.rstrip("/"))
         score = len(matched_keywords) * 10
+        # Boost Team/About/Meet pages as they contain provider details and languages
+        TEAM_BOOST_KEYWORDS = {"about", "team", "staff", "provider", "doctor", "meet"}
+        if any(kw in haystack for kw in TEAM_BOOST_KEYWORDS):
+            score += 50
+            
+        # Deprioritize deep sub-services pages to prioritize high-level pages
+        if "/services/" in parsed.path:
+            score -= 15
+
         if label:
             score += 2
         if parsed.path.count("/") <= 2:
@@ -447,11 +456,10 @@ def scrape_content_from_url(url: str) -> dict:
             homepage_soup = BeautifulSoup(html, "html.parser")
             spider_links = _discover_high_value_internal_links(homepage_soup, url)
 
-            # Spider subpages only when Jina did NOT provide content
-            # (If Jina succeeded, its output already covers the homepage depth)
-            if not jina_markdown and spider_links:
+            # Spider subpages to collect rich details (About, Team, Services, Hours, etc.)
+            if spider_links:
                 selected = ", ".join(link["url"] for link in spider_links)
-                print(f"[*] Jina unavailable; spidering {len(spider_links)} sub-page(s): {selected}")
+                print(f"[*] Spidering {len(spider_links)} sub-page(s): {selected}")
                 for spider_link in spider_links:
                     sub_url = spider_link["url"]
                     # Reuse context — stealth is inherited, no re-apply needed
@@ -480,15 +488,16 @@ def scrape_content_from_url(url: str) -> dict:
     metadata = _extract_metadata_from_soup(url, soup)
 
     # Determine primary text content
+    markdown_sections = []
     if jina_markdown:
-        # Jina content is primary — clean, LLM-ready
-        primary_text = f"{PAGE_DELIMITER.format(url=url)}{jina_markdown}"
+        markdown_sections.append(f"{PAGE_DELIMITER.format(url=url)}{jina_markdown}")
     else:
-        # Playwright text content as fallback
-        markdown_sections = [_soup_to_markdown(url, html)]
-        for subpage in subpage_results:
-            markdown_sections.append(_soup_to_markdown(subpage["url"], subpage["html"]))
-        primary_text = "\n".join(markdown_sections)
+        markdown_sections.append(_soup_to_markdown(url, html))
+
+    for subpage in subpage_results:
+        markdown_sections.append(_soup_to_markdown(subpage["url"], subpage["html"]))
+    
+    primary_text = "\n".join(markdown_sections)
 
     # Append link/iframe/image context (same as before)
     lines = [primary_text]

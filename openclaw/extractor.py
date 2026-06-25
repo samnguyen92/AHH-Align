@@ -129,7 +129,10 @@ class ClinicExtraction(BaseModel):
     )
     services_offered: List[ServiceOffering] = Field(default_factory=list)
     insurance: InsuranceInfo = Field(default_factory=InsuranceInfo)
-    team_members: List[TeamMember] = Field(default_factory=list)
+    team_members: List[TeamMember] = Field(
+        default_factory=list,
+        description="Clinical or administrative team members. Include providers and staff listed in the about/team section or explicitly mentioned in user reviews/testimonials with their name and specific role (e.g., dentist, hygienist, assistant, receptionist/front desk)."
+    )
     pricing: List[PricingItem] = Field(
         default_factory=list,
         description="Self-pay prices, insurance notes, membership plans, offers, or procedure cost ranges.",
@@ -143,6 +146,10 @@ class ClinicExtraction(BaseModel):
     phone: Optional[str] = None
     website: Optional[str] = None
     review_summary: Optional[str] = None
+    short_description: Optional[str] = Field(
+        default=None,
+        description="A brief 1-2 sentence description of the clinic/hospital for the hero banner. Do NOT reuse the full about us content."
+    )
 
     # Compatibility fields used by the existing DB/frontend pipeline.
     city: Optional[str] = None
@@ -152,7 +159,10 @@ class ClinicExtraction(BaseModel):
     email: Optional[str] = None
     fax: Optional[str] = None
     specialty: Optional[str] = Field(default=None, description="Primary specialty or facility type.")
-    languages: List[str] = Field(default_factory=lambda: ["English"])
+    languages: List[str] = Field(
+        default_factory=lambda: ["English"],
+        description="Languages spoken by the clinic staff or providers. Extract all languages explicitly mentioned in the text (e.g., 'Spanish', 'Vietnamese', 'Korean', 'Chinese', 'Tagalog'). If a specific provider is listed as speaking a language, include that language. If no languages are found, default to ['English']."
+    ),
     accepting_new_patients: Optional[bool] = None
     is_telehealth_available: bool = False
 
@@ -238,6 +248,7 @@ def _with_pipeline_compatibility(extracted: dict) -> dict:
     review_profile = extracted.get("review_profile") or {}
 
     extracted["description"] = extracted.get("about_highlight")
+    extracted["short_description"] = extracted.get("short_description")
     extracted["services"] = services
     extracted["insurance_accepted"] = insurance.get("accepted_networks") or []
     extracted["provider_credentials"] = {
@@ -256,8 +267,25 @@ def _with_pipeline_compatibility(extracted: dict) -> dict:
         if value not in (None, "")
     }
 
-    if not extracted.get("languages"):
-        extracted["languages"] = ["English"]
+    # Merge languages from team members to clinic level
+    languages_set = set(extracted.get("languages") or [])
+    for member in team_members:
+        if isinstance(member, dict) and member.get("languages_spoken"):
+            for lang in member["languages_spoken"]:
+                if isinstance(lang, str) and lang.strip():
+                    languages_set.add(lang.strip())
+    
+    # Remove empty/null values and ensure proper capitalization
+    cleaned_languages = []
+    for lang in languages_set:
+        cleaned = lang.strip().title()
+        if cleaned and cleaned not in cleaned_languages:
+            cleaned_languages.append(cleaned)
+            
+    if not cleaned_languages:
+        cleaned_languages = ["English"]
+        
+    extracted["languages"] = cleaned_languages
 
     for field in ["address", "city", "state", "zip_code"]:
         if not extracted.get(field) and location.get(field):
@@ -309,7 +337,7 @@ def extract_clinic_data(hospital_name: str, text_content) -> Optional[dict]:
     system_prompt = (
         "You extract clinic profile data for Asian Health Hub. "
         "Use only the provided webpage content, JSON-LD, links, and iframe sources. "
-        "Extract all fields needed for the clinic detail wireframe: highlights, about, cultural context, "
+        "Extract all fields needed for the clinic detail wireframe: highlights, about, short description, cultural context, "
         "insurance, services, team, pricing, location, reviews, booking, hours, phone, and website. "
         "Do not invent providers, prices, insurance, languages, reviews, hours, or cultural context. "
         "If a value is not present, use null or an empty list as appropriate. "
@@ -319,7 +347,7 @@ def extract_clinic_data(hospital_name: str, text_content) -> Optional[dict]:
     Target clinic or hospital name: {hospital_name}
 
     Read the source content and extract a patient-facing clinic profile. Prioritize:
-    - tab highlights and a 2-3 paragraph about section
+    - tab highlights, a 2-3 paragraph about section, and a separate short description (1-2 sentences) for the hero banner
     - culturally relevant Asian, immigrant, bilingual, or language-access context when present
     - insurance networks, Medicaid/Medicare/private insurance, self-pay and verification notes
     - service cards with short descriptions

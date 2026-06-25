@@ -14,6 +14,7 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
   const isSearch = pathname === "/search"
   const isInsightsIndex = pathname === "/insights"
   const isInsightDetail = /^\/insights\/[^/]+/.test(pathname)
+  const isClinicDetail = /^\/clinics\/[^/]+/.test(pathname)
 
   if (isAdmin) {
     return <>{children}</>
@@ -21,7 +22,7 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Header variant={isHome || isAbout || isPulse || isSearch || isInsightsIndex ? "home" : isInsightDetail ? "overlay" : "default"} />
+      <Header variant={isHome || isAbout || isPulse || isSearch || isInsightsIndex || isClinicDetail ? "home" : isInsightDetail ? "overlay" : "default"} />
       <main className="flex-1">{children}</main>
       <BottomCTA />
       <Footer />

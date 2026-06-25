@@ -40,6 +40,7 @@ export interface ClinicMetadata {
   language_note?: string;
   cultural_context?: string;
   about_highlight?: string;
+  short_description?: string;
   review_summary?: string;
   faqs?: ClinicFaq[];
   website?: string;
@@ -121,6 +122,13 @@ export interface AppointmentInfo {
   new_patient_note?: string | null;
 }
 
+export interface ReviewTheme {
+  theme: string;
+  sentiment: string;
+  mentions: number;
+  summary_quote?: string;
+}
+
 export interface ReviewProfile {
   rating?: number | null;
   review_count?: number | null;
@@ -128,6 +136,7 @@ export interface ReviewProfile {
   summary?: string | null;
   positive_themes?: string[];
   concern_themes?: string[];
+  themes?: ReviewTheme[];
   featured_reviews?: Review[];
 }
 

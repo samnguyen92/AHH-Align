@@ -43,11 +43,13 @@ export default async function ClinicPage({ params }: ClinicPageProps) {
   }
 
   return (
-    <div className="bg-white">
-      <ClinicHero clinic={clinic} />
-      
-      <div className="brand-container py-12">
-        <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
+    <div className="bg-[#92C7AD] px-[10px] pb-[10px] min-h-screen">
+      <div className="w-[min(1420px,calc(100vw-20px))] mx-auto space-y-6">
+        {/* Clinic Hero Card */}
+        <ClinicHero clinic={clinic} />
+        
+        {/* Columns Wrapper */}
+        <div className="flex flex-col lg:flex-row gap-6 items-start pb-12">
           {/* Left Column: Main Content */}
           <ClinicMainContent clinic={clinic} />
 

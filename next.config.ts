@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'anchordentalga.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'www.anchordentalga.com',
+      },
     ],
   },
 };
