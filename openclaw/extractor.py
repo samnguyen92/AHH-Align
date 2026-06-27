@@ -162,7 +162,7 @@ class ClinicExtraction(BaseModel):
     languages: List[str] = Field(
         default_factory=lambda: ["English"],
         description="Languages spoken by the clinic staff or providers. Extract all languages explicitly mentioned in the text (e.g., 'Spanish', 'Vietnamese', 'Korean', 'Chinese', 'Tagalog'). If a specific provider is listed as speaking a language, include that language. If no languages are found, default to ['English']."
-    ),
+    )
     accepting_new_patients: Optional[bool] = None
     is_telehealth_available: bool = False
 

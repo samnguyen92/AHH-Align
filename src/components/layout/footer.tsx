@@ -34,7 +34,7 @@ const socialLinks = [
 
 export function Footer() {
   return (
-    <footer className="home-footer bg-[#92C7AD] px-[10px] pb-[10px] pt-[10px]">
+    <footer className="home-footer bg-[#E5F0EB] px-[10px] pb-[10px] pt-[10px]">
       <section className="home-newsletter mx-auto flex min-h-[299px] w-full max-w-[1420px] items-center rounded-[16px] bg-white px-5 py-12 sm:px-10 lg:px-20">
         <div className="brand-container">
           <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">

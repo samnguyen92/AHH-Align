@@ -59,8 +59,10 @@ export async function searchClinics(
       );
     }
 
-    // Pagination + Sắp xếp
+    // Pagination + Sắp xếp (Ưu tiên các cơ sở có rating/ranking cao lên trước)
     const { data, error, count } = await query
+      .order('metadata->rating', { ascending: false, nullsFirst: false })
+      .order('metadata->rating_count', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -330,6 +332,25 @@ export interface SearchFilterOptions {
   cities: CityFilterOption[];
 }
 
+const ASIAN_LANGUAGES = new Set([
+  'Vietnamese',
+  'Korean',
+  'Chinese',
+  'Japanese',
+  'Tagalog',
+  'Hindi',
+  'Mandarin',
+  'Cantonese',
+  'Toisanese',
+  'Thai',
+  'Bengali',
+  'Punjabi',
+  'Urdu',
+  'Tamil',
+  'Telugu',
+  'Gujarati'
+]);
+
 export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
   const supabase = createServerAnonClient();
 
@@ -362,7 +383,11 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
         clinic.languages.forEach((lang: string) => {
           if (lang) {
             const l = lang.trim();
-            languageCounts[l] = (languageCounts[l] || 0) + 1;
+            // Normalize case to title case just in case
+            const normalizedLang = l.charAt(0).toUpperCase() + l.slice(1).toLowerCase();
+            if (ASIAN_LANGUAGES.has(normalizedLang)) {
+              languageCounts[normalizedLang] = (languageCounts[normalizedLang] || 0) + 1;
+            }
           }
         });
       }

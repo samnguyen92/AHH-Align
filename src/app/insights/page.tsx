@@ -282,7 +282,7 @@ export default async function InsightsPage({
     .slice(0, 8);
 
   return (
-    <main className="bg-[#92C7AD] px-[10px] pb-[10px]">
+    <main className="bg-[#E5F0EB] px-[10px] pb-[10px]">
       <div className="home-shell">
       <section className="pt-0">
         <div className="brand-hero px-7 pb-14 pt-28 sm:px-12 lg:px-20 lg:pt-32">

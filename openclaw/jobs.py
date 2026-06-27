@@ -79,12 +79,24 @@ def run_batch_job() -> str:
     return _run_with_captured_output("run_batch", main)
 
 
-def scout_pipeline_job(query: str, limit: int = 1, telegram_updater_callback=None) -> str:
+def scout_pipeline_job(
+    query: str,
+    limit: int = 1,
+    required_languages=None,
+    included_types=None,
+    telegram_updater_callback=None,
+) -> str:
     from run_scout import run_scout_pipeline
 
     return _run_with_captured_output(
         "find_clinics",
-        lambda: print(run_scout_pipeline(query, limit=limit, telegram_updater_callback=telegram_updater_callback)),
+        lambda: print(run_scout_pipeline(
+            query,
+            limit=limit,
+            required_languages=required_languages,
+            included_types=included_types,
+            telegram_updater_callback=telegram_updater_callback,
+        )),
     )
 
 

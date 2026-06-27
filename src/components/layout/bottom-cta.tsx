@@ -2,7 +2,7 @@ import { Search } from 'lucide-react';
 
 export function BottomCTA() {
   return (
-    <section className="home-bottom-cta bg-[#92C7AD] px-[10px] pt-[10px]">
+    <section className="home-bottom-cta bg-[#E5F0EB] px-[10px] pt-[10px]">
       <div className="home-bottom-cta-panel mx-auto flex min-h-[635px] w-full max-w-[1420px] items-center justify-center rounded-[16px] bg-[var(--ahh-deep-teal)] px-4 py-20 text-white sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[920px] text-center">
           <h2 className="mx-auto max-w-[820px] text-[46px] font-light leading-tight sm:text-[64px]">

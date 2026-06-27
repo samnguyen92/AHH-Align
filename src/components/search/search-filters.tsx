@@ -23,6 +23,7 @@ export function SearchFilters({
   const [selectedSpecialty, setSelectedSpecialty] = useState(searchParams.get('specialty') ?? '');
   const [selectedLanguage, setSelectedLanguage] = useState(searchParams.get('language') ?? '');
   const [selectedCity, setSelectedCity] = useState(searchParams.get('city') ?? '');
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   const applyFilter = useCallback((key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -41,7 +42,31 @@ export function SearchFilters({
   ];
 
   return (
-    <aside className="brand-card w-full shrink-0 space-y-6 p-4 lg:w-64">
+    <>
+      {/* Mobile Toggle Button */}
+      <button
+        onClick={() => setIsMobileOpen(!isMobileOpen)}
+        className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-[var(--ahh-ink)] shadow-3xs lg:hidden cursor-pointer mb-4"
+      >
+        <span className="flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-deep-teal)" strokeWidth="2.5" className="text-[var(--ahh-deep-teal)]"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          Filter Options
+        </span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          className={`transition-transform duration-200 ${isMobileOpen ? 'rotate-180' : ''}`}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      <aside className={`brand-card w-full shrink-0 space-y-6 p-4 lg:w-64 ${isMobileOpen ? 'block' : 'hidden lg:block'}`}>
       {/* Filter by Specialty */}
       {specialties.length > 0 && (
         <div>
@@ -187,5 +212,6 @@ export function SearchFilters({
         </Link>
       </div>
     </aside>
+    </>
   );
 }

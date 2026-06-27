@@ -757,15 +757,42 @@ Rules:
 - If a URL is a clinic website and the user asks to scrape, add, import, save, or create a clinic profile/directory record from that URL, choose scrape_clinic_url. Do not use article/guide URL actions for clinic profile ingestion.
 - If the user asks to delete/remove/xoá an article/blog/insight, action is delete_article and target is the clean id, slug, or title.
 - If the user asks to delete/remove/xoá a clinic/directory profile, action is delete_clinic and target is the clean id, slug, or clinic name.
-- If the user asks to rewrite, revise, update, edit, regenerate, improve, or "viết lại" an existing article/blog/insight, action is rewrite_article.
+- If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, action is rewrite_article.
 - If the user asks to change/replace/regenerate images/photos for a specific article/blog/insight, action is regenerate_article_images. Target must be the article id, slug, or title.
 - For rewrite_article, target must be the article id, slug, or title. rewrite_instruction must include all requested edits.
 - If the user asks to fix/repair slugs or URL 404 caused by Vietnamese/non-ASCII slugs, action is repair_article_slugs.
-- If the user asks to find, scout, discover, add, or import new clinics from Google Places, action is find_clinics. Extract a clean search query and optional limit.
+- If the user asks to find, scout, discover, add, or import new clinics from Google Places, action is find_clinics. See find_clinics rules below.
 - If the user asks to scrape/add/import one exact clinic website URL, action is scrape_clinic_url. Extract urls[0] and a clinic name when provided.
 - If the user asks to add Google reviews, Google Maps location, Google rating, or Google photos to clinics, action is enrich_clinics_google.
 - If the user says "based on this", "dựa trên thông tin này", "dựa trên research/báo cáo", or similar, and memory is available, use generate_insight_from_memory or generate_guide_from_memory.
+
+find_clinics rules (IMPORTANT):
+- Extract a clean English-language search query. ALWAYS translate to English (e.g., "tiếng Việt" → Vietnamese, "tiếng Hàn" → Korean, "bệnh viện" → hospital, "nha khoa" → dental clinic).
+- CRITICAL: Asian Health Hub is a US-based directory. ALL clinic searches are for the United States ONLY.
+  - If the user does NOT mention a specific US city/state, ALWAYS append "in the United States" to the query.
+  - If the user mentions a US city/state (e.g., "tại Houston", "ở San Jose", "in California"), use that location instead of "in the United States".
+  - NEVER produce a query without a US geographic anchor — this prevents results from Vietnam, Korea, China, etc.
+- Example query translations:
+  - "hospital nói tiếng Việt ở Mỹ" → "Vietnamese speaking hospital in the United States"
+  - "bệnh viện nói tiếng Hàn" → "Korean speaking hospital in the United States"
+  - "5 nha khoa nói tiếng Việt tại San Jose" → "Vietnamese speaking dental clinic in San Jose"
+  - "phòng khám nói tiếng Hoa ở California" → "Chinese speaking clinic in California"
+- Extract required_languages as an English list if the user specifies a language (e.g., tiếng Việt → ["Vietnamese"], tiếng Hàn → ["Korean"], tiếng Hoa/tiếng Tàu → ["Chinese"], tiếng Tagalog → ["Tagalog"], tiếng Nhật → ["Japanese"]).
+- Extract facility_types as a Google Places type list when the user specifies a facility kind:
+    hospital/bệnh viện → ["hospital"]
+    dental/nha khoa/nha sĩ → ["dental_clinic"]
+    clinic/phòng khám/bác sĩ → ["medical_clinic"]
+    pharmacy/nhà thuốc → ["pharmacy"]
+    eye/mắt/optometrist → ["optometrist"]
+    mental health/tâm lý → ["psychologist"]
+  Leave facility_types as [] if no specific type is mentioned.
 - Examples:
+  - "tìm 5 hospital nói tiếng Hàn" → query "Korean speaking hospital in the United States", required_languages ["Korean"], facility_types ["hospital"], limit 5.
+  - "scrape 3 nha khoa nói tiếng Việt tại San Jose" → query "Vietnamese speaking dental clinic in San Jose", required_languages ["Vietnamese"], facility_types ["dental_clinic"], limit 3.
+  - "tìm phòng khám nói tiếng Việt" → query "Vietnamese speaking clinic in the United States", required_languages ["Vietnamese"], facility_types ["medical_clinic"], limit 1.
+  - "vui lòng scrape 5 hospital có thể nói tiếng việt ở mỹ" → query "Vietnamese speaking hospital in the United States", required_languages ["Vietnamese"], facility_types ["hospital"], limit 5.
+
+General examples:
   - "viết lại bài Navigating Seasonal Flu and COVID-19 Vaccines..., loại bỏ table content ở đầu bài blog, thêm 2 reference và thêm bản so sánh với American culture" => rewrite_article, target "Navigating Seasonal Flu and COVID-19 Vaccines...", rewrite_instruction includes removing opening table, adding 2 references, adding comparison with American culture.
   - "thay đổi hình ảnh cho bài viết \"Colorectal Cancer Screening...\"" => regenerate_article_images, target "Colorectal Cancer Screening..."
   - "dựa trên nội dung nghiên cứu để viết bài blog" + memory available => generate_insight_from_memory, use_memory true.
@@ -796,6 +823,8 @@ Return JSON:
   "action": "generate_insight",
   "confidence": 0.0,
   "query": null,
+  "required_languages": [],
+  "facility_types": [],
   "topic": null,
   "target": null,
   "urls": [],
@@ -913,8 +942,10 @@ Return JSON:
         if action == "find_clinics":
             query = str(data.get("query") or data.get("topic") or data.get("target") or "").strip()
             limit = self.parse_limit_value(data.get("limit"), default=1)
+            required_languages = [str(l).strip() for l in (data.get("required_languages") or []) if l]
+            facility_types = [str(t).strip() for t in (data.get("facility_types") or []) if t]
             if query:
-                return self.build_find_clinics_action(query, limit)
+                return self.build_find_clinics_action(query, limit, required_languages=required_languages, facility_types=facility_types)
         if action == "scrape_clinic_url" and urls:
             name = str(data.get("clinic_name") or data.get("target") or data.get("topic") or "").strip()
             return self.build_scrape_clinic_url_action(name, urls[0])
@@ -1152,17 +1183,40 @@ Return JSON:
 
         return query, limit
 
-    def build_find_clinics_action(self, query: str, limit: int = 1) -> dict:
+    def build_find_clinics_action(
+        self,
+        query: str,
+        limit: int = 1,
+        required_languages: list = None,
+        facility_types: list = None,
+    ) -> dict:
         limit = self.parse_limit_value(limit, default=1)
+        required_languages = [l for l in (required_languages or []) if l]
+        facility_types = [t for t in (facility_types or []) if t]
+
+        filter_lines = []
+        if required_languages:
+            filter_lines.append(f"Language filter: {', '.join(required_languages)}")
+        if facility_types:
+            filter_lines.append(f"Facility type filter: {', '.join(facility_types)}")
+        filter_summary = ("\n" + "\n".join(filter_lines)) if filter_lines else ""
+
         return {
             "type": "find_clinics",
             "name": f"find_clinics: {query[:48]}",
             "query": query,
             "limit": limit,
+            "required_languages": required_languages,
+            "facility_types": facility_types,
             "summary": (
                 "You want OpenClaw to scout Google Places for new clinics, correct?\n\n"
                 f"Query: {query}\n"
-                f"Limit: {limit}\n\n"
+                f"Limit: {limit}"
+                + filter_summary
+                + "\n\nFilters active:\n"
+                + (f"• Only clinics mentioning {', '.join(required_languages)} on their website will be saved.\n" if required_languages else "")
+                + (f"• Google Places results restricted to type: {', '.join(facility_types)}.\n" if facility_types else "")
+                + "• Spas, nail salons, restaurants, gyms, and other non-medical places are automatically rejected.\n\n"
                 "If you approve, OpenClaw will search Google Places, skip clinics already in Supabase, scrape official websites, "
                 "extract strict source-grounded clinic data, enrich with Google metadata/images, and save new clinics.\n\n"
                 "This may call Google Places, OpenRouter/Gemini, scrape websites, and update Supabase. Reply `approve` to continue."
@@ -1488,10 +1542,18 @@ Return JSON:
         elif action_type == "find_clinics":
             query = action["query"]
             limit = action.get("limit", 1)
+            required_languages = action.get("required_languages") or []
+            facility_types = action.get("facility_types") or []
             self.run_job(
                 chat_id,
                 action["name"],
-                lambda: scout_pipeline_job(query, limit, telegram_updater_callback=lambda msg: self.send_message(chat_id, msg)),
+                lambda: scout_pipeline_job(
+                    query,
+                    limit,
+                    required_languages=required_languages or None,
+                    included_types=facility_types or None,
+                    telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
+                ),
                 action_type=action_type,
             )
         elif action_type == "scrape_clinic_url":

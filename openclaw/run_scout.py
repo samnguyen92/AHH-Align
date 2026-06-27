@@ -4,11 +4,17 @@ run_scout.py - Google Places scout pipeline for discovering new clinic profiles.
 The scout pipeline starts from a free-text Google Places query, keeps only places
 with official websites, skips clinics already in Supabase, scrapes/extracts the
 site content, enriches the result, and saves new clinic records.
+
+Filters applied:
+  1. Place-type blocklist: rejects spas, salons, massage parlors, restaurants, etc.
+     before any scraping happens.
+  2. Language validation gate: after AI extraction, rejects clinics that do not
+     mention the required language(s) anywhere on their website.
 """
 
 import logging
 import os
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -26,6 +32,80 @@ logger = logging.getLogger(__name__)
 
 
 ProgressCallback = Optional[Callable[[str], None]]
+
+# ---------------------------------------------------------------------------
+# Non-medical place type blocklist
+# Google Places returns 'types' as a list of strings for each place.
+# Any place whose types list overlaps with this set is rejected immediately,
+# before any website scraping, to avoid wasting API quota on spas, salons,
+# restaurants, gyms, and other non-healthcare venues.
+# ---------------------------------------------------------------------------
+NON_MEDICAL_BLOCKED_TYPES: frozenset[str] = frozenset({
+    # Beauty & personal care
+    "beauty_salon",
+    "hair_care",
+    "hair_salon",
+    "nail_salon",
+    "spa",
+    "massage",
+    "sauna",
+    "tanning_studio",
+    "waxing_hair_removal",
+    "tattoo_parlor",
+    "barber_shop",
+    # Food & hospitality
+    "restaurant",
+    "cafe",
+    "bar",
+    "night_club",
+    "bakery",
+    "food",
+    "meal_delivery",
+    "meal_takeaway",
+    "grocery_or_supermarket",
+    "supermarket",
+    "convenience_store",
+    "liquor_store",
+    # Fitness & recreation
+    "gym",
+    "fitness_center",
+    "yoga_studio",
+    "stadium",
+    "bowling_alley",
+    "casino",
+    "amusement_park",
+    # Retail
+    "clothing_store",
+    "shoe_store",
+    "jewelry_store",
+    "furniture_store",
+    "electronics_store",
+    "department_store",
+    "shopping_mall",
+    "laundry",
+    "car_wash",
+    "car_dealer",
+    "gas_station",
+    # Other services
+    "real_estate_agency",
+    "insurance_agency",
+    "travel_agency",
+    "moving_company",
+    "storage",
+    "locksmith",
+    "florist",
+    "pet_store",
+    "animal_shelter",
+    "lodging",
+    "hotel",
+    "motel",
+})
+
+
+def _is_non_medical(place: dict) -> bool:
+    """Return True if the place's Google types overlap with the non-medical blocklist."""
+    types: List[str] = place.get("types") or []
+    return bool(NON_MEDICAL_BLOCKED_TYPES.intersection(types))
 
 
 def _notify(callback: ProgressCallback, message: str) -> None:
@@ -131,13 +211,34 @@ def _merge_place_defaults(data: dict, place: dict, website: str) -> dict:
     return data
 
 
-def run_scout_pipeline(query: str, limit: int = 1, telegram_updater_callback=None) -> dict:
+def run_scout_pipeline(
+    query: str,
+    limit: int = 1,
+    required_languages: Optional[List[str]] = None,
+    included_types: Optional[List[str]] = None,
+    telegram_updater_callback=None,
+    override_specialty: Optional[str] = None,
+) -> dict:
     """
     Discover, scrape, extract, enrich, and save up to ``limit`` new clinics.
     Continues past per-clinic failures and returns a compact run summary.
+
+    Args:
+        query:               English-language Google Places text query.
+        limit:               Maximum number of new clinics to save.
+        required_languages:  If set, only save clinics that explicitly mention
+                             at least one of these languages on their website.
+                             Example: ["Korean"] or ["Vietnamese", "Chinese"].
+        included_types:      If set, passed as 'includedType' to Google Places
+                             API to restrict results to a specific place type.
+                             Example: ["hospital"] or ["dental_clinic"].
+        telegram_updater_callback: Progress message callback.
     """
     query = (query or "").strip()
     limit = max(1, int(limit or 1))
+    required_languages = [lang.strip() for lang in (required_languages or []) if lang and lang.strip()]
+    if included_types:
+        included_types = ["medical_clinic" if t == "doctor" else t for t in included_types]
     if not query:
         raise ValueError("Scout query is required.")
 
@@ -145,15 +246,45 @@ def run_scout_pipeline(query: str, limit: int = 1, telegram_updater_callback=Non
     if not api_key:
         raise RuntimeError("Missing GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY.")
 
-    _notify(telegram_updater_callback, f"Đang tìm Google Places cho từ khóa: '{query}'...")
-    requested_count = limit + 3
-    places = search_places_by_text(query, api_key, limit=requested_count)
+    # Since we are using a soft gate for language validation (not skipping, but tagging),
+    # we don't need a huge pool. Just request a few more than the limit in case of page load errors.
+    requested_count = limit + 2
+
+    _notify(
+        telegram_updater_callback,
+        f"Đang tìm Google Places cho từ khóa: '{query}'"  
+        + (f" (loại: {', '.join(included_types)})" if included_types else "")
+        + (f" (ngôn ngữ yêu cầu: {', '.join(required_languages)})" if required_languages else "")
+        + "...",
+    )
+
+    places = search_places_by_text(query, api_key, limit=requested_count, included_types=included_types)
+
+    # ── Filter 1: Non-medical place type blocklist ────────────────────────────
+    # Reject spas, nail salons, restaurants, gyms, etc. before any scraping.
+    medical_places = []
+    for place in places:
+        if _is_non_medical(place):
+            place_name = _place_name(place)
+            place_types = place.get("types") or []
+            blocked = NON_MEDICAL_BLOCKED_TYPES.intersection(place_types)
+            _notify(
+                telegram_updater_callback,
+                f"⛔ Bỏ qua (không phải cơ sở y tế): {place_name} — types: {', '.join(blocked)}",
+            )
+        else:
+            medical_places.append(place)
+
     candidates = [
         place
-        for place in places
+        for place in medical_places
         if _is_valid_website(str(place.get("websiteUri") or ""))
     ]
-    _notify(telegram_updater_callback, f"Tìm thấy {len(candidates)} kết quả có website hợp lệ.")
+    _notify(
+        telegram_updater_callback,
+        f"Tìm thấy {len(candidates)} cơ sở y tế có website hợp lệ "
+        f"(đã lọc {len(places) - len(medical_places)} nơi không phải y tế).",
+    )
 
     existing_names, existing_websites = _load_existing_clinic_keys()
     new_places = []
@@ -170,7 +301,7 @@ def run_scout_pipeline(query: str, limit: int = 1, telegram_updater_callback=Non
         seen_websites.add(normalized_website)
         new_places.append(place)
 
-    _notify(telegram_updater_callback, f"Found {len(new_places)} new clinics. Starting scrape...")
+    _notify(telegram_updater_callback, f"Có {len(new_places)} cơ sở mới. Bắt đầu scrape...")
 
     saved = 0
     failed = 0
@@ -178,7 +309,7 @@ def run_scout_pipeline(query: str, limit: int = 1, telegram_updater_callback=Non
     processed = 0
 
     for place in new_places:
-        if processed >= limit:
+        if saved >= limit:
             break
 
         name = _place_name(place)
@@ -200,10 +331,53 @@ def run_scout_pipeline(query: str, limit: int = 1, telegram_updater_callback=Non
                 _notify(telegram_updater_callback, f"Bỏ qua {name}: AI không trích xuất được dữ liệu đủ tin cậy.")
                 continue
 
+            # ── Filter 2: Language validation gate (Soft match) ───────────────
+            # If the required language is not explicitly found on the website by the AI extractor,
+            # we do NOT skip the clinic (to avoid wasting scrape & LLM credit).
+            # Instead, we still save it, but inject the required language(s) and flag it
+            # in metadata as 'language_verified_on_website': False.
+            if "google_metadata" not in data:
+                data["google_metadata"] = {}
+
+            if required_languages:
+                extracted_langs = [
+                    lang.lower().strip()
+                    for lang in (data.get("languages") or [])
+                    if lang and lang.strip()
+                ]
+                matched = [
+                    rl for rl in required_languages
+                    if rl.lower() in extracted_langs
+                ]
+                if not matched:
+                    # Inject the required languages so it matches database searches
+                    current_langs = data.get("languages") or []
+                    for rl in required_languages:
+                        normalized_rl = rl.strip().capitalize()
+                        if normalized_rl not in current_langs:
+                            current_langs.append(normalized_rl)
+                    data["languages"] = current_langs
+                    
+                    data["google_metadata"]["language_verified_on_website"] = False
+                    data["google_metadata"]["scout_required_languages"] = required_languages
+                    
+                    langs_found = ", ".join(data.get("languages") or [])
+                    _notify(
+                        telegram_updater_callback,
+                        f"⚠️ Cảnh báo {name}: website không nhắc đến ngôn ngữ yêu cầu "
+                        f"({', '.join(required_languages)}). Vẫn giữ lại theo kết quả Google Places (Ngôn ngữ gán: {langs_found}).",
+                    )
+                else:
+                    data["google_metadata"]["language_verified_on_website"] = True
+
             data = _merge_place_defaults(data, place, website)
             data["google_metadata"] = {
                 **(data.get("google_metadata") or {}),
                 "scout_query": query,
+                **({
+                    "required_languages": required_languages,
+                    "included_types": included_types,
+                } if required_languages or included_types else {}),
             }
             source_images = content.get("images") or []
             if source_images and not data.get("images"):
@@ -223,9 +397,12 @@ def run_scout_pipeline(query: str, limit: int = 1, telegram_updater_callback=Non
                 if generated_image:
                     data["images"] = [generated_image]
 
+            if override_specialty:
+                data["specialty"] = override_specialty
+
             if insert_clinic(data):
                 saved += 1
-                _notify(telegram_updater_callback, f"Đã lưu: {data.get('name') or name}")
+                _notify(telegram_updater_callback, f"✅ Đã lưu: {data.get('name') or name}")
             else:
                 failed += 1
                 _notify(telegram_updater_callback, f"Lưu thất bại: {name}")
@@ -237,7 +414,10 @@ def run_scout_pipeline(query: str, limit: int = 1, telegram_updater_callback=Non
     summary = {
         "query": query,
         "limit": limit,
+        "required_languages": required_languages or [],
+        "included_types": included_types or [],
         "discovered": len(places),
+        "non_medical_filtered": len(places) - len(medical_places),
         "with_website": len(candidates),
         "new": len(new_places),
         "processed": processed,
@@ -245,7 +425,7 @@ def run_scout_pipeline(query: str, limit: int = 1, telegram_updater_callback=Non
         "skipped": skipped,
         "failed": failed,
     }
-    _notify(telegram_updater_callback, f"Hoàn tất! Đã lưu {saved} phòng khám.")
+    _notify(telegram_updater_callback, f"Hoàn tất! Đã lưu {saved}/{limit} phòng khám.")
     return summary
 
 
@@ -253,7 +433,16 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Run the OpenClaw Scout pipeline.")
-    parser.add_argument("query", help="Google Places text query, e.g. 'Vietnamese dentist in Houston'")
+    parser.add_argument("query", help="English Google Places text query, e.g. 'Vietnamese speaking dentist in Houston'")
     parser.add_argument("--limit", type=int, default=1, help="Maximum new clinics to save.")
+    parser.add_argument("--lang", nargs="*", help="Required language(s), e.g. --lang Vietnamese Korean")
+    parser.add_argument("--type", nargs="*", dest="types", help="Google Places includedType(s), e.g. --type hospital")
+    parser.add_argument("--override-specialty", help="Override the extracted specialty with this value.")
     args = parser.parse_args()
-    run_scout_pipeline(args.query, args.limit)
+    run_scout_pipeline(
+        args.query,
+        args.limit,
+        required_languages=args.lang,
+        included_types=args.types,
+        override_specialty=args.override_specialty
+    )

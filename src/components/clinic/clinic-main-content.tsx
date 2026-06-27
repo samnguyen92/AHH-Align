@@ -260,9 +260,9 @@ export function ClinicMainContent({ clinic }: ClinicMainContentProps) {
   const zocdocUrl = zocdocProfile?.url || undefined;
 
   return (
-    <main className="min-w-0 flex-1 space-y-8">
+    <main className="w-full min-w-0 flex-1 space-y-8">
       {/* Sticky Tab Navigation */}
-      <nav className="sticky top-4 z-20 flex gap-6 overflow-x-auto border border-gray-150 rounded-xl bg-white px-6 py-3.5 text-xs font-bold text-gray-500 shadow-sm scrollbar-none">
+      <nav className="sticky top-4 z-20 flex flex-nowrap gap-6 overflow-x-scroll border border-gray-150 rounded-xl bg-white px-6 py-3.5 text-xs font-bold text-gray-500 shadow-sm">
         {SECTION_LINKS.map(([id, label]) => {
           return (
             <a 

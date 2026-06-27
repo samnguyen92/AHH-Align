@@ -85,10 +85,31 @@ def text_search_place(clinic_data: dict, api_key: str) -> Optional[dict]:
     return places[0] if places else None
 
 
-def search_places_by_text(query: str, api_key: str, limit: int = 5) -> List[dict]:
+def search_places_by_text(
+    query: str,
+    api_key: str,
+    limit: int = 5,
+    included_types: Optional[List[str]] = None,
+    country_code: str = "us",
+) -> List[dict]:
     """
     Search Google Places by free-text query and return lightweight place records.
     Used by the Scout pipeline before scraping official clinic websites.
+
+    Results are restricted to the United States by default via ``regionCode``
+    and a bounding-box ``locationRestriction``, so queries like
+    "Vietnamese speaking hospital" do NOT return places in Vietnam.
+
+    Args:
+        query:         Free-text search query (preferably in English).
+        api_key:       Google Places API key.
+        limit:         Maximum number of results to return (1–20).
+        included_types: Optional list of Google Place types to restrict results.
+                       Only the first value is used (API supports one type per request).
+                       Example: ["hospital"] or ["dental_clinic"].
+                       See https://developers.google.com/maps/documentation/places/web-service/place-types
+        country_code:  Two-letter CLDR country code used for regionCode bias.
+                       Default "us" (United States).
     """
     query = (query or "").strip()
     if not query:
@@ -111,9 +132,33 @@ def search_places_by_text(query: str, api_key: str, limit: int = 5) -> List[dict
             "places.businessStatus",
         ]
     )
+
+    body: dict = {
+        "textQuery": query,
+        "maxResultCount": max(1, min(limit, 20)),
+        # regionCode biases results toward the specified country.
+        # This is the primary guard against returning places from Vietnam
+        # when the query contains "Vietnamese".
+        "regionCode": country_code.lower(),
+        # locationRestriction adds a hard bounding box around the contiguous
+        # United States + Alaska + Hawaii to ensure results stay in the US.
+        # This prevents edge cases where regionCode alone is insufficient.
+        "locationRestriction": {
+            "rectangle": {
+                "low":  {"latitude": 18.0, "longitude": -179.9},
+                "high": {"latitude": 71.5, "longitude": -66.9},
+            }
+        },
+    }
+
+    # Restrict results to a specific place type when provided.
+    # Google Places v1 (New) accepts a single string in "includedType".
+    if included_types:
+        body["includedType"] = str(included_types[0]).strip()
+
     request = Request(
         url,
-        data=json.dumps({"textQuery": query, "maxResultCount": max(1, min(limit, 20))}).encode("utf-8"),
+        data=json.dumps(body).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
             "X-Goog-Api-Key": api_key,

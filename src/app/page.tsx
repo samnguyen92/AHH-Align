@@ -5,6 +5,7 @@ import { ArticleImage } from '@/components/insights/article-image';
 import { getPublishedArticles } from '@/services/article-service';
 import { searchClinics } from '@/services/clinic-service';
 import type { Article, Clinic } from '@/types/database';
+import { HeroSearch } from '@/components/home/hero-search';
 
 const HERO_IMAGE = '/brand/home-hero-care-team.png';
 
@@ -36,65 +37,77 @@ const STATS = [
 ] as const;
 
 const SPECIALTIES = [
-  { emoji: '🩺', name: 'Primary Care', href: '/search?specialty=Primary%20Care', active: true },
-  { emoji: '🦷', name: 'Dental', href: '/search?specialty=Dentistry' },
-  { emoji: '🧠', name: 'Mental Health', href: '/search?specialty=Psychiatry' },
+  { emoji: '🏥', name: 'Primary Care', href: '/search?specialty=Primary%20Care' },
+  { emoji: '🦷', name: 'Dental', href: '/search?specialty=Dental' },
+  { emoji: '🧠', name: 'Mental Health', href: '/search?specialty=Mental' },
   { emoji: '👶', name: 'OB/GYN', href: '/search?specialty=OB%2FGYN' },
-  { emoji: '👁️', name: 'Eye Care', href: '/search?specialty=Ophthalmology' },
+  { emoji: '👁️', name: 'Ophthalmology', href: '/search?specialty=Ophthalmology' },
   { emoji: '❤️', name: 'Cardiology', href: '/search?specialty=Cardiology' },
-  { emoji: '🧪', name: 'Dermatology', href: '/search?specialty=Dermatology' },
+  { emoji: '🩺', name: 'Dermatology', href: '/search?specialty=Dermatology' },
   { emoji: '🦴', name: 'Orthopedics', href: '/search?specialty=Orthopedics' },
-  { emoji: '💊', name: 'Pediatrics', href: '/search?specialty=Pediatrics' },
+  { emoji: '👨‍👩‍👧‍👦', name: 'Pediatrics', href: '/search?specialty=Pediatrics' },
 ] as const;
 
 const CITIES = [
   {
-    name: 'New York, NY',
-    count: '2,100+',
-    href: '/search?city=New%20York',
-    image: 'https://images.unsplash.com/photo-1499092346589-b9b6be3e94b2?auto=format&fit=crop&w=700&q=80',
-  },
-  {
     name: 'Los Angeles, CA',
-    count: '1,800+',
+    count: '30',
     href: '/search?city=Los%20Angeles',
     image: 'https://images.unsplash.com/photo-1534190760961-74e8c1c5c3da?auto=format&fit=crop&w=700&q=80',
   },
   {
-    name: 'San Jose, CA',
-    count: '720+',
-    href: '/search?city=San%20Jose',
-    image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=700&q=80',
-  },
-  {
     name: 'Houston, TX',
-    count: '690+',
+    count: '24',
     href: '/search?city=Houston',
     image: 'https://images.unsplash.com/photo-1530089711124-9ca31fb9e863?auto=format&fit=crop&w=700&q=80',
   },
   {
-    name: 'Seattle, WA',
-    count: '620+',
-    href: '/search?city=Seattle',
-    image: 'https://images.unsplash.com/photo-1502175353174-a7a70e73b362?auto=format&fit=crop&w=700&q=80',
+    name: 'San Jose, CA',
+    count: '18',
+    href: '/search?city=San%20Jose',
+    image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=700&q=80',
   },
   {
     name: 'Dallas, TX',
-    count: '510+',
+    count: '22',
     href: '/search?city=Dallas',
     image: 'https://images.unsplash.com/photo-1531218150217-54595bc2b934?auto=format&fit=crop&w=700&q=80',
   },
   {
+    name: 'San Francisco, CA',
+    count: '28',
+    href: '/search?city=San%20Francisco',
+    image: 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=700&q=80',
+  },
+  {
+    name: 'Seattle, WA',
+    count: '16',
+    href: '/search?city=Seattle',
+    image: 'https://images.unsplash.com/photo-1502175353174-a7a70e73b362?auto=format&fit=crop&w=700&q=80',
+  },
+  {
+    name: 'Washington, D.C.',
+    count: '14',
+    href: '/search?city=Washington',
+    image: 'https://images.unsplash.com/photo-1501446529957-6226bd447c46?auto=format&fit=crop&w=700&q=80',
+  },
+  {
+    name: 'San Diego, CA',
+    count: '20',
+    href: '/search?city=San%20Diego',
+    image: 'https://images.unsplash.com/photo-1513735492246-777851817ad3?auto=format&fit=crop&w=700&q=80',
+  },
+  {
     name: 'Atlanta, GA',
-    count: '430+',
+    count: '12',
     href: '/search?city=Atlanta',
     image: 'https://images.unsplash.com/photo-1575917649705-5b59aaa12e6b?auto=format&fit=crop&w=700&q=80',
   },
   {
-    name: 'Chicago, IL',
-    count: '390+',
-    href: '/search?city=Chicago',
-    image: 'https://images.unsplash.com/photo-1494522358652-f30e61a60313?auto=format&fit=crop&w=700&q=80',
+    name: 'Sacramento, CA',
+    count: '15',
+    href: '/search?city=Sacramento',
+    image: 'https://images.unsplash.com/photo-1609137144813-f421ad339b6b?auto=format&fit=crop&w=700&q=80',
   },
 ] as const;
 
@@ -225,37 +238,6 @@ function SectionHeader({
   );
 }
 
-function SearchBar({ compact = false }: { compact?: boolean }) {
-  return (
-    <form action="/search" className={compact ? 'w-full' : 'relative z-20 w-full'}>
-      <div className="rounded-[20px] bg-[var(--ahh-mist)] p-3 shadow-[0_18px_50px_rgba(2,78,68,0.14)]">
-        <div className="flex flex-col overflow-hidden rounded-[12px] border border-[#C5DCD84D] bg-white sm:flex-row sm:items-center">
-          <div className="flex min-h-14 flex-1 items-center gap-2 border-b border-[var(--ahh-border)] px-6 sm:border-b-0 sm:border-r">
-            <input
-              name="query"
-              placeholder="Specialty (e.g. Primary Care)"
-              className="w-full bg-transparent text-[15px] text-[var(--ahh-ink)] outline-none placeholder:text-[var(--ahh-muted-2)]"
-            />
-          </div>
-          <input
-            name="city"
-            placeholder="City"
-            className="min-h-14 w-full border-b border-[var(--ahh-border)] bg-transparent px-5 text-[15px] outline-none placeholder:text-[var(--ahh-muted)] sm:w-[131px] sm:border-b-0 sm:border-r"
-          />
-          <input
-            name="language"
-            placeholder="Language"
-            className="min-h-14 w-full border-b border-[var(--ahh-border)] bg-transparent px-5 text-[15px] outline-none placeholder:text-neutral-700 sm:w-[162px] sm:border-b-0 sm:border-r"
-          />
-          <button className="min-h-14 bg-[var(--ahh-deep-teal)] px-8 text-[15px] font-medium text-white sm:w-[117px]" type="submit">
-            Search
-          </button>
-        </div>
-      </div>
-    </form>
-  );
-}
-
 export default async function HomePage() {
   const [publishedArticles, clinicResult] = await Promise.all([
     getPublishedArticles(undefined, 1, 3),
@@ -269,7 +251,7 @@ export default async function HomePage() {
   const clinics = clinicResult.data.length > 0 ? clinicResult.data.slice(0, 4) : FALLBACK_CLINICS;
 
   return (
-    <div className="bg-[#92C7AD] px-[10px] pb-[10px]">
+    <div className="bg-[#E5F0EB] px-[10px] pb-[10px]">
       <div className="home-shell">
       <section className="home-hero">
         <div className="home-hero-grid">
@@ -294,7 +276,7 @@ export default async function HomePage() {
             />
           </div>
           <div className="home-hero-search">
-            <SearchBar />
+            <HeroSearch />
           </div>
         </div>
       </section>
@@ -360,12 +342,7 @@ export default async function HomePage() {
             <Link
               key={specialty.name}
               href={specialty.href}
-              className={[
-                'group flex min-h-28 flex-col items-start justify-start rounded-[18px] border border-[var(--ahh-border)] p-4 text-left text-sm font-medium transition hover:-translate-y-0.5 hover:shadow-sm',
-                'active' in specialty && specialty.active
-                  ? 'bg-[var(--ahh-deep-teal)] text-white'
-                  : 'bg-white text-[var(--ahh-ink)]',
-              ].join(' ')}
+              className="group flex min-h-28 flex-col items-start justify-start rounded-[18px] border border-[var(--ahh-border)] p-4 text-left text-sm font-medium transition duration-200 bg-white text-[#0D1F1C] hover:bg-[#024E44] hover:text-[#D0FF71] cursor-pointer hover:-translate-y-0.5 hover:shadow-md"
             >
               <span className="text-2xl">{specialty.emoji}</span>
               <span className="mt-4 line-clamp-2">{specialty.name}</span>
@@ -377,7 +354,7 @@ export default async function HomePage() {
       <section className="home-section rounded-[16px] bg-white px-5 py-20 sm:px-10 lg:px-20 lg:py-[110px]">
         <SectionHeader
           title="Find Clinics in Your City"
-          description="Browse clinics in major US cities with large Asian American communities."
+          description="We cover the top 10 US metro areas with the largest Asian American populations."
           href="/search"
         />
         <div className="home-city-grid">
@@ -385,13 +362,13 @@ export default async function HomePage() {
             <Link
               key={city.name}
               href={city.href}
-              className="group relative aspect-[1.18/1] overflow-hidden rounded-[20px] bg-[var(--ahh-mist)]"
+              className="group relative aspect-[1.18/1] overflow-hidden rounded-[20px] bg-[var(--ahh-mist)] cursor-pointer hover:shadow-lg transition duration-300"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={city.image}
                 alt={city.name}
-                className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                className="h-full w-full object-cover transition duration-300 group-hover:scale-105 group-hover:opacity-90"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
               <div className="absolute inset-x-3 bottom-3 text-white">

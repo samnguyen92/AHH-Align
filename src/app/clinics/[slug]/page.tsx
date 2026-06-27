@@ -43,8 +43,8 @@ export default async function ClinicPage({ params }: ClinicPageProps) {
   }
 
   return (
-    <div className="bg-[#92C7AD] px-[10px] pb-[10px] min-h-screen">
-      <div className="w-[min(1420px,calc(100vw-20px))] mx-auto space-y-6">
+    <div className="bg-[#E5F0EB] px-[10px] pb-[10px] min-h-screen">
+      <div className="w-full sm:w-[min(1420px,calc(100vw-20px))] mx-auto space-y-6">
         {/* Clinic Hero Card */}
         <ClinicHero clinic={clinic} />
         

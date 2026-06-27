@@ -147,7 +147,7 @@ function AboutImage({
 
 export default function AboutPage() {
   return (
-    <div className="bg-[#92C7AD] px-[10px] pb-[10px]">
+    <div className="bg-[#E5F0EB] px-[10px] pb-[10px]">
       <div className="home-shell">
       <section className="overflow-hidden rounded-[16px] bg-[var(--ahh-deep-teal)] text-white">
         <div className="grid min-h-[660px] items-center gap-10 px-6 pb-16 pt-32 sm:px-10 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-24 lg:pb-20 lg:pt-40">

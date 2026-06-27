@@ -4,6 +4,7 @@ import { SearchFilters } from '@/components/search/search-filters';
 import { ClinicGrid } from '@/components/search/clinic-grid';
 import { SearchPagination } from '@/components/search/pagination';
 import { searchClinics, getSearchFilterOptions } from '@/services/clinic-service';
+import { DirectorySearchBar } from '@/components/search/directory-search-bar';
 
 interface SearchPageProps {
   searchParams: Promise<{
@@ -51,7 +52,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   const filterOptions = await getSearchFilterOptions();
 
   return (
-    <main className="bg-[#92C7AD] px-[10px] pb-[10px]">
+    <main className="bg-[#E5F0EB] px-[10px] pb-[10px]">
       <div className="home-shell">
       {/* Search Hero */}
       <section className="pt-0">
@@ -67,23 +68,11 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
       {/* Search Bar */}
       <section className="relative z-10 -mt-5 px-4 sm:px-8 lg:px-16">
-        <div className="brand-input-shell mx-auto max-w-[1360px] p-2">
-          <div className="flex flex-col items-stretch gap-2 rounded-lg bg-white sm:flex-row">
-            <div className="flex-[2] relative">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-deep-teal)" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-              <input
-                type="text"
-                placeholder="Search by specialty, clinic name, or keyword..."
-                defaultValue={params.query ?? ''}
-                className="w-full h-10 pl-9 pr-3 text-sm text-gray-700 placeholder:text-gray-400 bg-transparent border-0 outline-none"
-                readOnly
-              />
-            </div>
-            <span className="hidden sm:flex items-center text-xs text-gray-400 px-3 border-l border-gray-200">Specialty</span>
-            <span className="hidden sm:flex items-center text-xs text-gray-400 px-3 border-l border-gray-200">City</span>
-            <span className="hidden sm:flex items-center text-xs text-gray-400 px-3 border-l border-gray-200">Language</span>
-          </div>
-        </div>
+        <Suspense fallback={
+          <div className="brand-input-shell mx-auto max-w-[1360px] p-2 bg-white rounded-lg h-14 animate-pulse" />
+        }>
+          <DirectorySearchBar />
+        </Suspense>
       </section>
 
       {/* Main Content */}

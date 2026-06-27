@@ -27,7 +27,7 @@ export function Header({ variant = 'default' }: { variant?: 'default' | 'overlay
           ? 'absolute left-0 top-0 bg-transparent'
           : isOverlay
             ? 'fixed left-0 top-0 bg-transparent'
-            : 'sticky top-0 bg-[#92C7AD]',
+            : 'sticky top-0 bg-[#E5F0EB]',
       ].join(' ')}
     >
       <div className="mx-auto grid h-[48px] w-full max-w-[1399px] grid-cols-[auto_auto] items-center justify-between gap-3 rounded-[12px] border border-white/80 bg-white/95 px-4 shadow-[0_20px_60px_rgba(2,78,68,0.18)] backdrop-blur md:h-[76px] md:rounded-[16px] md:px-8 lg:grid-cols-[220px_minmax(0,1fr)_260px] xl:grid-cols-[280px_minmax(0,1fr)_330px] xl:px-10">

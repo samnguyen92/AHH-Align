@@ -149,7 +149,7 @@
   --ahh-sage-dark: #5A7A70;
   --ahh-slate: #2f3a38;
   --ahh-charcoal: #18201e;
-  --ahh-mist: #EAF2EE;
+  --ahh-mist: #F5FAF7;
   --ahh-mist-2: #F4F8F5;
   --ahh-seafoam: #92C7AD;
   --ahh-border: #E5EEED;
@@ -367,7 +367,7 @@ body {
   --article-soft-row: #eef7f2;
   --article-line: #d9e8e1;
   --article-accent: var(--ahh-deep-teal);
-  background: #92c7ad;
+  background: #E5F0EB;
   padding: 0.625rem;
 }
 
@@ -383,7 +383,7 @@ body {
 
 :where(.article-page-hero) {
   margin-top: 0;
-  background: #92c7ad;
+  background: #E5F0EB;
   padding: 0;
 }
 
