@@ -168,6 +168,12 @@ def generate_insight_job(topic: Optional[str] = None) -> str:
     return _run_with_captured_output("generate_insight", lambda: create_article(topic))
 
 
+def generate_pulse_job(topic: Optional[str] = None) -> str:
+    from generate_pulse import create_pulse
+
+    return _run_with_captured_output("generate_pulse", lambda: create_pulse(topic))
+
+
 def generate_insight_from_url_job(source_url: str) -> str:
     from generate_insights import create_article_from_url
 

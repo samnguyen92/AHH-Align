@@ -22,6 +22,7 @@ from jobs import (
     generate_insight_from_context_job,
     generate_insight_from_url_job,
     generate_insight_job,
+    generate_pulse_job,
     enrich_clinics_google_job,
     repair_article_images_job,
     repair_clinic_images_job,
@@ -327,6 +328,7 @@ class TelegramBot:
             "/generate_insight_from_url <url...> - analyze one or more reference URLs and publish original SEO insights, plus 3-5 AI images each\n"
             "/generate_guide [topic] - generate one pillar guide, about 3000 words, plus 3-5 AI images\n"
             "/generate_guide_from_url <url...> - analyze one or more reference URLs and publish original pillar guides\n"
+            "/generate_pulse [topic] - generate one monthly AHH Pulse newsletter issue (spotlights clinics, drafts advice column, generates cover image)\n"
             "/research <topic> - run multi-agent research and return a sourced report\n"
             "/ask <message> - ask the OpenClaw AI agent\n"
             "/prompt - show the current agent system prompt\n"
@@ -724,6 +726,7 @@ Allowed actions:
 - chat
 - generate_insight
 - generate_guide
+- generate_pulse
 - generate_insight_from_urls
 - generate_guide_from_urls
 - generate_insight_from_memory
@@ -747,7 +750,8 @@ Rules:
   2. If the user asks to change, replace, update, regenerate, or "thay đổi" images/photos for one specific article/blog/insight, choose regenerate_article_images.
   3. If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, choose rewrite_article.
   4. If memory is available and the user asks to write/create a blog, article, insight, or guide based on previous/current research/report/content, choose generate_insight_from_memory or generate_guide_from_memory.
-  5. If the user asks to perform NEW research/investigation/source gathering, choose multi_agent_research.
+- If the user asks to write/create/generate a newsletter, pulse, or monthly update/bản tin tháng/bản tin/pulse, choose generate_pulse.
+- If the user asks to perform NEW research/investigation/source gathering, choose multi_agent_research.
   6. If the user asks for an insight/blog/article without referring to memory, choose generate_insight unless they ask for guide/pillar/deep guide.
   7. If the user asks for a guide/pillar/chuyên sâu without referring to memory, choose generate_guide.
 - The word "nghiên cứu" does NOT automatically mean multi_agent_research. In "dựa trên nội dung nghiên cứu để viết bài blog", the user wants content from memory, not new research.
@@ -928,6 +932,10 @@ Return JSON:
                 if memory_action:
                     return memory_action
             return self.build_topic_content_action(topic, mode="insight")
+        if action == "generate_pulse":
+            topic = data.get("topic")
+            topic = str(topic).strip() if topic else None
+            return self.build_pulse_action(topic)
         if action == "generate_guide":
             topic = data.get("topic")
             topic = str(topic).strip() if topic else None
@@ -1135,6 +1143,21 @@ Return JSON:
                 f"Topic: {topic_label}\n\n"
                 "If you approve, OpenClaw will choose/generate metadata when needed, search trusted health sources for verified references, generate content from those references, generate 3-5 images, create a unique slug, and publish it to Supabase.\n"
                 "Reply `approve` to continue. If you want to use reference URLs, send them before approving."
+            ),
+        }
+
+    def build_pulse_action(self, topic: Optional[str]) -> dict:
+        topic_summary = f"with topic focus: '{topic}'" if topic else "with an automated/general topic focus"
+        return {
+            "type": "generate_pulse",
+            "name": f"generate_pulse: {topic[:48]}" if topic else "generate_pulse",
+            "topic": topic,
+            "summary": (
+                f"You want OpenClaw to generate a new AHH Pulse newsletter issue {topic_summary}, correct?\n\n"
+                "If you approve, OpenClaw will automatically fetch recently verified clinics to spotlight, "
+                "draft an informative health advice column via LLM, generate a matching cover image, "
+                "and insert the published issue into Supabase.\n"
+                "Reply `approve` to continue."
             ),
         }
 
@@ -1571,6 +1594,8 @@ Return JSON:
             )
         elif action_type == "generate_insight":
             self.run_job(chat_id, action["name"], lambda: generate_insight_job(action.get("topic")), action_type=action_type)
+        elif action_type == "generate_pulse":
+            self.run_job(chat_id, action["name"], lambda: generate_pulse_job(action.get("topic")), action_type=action_type)
         elif action_type == "generate_guide":
             self.run_job(chat_id, action["name"], lambda: generate_guide_job(action.get("topic")), action_type=action_type)
         elif action_type == "multi_agent_research":
@@ -1670,6 +1695,10 @@ Return JSON:
             topic = re.sub(r"^/(?:generate_insight|generate_blog)(?:@\w+)?", "", text, count=1).strip() or None
             job_name = "generate_blog" if not topic else f"generate_blog: {topic[:48]}"
             self.run_job(chat_id, job_name, lambda: generate_insight_job(topic), action_type="generate_insight")
+        elif command in {"/generate_pulse", "/generate_newsletter"}:
+            topic = re.sub(r"^/(?:generate_pulse|generate_newsletter)(?:@\w+)?", "", text, count=1).strip() or None
+            job_name = "generate_pulse" if not topic else f"generate_pulse: {topic[:48]}"
+            self.run_job(chat_id, job_name, lambda: generate_pulse_job(topic), action_type="generate_pulse")
         elif command in {"/generate_insight_from_url", "/generate_blog_from_url"}:
             payload = re.sub(r"^/(?:generate_insight_from_url|generate_blog_from_url)(?:@\w+)?", "", text, count=1).strip()
             source_urls = self.extract_urls(payload)

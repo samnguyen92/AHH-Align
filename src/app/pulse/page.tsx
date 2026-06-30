@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, Mail, Search } from 'lucide-react';
+import { getPublishedArticles } from '@/services/article-service';
 
 export const metadata: Metadata = {
   title: 'AHH Pulse',
@@ -20,6 +21,7 @@ const newsletters = [
     href: '/pulse/summer-health-tips-asian-families-new-verified-clinics-la',
     excerpt:
       'Top summer health reminders, 3 new verified clinics in Los Angeles, and our guide to finding an OB-GYN clinic without a language barrier.',
+    image: '/brand/pulse/detail-summer-health-la.webp',
   },
   {
     issue: '#4',
@@ -28,6 +30,7 @@ const newsletters = [
     href: '/pulse/summer-health-tips-asian-families-new-verified-clinics-la',
     excerpt:
       'Breaking the stigma around mental healthcare for Korean Americans, with clinic spotlights and a new psychiatry clinic guide.',
+    image: '/brand/pulse/hero-newsletter.webp',
   },
   {
     issue: '#3',
@@ -36,6 +39,7 @@ const newsletters = [
     href: '/pulse/summer-health-tips-asian-families-new-verified-clinics-la',
     excerpt:
       'Vietnamese-speaking OB-GYN clinics in San Jose and Sacramento, plus what to expect at your first OB-GYN clinic visit in the US.',
+    image: '/brand/pulse/hero-newsletter.webp',
   },
   {
     issue: '#2',
@@ -44,6 +48,7 @@ const newsletters = [
     href: '/pulse/summer-health-tips-asian-families-new-verified-clinics-la',
     excerpt:
       'How to compare language support, insurance notes, location, and provider details before booking an appointment.',
+    image: '/brand/pulse/hero-newsletter.webp',
   },
   {
     issue: '#1',
@@ -52,6 +57,7 @@ const newsletters = [
     href: '/pulse/summer-health-tips-asian-families-new-verified-clinics-la',
     excerpt:
       'Our first monthly update for patients looking for language-accessible healthcare across major US cities.',
+    image: '/brand/pulse/hero-newsletter.webp',
   },
 ] as const;
 
@@ -101,7 +107,28 @@ function PulseImage({
   );
 }
 
-export default function PulsePage() {
+export default async function PulsePage() {
+  const { data: dbNewsletters } = await getPublishedArticles('pulse', 1, 100);
+
+  const displayNewsletters = dbNewsletters && dbNewsletters.length > 0
+    ? dbNewsletters.map((article) => {
+        const issueNum = (article.seo_meta as any)?.issue_number || '#Update';
+        const rawMonth = (article.seo_meta as any)?.month_label;
+        const monthLabel = rawMonth || (article.published_at 
+          ? new Date(article.published_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) 
+          : 'Recent');
+        const ogImg = (article.seo_meta as any)?.og_image || '';
+        return {
+          issue: issueNum,
+          month: monthLabel,
+          title: article.title,
+          href: `/pulse/${article.slug}`,
+          excerpt: article.excerpt || '',
+          image: ogImg || '/brand/pulse/detail-summer-health-la.webp',
+        };
+      })
+    : newsletters;
+
   return (
     <div className="bg-[#E5F0EB] px-[10px] pb-[10px]">
       <div className="home-shell">
@@ -152,24 +179,51 @@ export default function PulsePage() {
             </p>
           </div>
 
-          <div className="space-y-5">
-            {newsletters.map((newsletter) => (
-              <article key={newsletter.issue} className="grid gap-5 rounded-[16px] bg-[var(--ahh-mist-2)] p-5 sm:grid-cols-[190px_minmax(0,1fr)] sm:p-8">
-                <div className="flex min-h-[108px] items-center justify-center rounded-[16px] bg-[#9DB4CC] text-center text-[var(--ahh-ink)]">
-                  <div>
-                    <p className="text-sm font-bold">{newsletter.month}</p>
-                    <p className="text-[38px] font-light leading-none">{newsletter.issue}</p>
+          <div className="space-y-6">
+            {displayNewsletters.map((newsletter) => (
+              <Link
+                key={newsletter.issue + newsletter.title}
+                href={newsletter.href}
+                className="group relative flex flex-col sm:flex-row gap-6 sm:gap-8 rounded-[24px] bg-white border border-[#E9EEF4] p-5 sm:p-6 transition duration-300 hover:shadow-[0_12px_30px_rgba(0,0,0,0.04)] hover:-translate-y-0.5 cursor-pointer"
+              >
+                {/* Left Side: Artistically nested feature image & Issue block */}
+                <div className="relative shrink-0 w-full sm:w-[320px] h-[160px] flex items-center">
+                  {/* Background Image: Blur & transparent, scales up and clears on hover */}
+                  <div className="relative overflow-hidden rounded-[16px] bg-[#E9EEF4] w-[230px] h-[160px] shadow-3xs">
+                    <Image
+                      src={newsletter.image}
+                      alt={newsletter.title}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 230px"
+                      className="object-cover opacity-35 filter blur-[0.5px] transition duration-500 ease-out group-hover:opacity-100 group-hover:blur-none group-hover:scale-105"
+                    />
+                  </div>
+                  
+                  {/* Floating Issue Badge on top right overlaying the image */}
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[120px] h-[130px] rounded-[16px] bg-[#FDFBF7] border border-[#F2ECE4] p-3 flex flex-col justify-center items-center text-center z-10 shadow-[0_4px_12px_rgba(0,0,0,0.02)]">
+                    <p className="text-[10px] font-bold text-[var(--ahh-muted)] leading-tight mb-2 uppercase tracking-wider text-center w-full">
+                      {newsletter.month}
+                    </p>
+                    <p className="text-[32px] font-light leading-none text-[var(--ahh-ink)] w-full">
+                      {newsletter.issue}
+                    </p>
                   </div>
                 </div>
-                <div className="flex min-w-0 flex-col justify-center">
-                  <h3 className="text-lg font-bold leading-snug text-[var(--ahh-ink)]">{newsletter.title}</h3>
-                  <p className="mt-4 max-w-3xl text-xs leading-6 text-[var(--ahh-muted)]">{newsletter.excerpt}</p>
-                  <Link href={newsletter.href} className="brand-button-secondary mt-5 min-h-10 w-fit px-5 py-2 text-sm">
+
+                {/* Right Side: Title, excerpt and CTA */}
+                <div className="flex flex-1 flex-col justify-center min-w-0">
+                  <h3 className="text-lg font-bold leading-snug text-[var(--ahh-ink)] group-hover:text-[var(--ahh-blue)] transition duration-200">
+                    {newsletter.title}
+                  </h3>
+                  <p className="mt-3 max-w-3xl text-[15px] leading-relaxed text-[var(--ahh-muted)] line-clamp-2">
+                    {newsletter.excerpt}
+                  </p>
+                  <div className="brand-button-secondary mt-5 min-h-10 w-fit px-5 py-2 text-sm">
                     Read more
                     <ArrowRight className="h-4 w-4" />
-                  </Link>
+                  </div>
                 </div>
-              </article>
+              </Link>
             ))}
           </div>
         </section>

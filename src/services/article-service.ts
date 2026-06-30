@@ -9,9 +9,10 @@ const DEFAULT_PAGE_SIZE = 12;
 const MODE_CATEGORY_SLUGS = {
   insight: new Set(['insight', 'insights']),
   guide: new Set(['guide', 'guides', 'in-depth-guides', 'in-depth-guide']),
+  pulse: new Set(['pulse', 'pulses', 'newsletter', 'newsletters']),
 };
 
-export type ArticleContentMode = 'insight' | 'guide';
+export type ArticleContentMode = 'insight' | 'guide' | 'pulse';
 
 export function slugifyArticleCategory(value: string) {
   return value
@@ -27,9 +28,11 @@ export function getArticleContentMode(article: Article): ArticleContentMode {
   const seoMode = article.seo_meta.content_mode?.toLowerCase();
   if (seoMode === 'guide') return 'guide';
   if (seoMode === 'insight') return 'insight';
+  if (seoMode === 'pulse') return 'pulse';
 
   const categorySlug = slugifyArticleCategory(article.category ?? '');
   if (MODE_CATEGORY_SLUGS.guide.has(categorySlug)) return 'guide';
+  if (MODE_CATEGORY_SLUGS.pulse.has(categorySlug)) return 'pulse';
 
   const text = `${article.title} ${article.category ?? ''} ${article.tags.join(' ')}`.toLowerCase();
   if (
@@ -39,6 +42,9 @@ export function getArticleContentMode(article: Article): ArticleContentMode {
     text.includes('insurance')
   ) {
     return 'guide';
+  }
+  if (text.includes('pulse') || text.includes('newsletter')) {
+    return 'pulse';
   }
 
   return 'insight';

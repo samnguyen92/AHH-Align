@@ -95,7 +95,7 @@ const CITIES = [
     name: 'San Diego, CA',
     count: '20',
     href: '/search?city=San%20Diego',
-    image: 'https://images.unsplash.com/photo-1513735492246-777851817ad3?auto=format&fit=crop&w=700&q=80',
+    image: '/brand/cities/san-diego.png',
   },
   {
     name: 'Atlanta, GA',
@@ -107,7 +107,7 @@ const CITIES = [
     name: 'Sacramento, CA',
     count: '15',
     href: '/search?city=Sacramento',
-    image: 'https://images.unsplash.com/photo-1609137144813-f421ad339b6b?auto=format&fit=crop&w=700&q=80',
+    image: '/brand/cities/sacramento.png',
   },
 ] as const;
 
@@ -239,9 +239,13 @@ function SectionHeader({
 }
 
 export default async function HomePage() {
-  const [publishedArticles, clinicResult] = await Promise.all([
+  const [publishedArticles, clinicResult, ...cityCounts] = await Promise.all([
     getPublishedArticles(undefined, 1, 3),
     searchClinics({ limit: 4 }),
+    ...CITIES.map((city) => {
+      const cityName = city.name.split(',')[0].trim();
+      return searchClinics({ city: cityName, limit: 1 });
+    }),
   ]);
 
   const insightCards =
@@ -249,6 +253,11 @@ export default async function HomePage() {
       ? publishedArticles.data.map(toHomeInsightCard)
       : FALLBACK_ARTICLES;
   const clinics = clinicResult.data.length > 0 ? clinicResult.data.slice(0, 4) : FALLBACK_CLINICS;
+
+  const citiesWithCounts = CITIES.map((city, index) => ({
+    ...city,
+    count: String(cityCounts[index]?.total ?? 0),
+  }));
 
   return (
     <div className="bg-[#E5F0EB] px-[10px] pb-[10px]">
@@ -358,7 +367,7 @@ export default async function HomePage() {
           href="/search"
         />
         <div className="home-city-grid">
-          {CITIES.map((city) => (
+          {citiesWithCounts.map((city) => (
             <Link
               key={city.name}
               href={city.href}

@@ -470,7 +470,7 @@ function createMarkdownComponents({
     h1: ({ children }: { children?: ReactNode }) => (
       <h2
         id={slugifyHeading(textFromNode(children))}
-        className="article-heading article-heading--h1 scroll-mt-24"
+        className="article-heading article-heading--h1 scroll-mt-24 break-words"
       >
         {children}
       </h2>
@@ -478,7 +478,7 @@ function createMarkdownComponents({
     h2: ({ children }: { children?: ReactNode }) => (
       <h2
         id={slugifyHeading(textFromNode(children))}
-        className="article-heading article-heading--h2 scroll-mt-24"
+        className="article-heading article-heading--h2 scroll-mt-24 break-words"
       >
         {children}
       </h2>
@@ -486,7 +486,7 @@ function createMarkdownComponents({
     h3: ({ children }: { children?: ReactNode }) => (
       <h3
         id={slugifyHeading(textFromNode(children))}
-        className="article-heading article-heading--h3 scroll-mt-24"
+        className="article-heading article-heading--h3 scroll-mt-24 break-words"
       >
         {children}
       </h3>
