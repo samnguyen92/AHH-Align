@@ -1,6 +1,6 @@
-# Walkthrough - Tích hợp Search Bar, Giao diện di động, Đóng gói Standalone & Thiết kế lại trang Claim & Hệ thống Bản tin Pulse Động & Live Insights Content & Cải thiện Cỡ chữ di động & Sửa lỗi tràn layout (Overflow)
+# Walkthrough - Tích hợp Search Bar, Giao diện di động, Đóng gói Standalone & Thiết kế lại trang Claim & Hệ thống Bản tin Pulse Động & Live Insights Content & Cải thiện Cỡ chữ di động & Sửa lỗi tràn layout (Overflow) & Nâng cấp Search Bar Footer & Đổi mới Đăng ký Pulse (Mockup 5)
 
-Tôi đã hoàn tất việc phát triển, sửa lỗi, và tối ưu hóa hệ thống Search Bar tương tác, cùng các tinh chỉnh giao diện di động (mobile), cấu hình Docker Standalone, thiết kế lại trang Claim Profile, nâng cấp Menu Mobile, tích hợp **Hệ thống sinh bản tin Pulse tự động bằng AI**, **Live Insights Grid và Newsletter Banner mới**, **Tối ưu hóa khả năng đọc (readability) trên di động**, và **Sửa đổi triệt để lỗi tràn layout (Mobile Viewport Overflow)**.
+Tôi đã hoàn tất việc phát triển, sửa lỗi, và tối ưu hóa hệ thống Search Bar tương tác, cùng các tinh chỉnh giao diện di động (mobile), cấu hình Docker Standalone, thiết kế lại trang Claim Profile, nâng cấp Menu Mobile, tích hợp **Hệ thống sinh bản tin Pulse tự động bằng AI**, **Live Insights Grid và Newsletter Banner mới**, **Tối ưu hóa khả năng đọc (readability) trên di động**, **Sửa đổi triệt để lỗi tràn layout (Mobile Viewport Overflow)**, **Redesign màu sắc Pagination**, **Nâng cấp Search Bar chân trang**, và **Thiết kế lại Hero bản tin Pulse theo Mockup 5**.
 
 ---
 
@@ -92,6 +92,25 @@ Tôi đã hoàn tất việc phát triển, sửa lỗi, và tối ưu hóa hệ
 *   **Responsive Heading Break-Words**:
     *   Tích hợp class `break-words` cho tất cả các thẻ h1, h2, h3 trong `pulseMarkdownComponents` (trang Pulse Detail) và `createMarkdownComponents` (trang Insight Detail) nhằm loại trừ tình trạng các chữ tiêu đề bài viết dài đâm lọt ra ngoài mép màn hình.
     *   Nâng font-size `.article-paragraph` trên mobile của trang Insight từ `12px` lên `14px` tăng độ thống nhất và dễ đọc.
+
+### 10. Tối ưu hóa màu sắc active của Pagination (`src/components/search/pagination.tsx`)
+*   **Thay thế màu nền active**: Đổi màu nền của số trang active trong Pagination từ `bg-[var(--ahh-teal)]` (biến lỗi/không định nghĩa) thành màu xanh cổ vịt đậm thương hiệu `bg-[var(--ahh-deep-teal)]`.
+*   **Tăng độ tương phản chữ**: Đi kèm là font chữ màu trắng đậm `text-white font-bold` và shadow nhẹ, giúp người dùng dễ dàng theo dõi vị trí trang tìm kiếm hiện tại trên nền trắng.
+
+### 11. Đồng bộ Search Bar chân trang với Homepage (Advanced Multi-Filter Bottom CTA)
+*   **Thay thế Form tìm kiếm cũ**: Loại bỏ ô tìm kiếm đơn giản một trường nhập trong [bottom-cta.tsx](file:///Users/sam92/Desktop/Projects/asian-health-hub/src/components/layout/bottom-cta.tsx).
+*   **Tích hợp HeroSearch Component**: Nhúng trực tiếp component `HeroSearch` tương tác đầy đủ 3 trường lọc: Keyword, Specialty, City và Language, giúp người dùng dễ dàng chuyển đổi bộ lọc tìm kiếm ngay tại chân trang mà không cần quay lại trang chủ.
+
+### 12. Thiết kế lại Hero trang bản tin Pulse theo Mockup 5 (Email Signup Card)
+*   **RESTYLING BADGE & HEADER ACCENTS**:
+    *   Thiết kế badge "Monthly Newsletter" tích hợp icon `Leaf` (lá xanh) trên nền xanh trong suốt tinh tế.
+    *   Tạo thêm một đường line mảnh màu xanh lục đậm có đính icon `Leaf` xoay góc nghệ thuật ngay dưới tiêu đề `AHH Pulse`.
+    *   Thay nhãn lưu ý thành dòng tích checkmark xanh chanh tươi sáng `No spam. Unsubscribe anytime.`.
+*   **WHITE SUBSCRIPTION CARD (Khắc phục lỗi mép tròn elip bị tràn trên Mobile)**:
+    *   Khung đăng ký bản tin được gói gọn trong một Card màu trắng kem `bg-[#FDFBF9]` bo góc tròn lớn `rounded-[24px]` có đổ bóng dịu và viền trắng nổi bật.
+    *   Gồm icon lá thư `Mail` đặt trung tâm bọc trong nền tròn xanh ngọc nhạt.
+    *   Ô nhập Email có icon đi kèm bọc trong viền mỏng bo góc `rounded-[12px]` hiện đại.
+    *   Nút bấm `Subscribe Free →` màu xanh cổ vịt chiếm trọn chiều rộng của Card trắng, tự động co giãn 100% chiều ngang linh hoạt trên mobile, chống tuyệt đối hiện tượng bị bóp méo, lệch layout.
 
 ---
 

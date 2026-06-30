@@ -55,7 +55,7 @@ export function SearchPagination({ currentPage, totalPages }: PaginationProps) {
           onClick={() => goToPage(page)}
           className={
             page === currentPage
-              ? 'bg-[var(--ahh-teal)] hover:bg-[var(--ahh-teal-dark)] text-white'
+              ? 'bg-[var(--ahh-deep-teal)] hover:bg-[var(--ahh-deep-teal)]/90 text-white font-bold shadow-sm'
               : ''
           }
         >

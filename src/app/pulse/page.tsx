@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowRight, Mail, Search } from 'lucide-react';
+import { ArrowRight, Leaf, Mail, Search } from 'lucide-react';
 import { getPublishedArticles } from '@/services/article-service';
 
 export const metadata: Metadata = {
@@ -108,58 +108,106 @@ function PulseImage({
 }
 
 export default async function PulsePage() {
-  const { data: dbNewsletters } = await getPublishedArticles('pulse', 1, 100);
+  const [dbNewslettersResult, rawLiveArticlesResult] = await Promise.all([
+    getPublishedArticles('pulse', 1, 100),
+    getPublishedArticles(undefined, 1, 10),
+  ]);
+  const dbNewsletters = dbNewslettersResult.data;
+  const rawLiveArticles = rawLiveArticlesResult.data;
 
   const displayNewsletters = dbNewsletters && dbNewsletters.length > 0
     ? dbNewsletters.map((article) => {
-        const issueNum = (article.seo_meta as any)?.issue_number || '#Update';
-        const rawMonth = (article.seo_meta as any)?.month_label;
-        const monthLabel = rawMonth || (article.published_at 
-          ? new Date(article.published_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) 
-          : 'Recent');
-        const ogImg = (article.seo_meta as any)?.og_image || '';
-        return {
-          issue: issueNum,
-          month: monthLabel,
-          title: article.title,
-          href: `/pulse/${article.slug}`,
-          excerpt: article.excerpt || '',
-          image: ogImg || '/brand/pulse/detail-summer-health-la.webp',
-        };
-      })
+      const issueNum = (article.seo_meta as any)?.issue_number || '#Update';
+      const rawMonth = (article.seo_meta as any)?.month_label;
+      const monthLabel = rawMonth || (article.published_at
+        ? new Date(article.published_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+        : 'Recent');
+      const ogImg = (article.seo_meta as any)?.og_image || '';
+      return {
+        issue: issueNum,
+        month: monthLabel,
+        title: article.title,
+        href: `/pulse/${article.slug}`,
+        excerpt: article.excerpt || '',
+        image: ogImg || '/brand/pulse/detail-summer-health-la.webp',
+      };
+    })
     : newsletters;
+
+  const liveArticles = (rawLiveArticles || [])
+    .filter((art) => art.category !== 'pulse')
+    .slice(0, 3);
+
+  const displayInsights = liveArticles.length >= 3
+    ? liveArticles.map((art) => {
+      const ogImg = (art.seo_meta as any)?.og_image || '';
+      return {
+        title: art.title,
+        href: `/insights/${art.slug}`,
+        image: ogImg || '/brand/pulse/insight-vietnamese-doctor.webp',
+      };
+    })
+    : insights.map((fb) => ({
+      title: fb.title,
+      href: fb.href,
+      image: fb.image,
+    }));
 
   return (
     <div className="bg-[#E5F0EB] px-[10px] pb-[10px]">
       <div className="home-shell">
         <section className="overflow-hidden rounded-[16px] bg-[var(--ahh-blue)] text-white">
-          <div className="grid min-h-[600px] items-center gap-10 px-6 pb-16 pt-32 sm:px-10 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-24 lg:pb-20 lg:pt-40">
+          <div className="grid min-h-[600px] items-center gap-10 px-6 pb-16 pt-32 sm:px-10 lg:grid-cols-[minmax(0,1fr)_480px] lg:px-24 lg:pb-20 lg:pt-40">
             <div className="max-w-3xl">
-              <p className="mb-5 inline-flex rounded-full bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-white/75">
+              <p className="mb-5 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-white/75">
+                <Leaf className="h-3.5 w-3.5 text-[var(--ahh-lime)]" />
                 Monthly Newsletter
               </p>
               <h1 className="text-[48px] font-light leading-[1.05] tracking-normal sm:text-[62px] lg:text-[76px]">
                 AHH Pulse
               </h1>
+
+              <div className="relative mt-2 mb-6 w-32">
+                <div className="h-[1.5px] w-full bg-[#3E8070] rounded-full" />
+                <Leaf className="absolute -right-1 -top-1.5 h-3.5 w-3.5 text-[var(--ahh-lime)] rotate-45" />
+              </div>
+
               <p className="mt-7 max-w-2xl text-[17px] leading-7 text-white/82">
                 The free monthly newsletter for Vietnamese and Korean American clinic spotlights, health guides, community news, and wellness tips.
               </p>
-              <p className="mt-3 text-xs font-medium text-white/68">No spam. Unsubscribe anytime.</p>
 
-              <form action="/pulse" className="mt-6 flex max-w-[560px] flex-col gap-2 rounded-full bg-white p-1 shadow-[0_18px_50px_rgba(2,78,68,0.18)] sm:flex-row sm:items-center">
-                <div className="flex min-h-12 flex-1 items-center gap-2 rounded-full px-4">
-                  <Mail className="h-4 w-4 text-[var(--ahh-blue)]" />
-                  <input
-                    name="email"
-                    type="email"
-                    placeholder="Enter your email address"
-                    className="w-full bg-transparent text-sm text-[var(--ahh-ink)] outline-none placeholder:text-[var(--ahh-muted-2)]"
-                  />
+              <div className="mt-5 flex items-center gap-2 text-xs font-medium text-white/72">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D0FF71" strokeWidth="2.5" className="shrink-0">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                <span>No spam. Unsubscribe anytime.</span>
+              </div>
+
+              {/* White Signup Card */}
+              <div className="mt-8 w-full max-w-[440px] rounded-[24px] bg-[#FDFBF9] p-5 sm:p-6 shadow-[0_18px_50px_rgba(2,78,68,0.18)] border border-white text-left">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#E5F0EB] text-[var(--ahh-deep-teal)] mb-4">
+                  <Mail className="h-5 w-5" />
                 </div>
-                <button type="submit" className="min-h-12 rounded-full bg-[var(--ahh-blue)] px-6 text-sm font-bold text-white transition hover:bg-[var(--ahh-deep-teal)]">
-                  Subscribe Free
-                </button>
-              </form>
+                <form action="/pulse" className="space-y-4">
+                  <div className="flex min-h-12 w-full items-center gap-2.5 rounded-[12px] border border-[#E9EEF4] px-4 bg-white focus-within:border-[var(--ahh-deep-teal)] focus-within:ring-2 focus-within:ring-[var(--ahh-deep-teal)]/10 transition">
+                    <Mail className="h-4 w-4 text-[var(--ahh-muted)]" />
+                    <input
+                      name="email"
+                      type="email"
+                      placeholder="Enter your email address"
+                      className="w-full bg-transparent text-sm text-[var(--ahh-ink)] outline-none placeholder:text-[var(--ahh-muted-2)]"
+                      required
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full min-h-12 rounded-full bg-[var(--ahh-deep-teal)] text-white text-sm font-bold flex items-center justify-center gap-2 transition hover:bg-[#024e44]/90"
+                  >
+                    Subscribe Free
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </form>
+              </div>
             </div>
 
             <PulseImage
@@ -198,7 +246,7 @@ export default async function PulsePage() {
                       className="object-cover opacity-35 filter blur-[0.5px] transition duration-500 ease-out group-hover:opacity-100 group-hover:blur-none group-hover:scale-105"
                     />
                   </div>
-                  
+
                   {/* Floating Issue Badge on top right overlaying the image */}
                   <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[120px] h-[130px] rounded-[16px] bg-[#FDFBF7] border border-[#F2ECE4] p-3 flex flex-col justify-center items-center text-center z-10 shadow-[0_4px_12px_rgba(0,0,0,0.02)]">
                     <p className="text-[10px] font-bold text-[var(--ahh-muted)] leading-tight mb-2 uppercase tracking-wider text-center w-full">
@@ -245,9 +293,17 @@ export default async function PulsePage() {
           </div>
 
           <div className="grid gap-6 md:grid-cols-3">
-            {insights.map((insight) => (
-              <Link key={insight.title} href={insight.href} className="brand-card group overflow-hidden bg-white transition hover:-translate-y-0.5 hover:shadow-md">
-                <PulseImage src={insight.image} alt={insight.imageAlt} className="aspect-[16/10] rounded-none" />
+            {displayInsights.map((insight, idx) => (
+              <Link key={insight.title + idx} href={insight.href} className="brand-card group overflow-hidden bg-white transition hover:-translate-y-0.5 hover:shadow-md">
+                <div className="relative overflow-hidden bg-[#E9EEF4] aspect-[16/10]">
+                  <Image
+                    alt={insight.title}
+                    fill
+                    sizes="(max-width: 768px) 100vw, 520px"
+                    src={insight.image}
+                    className="object-cover"
+                  />
+                </div>
                 <div className="p-5">
                   <h3 className="line-clamp-2 min-h-[48px] text-base font-bold leading-6 text-[var(--ahh-ink)] group-hover:text-[var(--ahh-blue)]">
                     {insight.title}
@@ -255,21 +311,6 @@ export default async function PulsePage() {
                 </div>
               </Link>
             ))}
-          </div>
-        </section>
-
-        <section className="home-section rounded-[16px] bg-white px-5 py-10 sm:px-10 lg:px-20">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-[28px] font-medium leading-tight text-[var(--ahh-ink)]">Never miss a clinic update.</h2>
-              <p className="mt-2 text-sm leading-6 text-[var(--ahh-muted)]">
-                Monthly clinic spotlights, patient guides, and community wellness tips.
-              </p>
-            </div>
-            <Link href="/search" className="brand-button-secondary w-fit">
-              <Search className="h-4 w-4" />
-              Find a Clinic
-            </Link>
           </div>
         </section>
       </div>
