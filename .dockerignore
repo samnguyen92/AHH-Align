@@ -1,3 +1,4 @@
+# Git and Build artifacts
 .git
 .next
 .vercel
@@ -6,20 +7,29 @@ coverage
 build
 out
 
+# Environment variables
 .env
 .env.*
 !.env.local.example
 
-openclaw/.env
-openclaw/venv
-openclaw/__pycache__
-openclaw/*.pyc
-openclaw/openclaw.log
-openclaw/telegram_memory.json
+# Python virtual environments (ignores all variants like venv, venv312, .venv)
+**/venv*
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
 
-*.tsbuildinfo
-.DS_Store
+# Log and temporary files
+**/*.log
+**/.DS_Store
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.tsbuildinfo
+
+# Project specific ignores
+openclaw/.env
+openclaw/telegram_memory.json
+public/generated-insights/*
