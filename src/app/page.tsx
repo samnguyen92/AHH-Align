@@ -240,7 +240,7 @@ function SectionHeader({
 
 export default async function HomePage() {
   const [publishedArticles, clinicResult, ...cityCounts] = await Promise.all([
-    getPublishedArticles(undefined, 1, 3),
+    getPublishedArticles(undefined, 1, 3, 'pulse'),
     searchClinics({ limit: 4 }),
     ...CITIES.map((city) => {
       const cityName = city.name.split(',')[0].trim();

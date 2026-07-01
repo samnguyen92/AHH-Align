@@ -78,7 +78,8 @@ function matchesTagSlug(article: Article, tagSlug?: string) {
 export async function getPublishedArticles(
   category?: string,
   page = 1,
-  limit = DEFAULT_PAGE_SIZE
+  limit = DEFAULT_PAGE_SIZE,
+  excludeCategory?: string
 ): Promise<PaginatedResponse<Article>> {
   const supabase = createServerAnonClient();
   const offset = (page - 1) * limit;
@@ -95,6 +96,8 @@ export async function getPublishedArticles(
 
     if (category) {
       query = query.eq('category', category);
+    } else if (excludeCategory) {
+      query = query.neq('category', excludeCategory);
     }
 
     const { data, error, count } = await query

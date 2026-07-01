@@ -138,6 +138,17 @@
     max-width: 100%;
     overflow-x: hidden;
   }
+
+  a,
+  button,
+  select,
+  input[type="submit"],
+  input[type="button"],
+  input[type="checkbox"],
+  input[type="radio"],
+  [role="button"] {
+    cursor: pointer;
+  }
 }
 
 /* ============================================
