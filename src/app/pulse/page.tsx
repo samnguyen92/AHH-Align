@@ -3,6 +3,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, Leaf, Mail, Search } from 'lucide-react';
 import { getPublishedArticles } from '@/services/article-service';
+import NewsletterForm from '@/components/pulse/NewsletterForm';
 
 export const metadata: Metadata = {
   title: 'AHH Pulse',
@@ -183,31 +184,8 @@ export default async function PulsePage() {
                 <span>No spam. Unsubscribe anytime.</span>
               </div>
 
-              {/* White Signup Card */}
-              <div className="mt-8 w-full max-w-[440px] rounded-[24px] bg-[#FDFBF9] p-5 sm:p-6 shadow-[0_18px_50px_rgba(2,78,68,0.18)] border border-white text-left">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#E5F0EB] text-[var(--ahh-deep-teal)] mb-4">
-                  <Mail className="h-5 w-5" />
-                </div>
-                <form action="/pulse" className="space-y-4">
-                  <div className="flex min-h-12 w-full items-center gap-2.5 rounded-[12px] border border-[#E9EEF4] px-4 bg-white focus-within:border-[var(--ahh-deep-teal)] focus-within:ring-2 focus-within:ring-[var(--ahh-deep-teal)]/10 transition">
-                    <Mail className="h-4 w-4 text-[var(--ahh-muted)]" />
-                    <input
-                      name="email"
-                      type="email"
-                      placeholder="Enter your email address"
-                      className="w-full bg-transparent text-sm text-[var(--ahh-ink)] outline-none placeholder:text-[var(--ahh-muted-2)]"
-                      required
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full min-h-12 rounded-full bg-[var(--ahh-deep-teal)] text-white text-sm font-bold flex items-center justify-center gap-2 transition hover:bg-[#024e44]/90"
-                  >
-                    Subscribe Free
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                </form>
-              </div>
+              {/* Live Newsletter Signup Form */}
+              <NewsletterForm />
             </div>
 
             <PulseImage

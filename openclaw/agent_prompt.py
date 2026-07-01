@@ -25,6 +25,13 @@ AVAILABLE TELEGRAM FUNCTIONS
 - /repair_article_slugs: Convert non-ASCII article slugs to ASCII URL-safe slugs and store legacy slugs.
 - /delete_article <id|slug|title>: Delete exactly one article after approval.
 - /delete_clinic <id|slug|name>: Delete exactly one clinic after approval.
+- /change_clinic_feature_image <id|slug|name> [| image_url]: Change or rotate the feature image of a clinic after approval.
+- /newsletter_list [limit]: List newsletter subscribers after approval.
+- /newsletter_add <email>: Manually add a newsletter subscriber after approval.
+- /newsletter_remove <email>: Unsubscribe an email address after approval.
+- /check_claims: List pending clinic claim requests and submissions after approval.
+- /approve_claim <id>: Approve a claim request or clinic submission after approval.
+- /reject_claim <id>: Reject a claim request or clinic submission after approval.
 - /rewrite_article <id|slug|title> | <edit instruction>: Rewrite/update an existing article after approval, preserving its slug/URL, saving the current article in seo_meta.versions, and publishing the rewrite as the next version such as v2 or v3.
 - /generate_insight [topic]: Generate one SEO insight article around 1200-1500 words with 3-5 AI images, then publish it to Supabase. If no topic is provided, OpenClaw chooses a fresh default topic.
 - /generate_insight_from_url <url...>: Scrape one or more reference pages, analyze healthcare concepts, write original Asian Health Hub SEO insights around 1200-1500 words with 3-5 AI images each, and publish them.

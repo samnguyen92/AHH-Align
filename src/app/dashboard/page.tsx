@@ -44,6 +44,36 @@ export default async function DashboardPage() {
   }
 
   const supabase = createServerSupabaseClient();
+
+  if (user.email) {
+    const userEmail = user.email.toLowerCase().trim();
+
+    // 1. Find claims that are approved and have no user_id, update their clinics
+    const { data: unclaimedApproved } = await supabase
+      .from('claim_requests')
+      .select('id, clinic_id')
+      .is('user_id', null)
+      .eq('status', 'approved')
+      .eq('proof_data->>email', userEmail);
+
+    if (unclaimedApproved && unclaimedApproved.length > 0) {
+      const clinicIds = unclaimedApproved.map(c => c.clinic_id).filter(Boolean);
+      if (clinicIds.length > 0) {
+        await supabase
+          .from('clinics')
+          .update({ claimed_by: user.id })
+          .in('id', clinicIds);
+      }
+    }
+
+    // 2. Link the claim requests to the user
+    await supabase
+      .from('claim_requests')
+      .update({ user_id: user.id })
+      .is('user_id', null)
+      .eq('proof_data->>email', userEmail);
+  }
+
   const { data: claims, error } = await supabase
     .from('claim_requests')
     .select('id,status,proof_type,created_at,clinics(id,name,slug,city,state)')

@@ -173,6 +173,27 @@ CREATE INDEX IF NOT EXISTS idx_claim_requests_status_created_at ON claim_request
 COMMENT ON TABLE claim_requests IS 'Provider requests to claim ownership of clinic profiles';
 
 -- ============================================
+-- 4b. Clinic Submissions
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS clinic_submissions (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  clinic_name  TEXT NOT NULL,
+  full_name    TEXT NOT NULL,
+  role         TEXT NOT NULL,
+  email        TEXT NOT NULL,
+  phone        TEXT NOT NULL,
+  website      TEXT,
+  updates      TEXT,
+  status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_clinic_submissions_status_created_at ON clinic_submissions (status, created_at DESC);
+
+COMMENT ON TABLE clinic_submissions IS 'Submissions for new clinic profiles';
+
+-- ============================================
 -- 5. User Roles
 -- ============================================
 
@@ -297,6 +318,21 @@ CREATE INDEX IF NOT EXISTS idx_analytics_events_name_created_at
 COMMENT ON TABLE analytics_events IS 'Lightweight product analytics events for search, clinic clicks, and claim starts';
 
 -- ============================================
+-- 7b. Newsletter Subscriptions
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS newsletter_subscriptions (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email       TEXT NOT NULL UNIQUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_newsletter_subscriptions_email
+  ON newsletter_subscriptions (email);
+
+COMMENT ON TABLE newsletter_subscriptions IS 'Subscribed emails for the AHH Pulse newsletter';
+
+-- ============================================
 -- 8. Row Level Security
 -- ============================================
 
@@ -308,6 +344,8 @@ ALTER TABLE claim_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clinic_embeddings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE analytics_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE newsletter_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE clinic_submissions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "organizations_public_select" ON organizations;
 CREATE POLICY "organizations_public_select"
@@ -431,6 +469,16 @@ CREATE POLICY "clinic_embeddings_auth_insert"
 DROP POLICY IF EXISTS "analytics_events_no_public_select" ON analytics_events;
 CREATE POLICY "analytics_events_no_public_select"
   ON analytics_events FOR SELECT TO authenticated
+  USING (false);
+
+DROP POLICY IF EXISTS "newsletter_subscriptions_no_public_select" ON newsletter_subscriptions;
+CREATE POLICY "newsletter_subscriptions_no_public_select"
+  ON newsletter_subscriptions FOR SELECT TO authenticated
+  USING (false);
+
+DROP POLICY IF EXISTS "clinic_submissions_no_public_select" ON clinic_submissions;
+CREATE POLICY "clinic_submissions_no_public_select"
+  ON clinic_submissions FOR SELECT TO authenticated
   USING (false);
 
 -- ============================================

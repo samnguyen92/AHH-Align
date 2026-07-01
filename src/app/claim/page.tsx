@@ -71,11 +71,35 @@ export default function ClaimLandingPage() {
     setError('');
 
     try {
-      // Simulate API submit request
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Build a human-readable summary of requested updates
+      const checkedUpdates = Object.entries(updates)
+        .filter(([, v]) => v)
+        .map(([k]) => k.replace(/([A-Z])/g, ' $1').trim())
+        .join(', ');
+
+      const res = await fetch('/api/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clinic_name: clinicName,
+          full_name: fullName,
+          role,
+          email,
+          phone,
+          website,
+          updates: [checkedUpdates, notes].filter(Boolean).join(' — '),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Failed to submit ownership request. Please try again.');
+        return;
+      }
+
       setIsSuccess(true);
-    } catch (err) {
-      setError('Failed to submit ownership request. Please try again.');
+    } catch {
+      setError('Network error. Please check your connection and try again.');
     } finally {
       setIsSubmitting(false);
     }

@@ -16,6 +16,7 @@ from jobs import (
     check_status,
     delete_article_job,
     delete_clinic_job,
+    change_clinic_feature_image_job,
     generate_guide_from_url_job,
     generate_guide_from_context_job,
     generate_guide_job,
@@ -34,6 +35,12 @@ from jobs import (
     scout_pipeline_job,
     scrape_clinic_url_job,
     tail_log,
+    list_newsletter_subscribers_job,
+    add_newsletter_subscriber_job,
+    remove_newsletter_subscriber_job,
+    check_claims_job,
+    approve_claim_job,
+    reject_claim_job,
 )
 
 load_dotenv(".env")
@@ -321,6 +328,13 @@ class TelegramBot:
             "/repair_article_slugs - convert non-ASCII article slugs to URL-safe ASCII\n"
             "/delete_article <id|slug|title> - delete one article after confirmation\n"
             "/delete_clinic <id|slug|name> - delete one clinic after confirmation\n"
+            "/change_clinic_feature_image <id|slug|name> [| image_url] - change or rotate the feature image of a clinic\n"
+            "/newsletter_list [limit] - list newsletter subscribers\n"
+            "/newsletter_add <email> - manually add a newsletter subscriber\n"
+            "/newsletter_remove <email> - unsubscribe an email address\n"
+            "/check_claims - list pending clinic claim requests and submissions\n"
+            "/approve_claim <id> - approve a claim request or clinic submission\n"
+            "/reject_claim <id> - reject a claim request or clinic submission\n"
             "/rewrite_article <id|slug|title> | <edit instruction> - rewrite an article and save it as the next version\n"
             "/generate_blog [topic] - alias for /generate_insight\n"
             "/generate_insight [topic] - generate one SEO insight article, 1200-1500 words, plus 3-5 AI images\n"
@@ -738,6 +752,13 @@ Allowed actions:
 - repair_article_slugs
 - delete_article
 - delete_clinic
+- change_clinic_feature_image
+- newsletter_list
+- newsletter_add
+- newsletter_remove
+- check_claims
+- approve_claim
+- reject_claim
 - rewrite_article
 - run_batch
 - find_clinics
@@ -761,6 +782,13 @@ Rules:
 - If a URL is a clinic website and the user asks to scrape, add, import, save, or create a clinic profile/directory record from that URL, choose scrape_clinic_url. Do not use article/guide URL actions for clinic profile ingestion.
 - If the user asks to delete/remove/xoá an article/blog/insight, action is delete_article and target is the clean id, slug, or title.
 - If the user asks to delete/remove/xoá a clinic/directory profile, action is delete_clinic and target is the clean id, slug, or clinic name.
+- If the user asks to change, replace, swap, rotate, update, or "thay đổi" the feature image/main image/hình nền/ảnh đại diện/ảnh đại diện của clinic/phòng khám for a specific clinic, action is change_clinic_feature_image. Target must be the clinic id, slug, or name. Extract image_url if provided.
+- If the user asks to see, check, print, or list the newsletter subscribers list (e.g. 'kiểm tra newsletter list', 'danh sách newsletter'), choose newsletter_list. Extract limit if provided.
+- If the user asks to manually add, subscribe, or register an email to the newsletter, choose newsletter_add. Extract target or the email address as query or urls[0].
+- If the user asks to remove, unsubscribe, or delete an email from the newsletter, choose newsletter_remove. Extract target or the email address as query or urls[0].
+- If the user asks to see, check, print, list, or view pending clinic claims, submissions, or requests (e.g., 'check claims', 'kiểm tra claims', 'danh sách claims'), choose check_claims.
+- If the user asks to approve a claim request or submission (e.g., 'approve claim <id>', 'duyệt claim <id>'), choose approve_claim. Extract the target as the claim ID.
+- If the user asks to reject/deny a claim request or submission (e.g., 'reject claim <id>', 'từ chối claim <id>'), choose reject_claim. Extract the target as the claim ID.
 - If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, action is rewrite_article.
 - If the user asks to change/replace/regenerate images/photos for a specific article/blog/insight, action is regenerate_article_images. Target must be the article id, slug, or title.
 - For rewrite_article, target must be the article id, slug, or title. rewrite_instruction must include all requested edits.
@@ -799,6 +827,13 @@ find_clinics rules (IMPORTANT):
 General examples:
   - "viết lại bài Navigating Seasonal Flu and COVID-19 Vaccines..., loại bỏ table content ở đầu bài blog, thêm 2 reference và thêm bản so sánh với American culture" => rewrite_article, target "Navigating Seasonal Flu and COVID-19 Vaccines...", rewrite_instruction includes removing opening table, adding 2 references, adding comparison with American culture.
   - "thay đổi hình ảnh cho bài viết \"Colorectal Cancer Screening...\"" => regenerate_article_images, target "Colorectal Cancer Screening..."
+  - "thay feature image của clinics \"Advanced Skin Treatment Center : JEFFREY LAUBER, MD\"" => change_clinic_feature_image, target "Advanced Skin Treatment Center : JEFFREY LAUBER, MD"
+  - "kiểm tra newsletter list" => newsletter_list
+  - "thêm subscriber abc@gmail.com" => newsletter_add, query "abc@gmail.com"
+  - "xóa subscriber xyz@gmail.com" => newsletter_remove, query "xyz@gmail.com"
+  - "kiểm tra claims" => check_claims
+  - "duyệt claim 123-abc" => approve_claim, target "123-abc"
+  - "từ chối claim 456-def" => reject_claim, target "456-def"
   - "dựa trên nội dung nghiên cứu để viết bài blog" + memory available => generate_insight_from_memory, use_memory true.
   - "dựa trên báo cáo này viết guide chuyên sâu" + memory available => generate_guide_from_memory, use_memory true.
   - "nghiên cứu về Top 10 phòng khám nói tiếng Việt tại San Jose" => multi_agent_research.
@@ -1015,6 +1050,33 @@ Return JSON:
             target = str(data.get("target") or data.get("topic") or "").strip()
             if target:
                 return self.build_delete_action("clinic", target)
+        if action == "change_clinic_feature_image":
+            target = str(data.get("target") or data.get("clinic_name") or data.get("topic") or "").strip()
+            urls = data.get("urls") or []
+            image_url = urls[0] if urls else None
+            if target:
+                return self.build_change_clinic_feature_image_action(target, image_url)
+        if action == "newsletter_list":
+            limit = self.parse_limit_value(data.get("limit"), 50)
+            return self.build_newsletter_list_action(limit)
+        if action == "newsletter_add":
+            email = str(data.get("query") or data.get("target") or (data.get("urls")[0] if data.get("urls") else "")).strip()
+            if email:
+                return self.build_newsletter_add_action(email)
+        if action == "newsletter_remove":
+            email = str(data.get("query") or data.get("target") or (data.get("urls")[0] if data.get("urls") else "")).strip()
+            if email:
+                return self.build_newsletter_remove_action(email)
+        if action == "check_claims":
+            return self.build_check_claims_action()
+        if action == "approve_claim":
+            target = str(data.get("target") or data.get("query") or "").strip()
+            if target:
+                return self.build_approve_claim_action(target)
+        if action == "reject_claim":
+            target = str(data.get("target") or data.get("query") or "").strip()
+            if target:
+                return self.build_reject_claim_action(target)
         if action == "rewrite_article":
             target = str(data.get("target") or data.get("topic") or "").strip()
             rewrite_instruction = str(data.get("rewrite_instruction") or original_text).strip()
@@ -1049,6 +1111,102 @@ Return JSON:
                 f"Target: {target}\n\n"
                 "If you approve, OpenClaw will find exactly one record by id, slug, name, or title, then delete it.\n"
                 "This is a real destructive data operation. Reply `approve` to continue, or `cancel` if you are unsure."
+            ),
+        }
+
+    def build_change_clinic_feature_image_action(self, target: str, image_url: Optional[str] = None) -> dict:
+        summary_details = f"Target clinic: {target}\n"
+        if image_url:
+            summary_details += f"New feature image URL: {image_url}\n"
+        else:
+            summary_details += "Action: Rotate to the next image in the clinic's list of images/gallery.\n"
+
+        return {
+            "type": "change_clinic_feature_image",
+            "name": f"change_clinic_feature_image: {target[:48]}",
+            "target": target,
+            "image_url": image_url,
+            "summary": (
+                "You want OpenClaw to change the feature image for this clinic, correct?\n\n"
+                f"{summary_details}\n"
+                "If you approve, OpenClaw will find the clinic, and update its metadata to set/rotate the feature image.\n"
+                "This will update Supabase data. Reply `approve` to continue."
+            ),
+        }
+
+    def build_newsletter_list_action(self, limit: int = 50) -> dict:
+        return {
+            "type": "newsletter_list",
+            "name": f"newsletter_list: limit {limit}",
+            "limit": limit,
+            "summary": (
+                "You want OpenClaw to retrieve the list of newsletter subscribers, correct?\n\n"
+                f"Limit: {limit} subscribers\n\n"
+                "If you approve, OpenClaw will query Supabase and print the list of email subscribers with timestamps.\n"
+                "Reply `approve` to continue."
+            ),
+        }
+
+    def build_newsletter_add_action(self, email: str) -> dict:
+        return {
+            "type": "newsletter_add",
+            "name": f"newsletter_add: {email[:48]}",
+            "email": email,
+            "summary": (
+                "You want to manually subscribe an email to the newsletter list, correct?\n\n"
+                f"Email to subscribe: {email}\n\n"
+                "If you approve, OpenClaw will add this subscriber to the database.\n"
+                "Reply `approve` to continue."
+            ),
+        }
+
+    def build_newsletter_remove_action(self, email: str) -> dict:
+        return {
+            "type": "newsletter_remove",
+            "name": f"newsletter_remove: {email[:48]}",
+            "email": email,
+            "summary": (
+                "You want to remove (unsubscribe) an email from the newsletter list, correct?\n\n"
+                f"Email to unsubscribe: {email}\n\n"
+                "If you approve, OpenClaw will delete this subscriber record from the database.\n"
+                "Reply `approve` to continue."
+            ),
+        }
+
+    def build_check_claims_action(self) -> dict:
+        return {
+            "type": "check_claims",
+            "name": "check_claims",
+            "summary": (
+                "You want OpenClaw to check pending profile claims and submissions, correct?\n\n"
+                "If you approve, OpenClaw will query Supabase and print all pending clinic claim requests and new profile submissions.\n"
+                "Reply `approve` to continue."
+            ),
+        }
+
+    def build_approve_claim_action(self, target: str) -> dict:
+        return {
+            "type": "approve_claim",
+            "name": f"approve_claim: {target[:48]}",
+            "target": target,
+            "summary": (
+                "You want to approve this clinic claim request or submission, correct?\n\n"
+                f"Target Request/Submission ID: {target}\n\n"
+                "If you approve, OpenClaw will mark the request as approved and link/create the clinic in Supabase.\n"
+                "Reply `approve` to continue."
+            ),
+        }
+
+    def build_reject_claim_action(self, target: str) -> dict:
+        return {
+            "type": "reject_claim",
+            "name": f"reject_claim: {target[:48]}",
+            "target": target,
+            "summary": (
+                "You want to reject this clinic claim request or submission, correct?\n\n"
+                f"Target Request/Submission ID: {target}\n\n"
+                "If you approve, OpenClaw will mark the request as rejected in Supabase.\n"
+                "Reply `approve` to continue."
             ),
         }
 
@@ -1553,6 +1711,55 @@ Return JSON:
             self.run_job(chat_id, action["name"], lambda: delete_article_job(action["target"]), action_type=action_type)
         elif action_type == "delete_clinic":
             self.run_job(chat_id, action["name"], lambda: delete_clinic_job(action["target"]), action_type=action_type)
+        elif action_type == "change_clinic_feature_image":
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: change_clinic_feature_image_job(action["target"], action.get("image_url")),
+                action_type=action_type,
+            )
+        elif action_type == "newsletter_list":
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: list_newsletter_subscribers_job(action.get("limit", 50)),
+                action_type=action_type,
+            )
+        elif action_type == "newsletter_add":
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: add_newsletter_subscriber_job(action["email"]),
+                action_type=action_type,
+            )
+        elif action_type == "newsletter_remove":
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: remove_newsletter_subscriber_job(action["email"]),
+                action_type=action_type,
+            )
+        elif action_type == "check_claims":
+            self.run_job(
+                chat_id,
+                action["name"],
+                check_claims_job,
+                action_type=action_type,
+            )
+        elif action_type == "approve_claim":
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: approve_claim_job(action["target"]),
+                action_type=action_type,
+            )
+        elif action_type == "reject_claim":
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: reject_claim_job(action["target"]),
+                action_type=action_type,
+            )
         elif action_type == "rewrite_article":
             self.run_job(
                 chat_id,
@@ -1679,6 +1886,54 @@ Return JSON:
                 self.send_message(chat_id, "Use: /delete_clinic <id|slug|name>")
             else:
                 self.pending_actions[chat_id] = self.build_delete_action("clinic", target)
+                self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command == "/change_clinic_feature_image":
+            payload = text.removeprefix("/change_clinic_feature_image").strip()
+            if not payload:
+                self.send_message(chat_id, "Use: /change_clinic_feature_image <id|slug|name> [| image_url]")
+            else:
+                if "|" in payload:
+                    target, image_url = [part.strip() for part in payload.split("|", 1)]
+                else:
+                    target = payload
+                    image_url = None
+                self.pending_actions[chat_id] = self.build_change_clinic_feature_image_action(target, image_url)
+                self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command == "/newsletter_list":
+            payload = text.removeprefix("/newsletter_list").strip()
+            limit = self.parse_limit_value(payload, 50)
+            self.pending_actions[chat_id] = self.build_newsletter_list_action(limit)
+            self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command == "/newsletter_add":
+            email = text.removeprefix("/newsletter_add").strip()
+            if not email:
+                self.send_message(chat_id, "Use: /newsletter_add <email>")
+            else:
+                self.pending_actions[chat_id] = self.build_newsletter_add_action(email)
+                self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command == "/newsletter_remove":
+            email = text.removeprefix("/newsletter_remove").strip()
+            if not email:
+                self.send_message(chat_id, "Use: /newsletter_remove <email>")
+            else:
+                self.pending_actions[chat_id] = self.build_newsletter_remove_action(email)
+                self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command == "/check_claims":
+            self.pending_actions[chat_id] = self.build_check_claims_action()
+            self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command == "/approve_claim":
+            target = text.removeprefix("/approve_claim").strip()
+            if not target:
+                self.send_message(chat_id, "Use: /approve_claim <id>")
+            else:
+                self.pending_actions[chat_id] = self.build_approve_claim_action(target)
+                self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command == "/reject_claim":
+            target = text.removeprefix("/reject_claim").strip()
+            if not target:
+                self.send_message(chat_id, "Use: /reject_claim <id>")
+            else:
+                self.pending_actions[chat_id] = self.build_reject_claim_action(target)
                 self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
         elif command == "/rewrite_article":
             payload = text.removeprefix("/rewrite_article").strip()

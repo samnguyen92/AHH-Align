@@ -15,7 +15,7 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
   const isInsightsIndex = pathname === "/insights"
   const isInsightDetail = /^\/insights\/[^/]+/.test(pathname)
   const isClinicDetail = /^\/clinics\/[^/]+/.test(pathname)
-  const isClaim = pathname === "/claim"
+  const isClaim = pathname === "/claim" || pathname.startsWith("/claim/")
 
   if (isAdmin) {
     return <>{children}</>

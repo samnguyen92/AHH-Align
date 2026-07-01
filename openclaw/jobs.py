@@ -162,6 +162,16 @@ def delete_clinic_job(identifier: str) -> str:
     return _run_with_captured_output("delete_clinic", lambda: delete_clinic(identifier))
 
 
+def change_clinic_feature_image_job(identifier: str, image_url: Optional[str] = None) -> str:
+    from admin_actions import change_clinic_feature_image
+
+    return _run_with_captured_output(
+        "change_clinic_feature_image",
+        lambda: change_clinic_feature_image(identifier, image_url),
+    )
+
+
+
 def generate_insight_job(topic: Optional[str] = None) -> str:
     from generate_insights import create_article
 
@@ -250,6 +260,11 @@ def check_status() -> str:
         articles = supabase.table("articles").select("id", count="exact").limit(1).execute()
         lines.append(f"Clinics: {clinics.count}")
         lines.append(f"Articles: {articles.count}")
+        try:
+            subscribers = supabase.table("newsletter_subscriptions").select("id", count="exact").limit(1).execute()
+            lines.append(f"Subscribers: {subscribers.count}")
+        except Exception:
+            pass
     except Exception as exc:
         lines.append(f"Supabase check failed: {exc}")
 
@@ -265,3 +280,59 @@ def tail_log(lines: int = 40) -> str:
         content = log_file.readlines()
 
     return "".join(content[-lines:]).strip() or "No OpenClaw log yet."
+
+
+def list_newsletter_subscribers_job(limit: int = 50) -> str:
+    from admin_actions import list_newsletter_subscribers
+
+    return _run_with_captured_output(
+        "list_newsletter_subscribers",
+        lambda: list_newsletter_subscribers(limit),
+    )
+
+
+def add_newsletter_subscriber_job(email: str) -> str:
+    from admin_actions import add_newsletter_subscriber
+
+    return _run_with_captured_output(
+        "add_newsletter_subscriber",
+        lambda: add_newsletter_subscriber(email),
+    )
+
+
+def remove_newsletter_subscriber_job(email: str) -> str:
+    from admin_actions import remove_newsletter_subscriber
+
+    return _run_with_captured_output(
+        "remove_newsletter_subscriber",
+        lambda: remove_newsletter_subscriber(email),
+    )
+
+
+def check_claims_job() -> str:
+    from admin_actions import check_claims
+
+    return _run_with_captured_output(
+        "check_claims",
+        lambda: check_claims(),
+    )
+
+
+def approve_claim_job(identifier: str) -> str:
+    from admin_actions import approve_claim
+
+    return _run_with_captured_output(
+        "approve_claim",
+        lambda: approve_claim(identifier),
+    )
+
+
+def reject_claim_job(identifier: str) -> str:
+    from admin_actions import reject_claim
+
+    return _run_with_captured_output(
+        "reject_claim",
+        lambda: reject_claim(identifier),
+    )
+
+

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getClinicById } from '@/services/clinic-service';
-import { ClaimRequestForm } from '@/components/claim/claim-request-form';
+import { ClaimClinicLayout } from '@/components/claim/claim-clinic-layout';
 
 interface ClaimPageProps {
   params: Promise<{ clinicId: string }>;
@@ -19,11 +19,5 @@ export default async function ClaimPage({ params }: ClaimPageProps) {
     notFound();
   }
 
-  return (
-    <main className="bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-2xl">
-        <ClaimRequestForm clinic={clinic} />
-      </div>
-    </main>
-  );
+  return <ClaimClinicLayout clinic={clinic} />;
 }

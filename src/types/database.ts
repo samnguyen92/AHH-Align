@@ -313,3 +313,14 @@ export interface ClaimRequest {
   reviewed_at: string | null;
   created_at: string;
 }
+
+// ---- Newsletter Subscriptions ----
+
+export interface NewsletterSubscription {
+  id: string;
+  email: string;
+  created_at: string;
+}
+
+export type NewsletterSubscriptionInsert = Omit<NewsletterSubscription, 'id' | 'created_at'>;
+

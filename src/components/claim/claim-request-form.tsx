@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2 } from 'lucide-react';
@@ -20,6 +20,27 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [claimId, setClaimId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [user, setUser] = useState<any>(null);
+
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [role, setRole] = useState('');
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setIsAuthenticated(!!data.session);
+      setUser(data.session?.session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,29 +50,44 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
 
-    if (!token) {
-      router.push(`/auth/login?next=/claim/${clinic.id}`);
-      return;
+    if (token) {
+      persistAuthToken(token);
     }
 
-    persistAuthToken(token);
+    const payload: any = {
+      clinic_id: clinic.id,
+      proof_type: proofType,
+      proof_data: {
+        value: proofValue,
+        clinic_name: clinic.name,
+        clinic_phone: clinic.phone,
+      },
+      notes,
+    };
+
+    if (token && user) {
+      payload.proof_data.full_name = user.user_metadata?.full_name || 'Authenticated User';
+      payload.proof_data.email = user.email;
+      payload.proof_data.phone = user.phone || '';
+      payload.proof_data.role = 'Authenticated Owner';
+    } else {
+      payload.proof_data.full_name = fullName.trim();
+      payload.proof_data.email = email.trim().toLowerCase();
+      payload.proof_data.phone = phone.trim();
+      payload.proof_data.role = role.trim();
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
     const response = await fetch('/api/claim', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        clinic_id: clinic.id,
-        proof_type: proofType,
-        proof_data: {
-          value: proofValue,
-          clinic_name: clinic.name,
-          clinic_phone: clinic.phone,
-        },
-        notes,
-      }),
+      headers,
+      body: JSON.stringify(payload),
     });
 
     const result = await response.json();
@@ -66,26 +102,38 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
     setMessage('Claim request submitted. We will review the details soon.');
   }
 
+  if (isAuthenticated === null) {
+    return (
+      <div className="flex h-48 items-center justify-center rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <Loader2 className="h-6 w-6 animate-spin text-[var(--ahh-blue)]" />
+      </div>
+    );
+  }
+
   if (claimId) {
     return (
-      <div className="rounded-lg border border-green-200 bg-green-50 p-6">
-        <CheckCircle2 className="h-8 w-8 text-green-600" />
-        <h2 className="mt-4 text-xl font-bold text-green-950">Claim submitted</h2>
-        <p className="mt-2 text-sm text-green-800">
-          Your request for {clinic.name} is pending review.
-        </p>
-        <div className="mt-5 flex flex-wrap gap-3">
+      <div className="rounded-[16px] border border-emerald-100 bg-white p-6 sm:p-10 lg:p-12 shadow-3xs text-center space-y-6">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 mx-auto">
+          <CheckCircle2 className="h-10 w-10" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold text-[var(--ahh-ink)]">Claim Submitted Successfully!</h2>
+          <p className="text-sm text-[var(--ahh-muted)] leading-relaxed">
+            Your request for <span className="font-semibold text-[var(--ahh-ink)]">{clinic.name}</span> is pending review. Our team will verify ownership and update status within 24-48 hours.
+          </p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-3 pt-2">
           <Link
             href={`/api/claim/status/${claimId}`}
-            className="rounded-lg border border-green-300 px-4 py-2 text-sm font-semibold text-green-900 hover:bg-green-100"
+            className="brand-button-secondary font-bold"
           >
-            Check status
+            Check Status
           </Link>
           <Link
             href="/dashboard"
-            className="rounded-lg bg-[var(--ahh-blue)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ahh-blue-dark)]"
+            className="brand-button font-bold bg-[var(--ahh-deep-teal)] text-white hover:bg-[var(--ahh-deep-teal)]/90"
           >
-            Go to dashboard
+            Go to Dashboard
           </Link>
         </div>
       </div>
@@ -93,68 +141,134 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-      <div className="mb-6">
-        <p className="text-sm font-semibold uppercase tracking-wide text-[var(--ahh-blue)]">
+    <form onSubmit={handleSubmit} className="rounded-[16px] bg-white p-6 sm:p-10 lg:p-12 border border-[var(--ahh-border)] shadow-3xs space-y-6">
+      <div>
+        <p className="text-xs font-bold uppercase tracking-widest text-[var(--ahh-deep-teal)]">
           Claim request
         </p>
-        <h1 className="mt-2 text-2xl font-bold text-gray-950">{clinic.name}</h1>
-        <p className="mt-2 text-sm text-gray-600">
+        <h1 className="mt-2 text-2xl font-bold text-[var(--ahh-ink)]">{clinic.name}</h1>
+        <p className="mt-2 text-xs text-[var(--ahh-muted)] leading-relaxed">
           Verify that you own or manage this clinic profile. Approved owners will be able to update profile details in a later dashboard release.
         </p>
       </div>
 
       <div className="space-y-4">
-        <label className="block">
-          <span className="text-sm font-medium text-gray-700">Verification method</span>
+        {!isAuthenticated && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+                Full name *
+              </label>
+              <input
+                required
+                value={fullName}
+                onChange={(event) => setFullName(event.target.value)}
+                className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+                placeholder="Your full name"
+              />
+            </div>
+
+            <div className="space-y-1.5 sm:col-span-2">
+              <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+                Role at Clinic *
+              </label>
+              <input
+                required
+                value={role}
+                onChange={(event) => setRole(event.target.value)}
+                className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+                placeholder="Owner, Manager, Doctor, etc."
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+                Email Address *
+              </label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+                placeholder="you@example.com"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+                Phone Number *
+              </label>
+              <input
+                type="tel"
+                required
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+                placeholder="(555) 000-0000"
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+            Verification Method *
+          </label>
           <select
             value={proofType}
             onChange={(event) => setProofType(event.target.value)}
-            className="mt-1 h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100"
+            className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
           >
             <option value="npi_verification">NPI verification</option>
             <option value="phone_verification">Phone verification</option>
             <option value="document">Business document</option>
           </select>
-        </label>
+        </div>
 
-        <label className="block">
-          <span className="text-sm font-medium text-gray-700">Proof detail</span>
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+            Proof Detail *
+          </label>
           <input
             required
             value={proofValue}
             onChange={(event) => setProofValue(event.target.value)}
-            className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100"
+            className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
             placeholder="NPI number, callback phone, or document reference"
           />
-        </label>
+        </div>
 
-        <label className="block">
-          <span className="text-sm font-medium text-gray-700">Additional notes</span>
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+            Additional notes
+          </label>
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             rows={4}
-            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100"
+            className="w-full px-3.5 py-2.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
             placeholder="Tell us your role at the clinic and the best way to verify ownership."
           />
-        </label>
+        </div>
       </div>
 
       {message && (
-        <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          {message}
-        </p>
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs font-semibold text-destructive flex items-center gap-2">
+          <span>{message}</span>
+        </div>
       )}
 
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="mt-6 flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[var(--ahh-blue)] px-4 text-sm font-semibold text-white hover:bg-[var(--ahh-blue-dark)] disabled:opacity-60"
-      >
-        {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-        Submit claim request
-      </button>
+      <div className="pt-2 flex justify-end">
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="brand-button-secondary px-8 font-bold flex items-center justify-center shrink-0 min-h-10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+          Submit claim request
+        </button>
+      </div>
     </form>
   );
 }
