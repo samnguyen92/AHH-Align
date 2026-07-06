@@ -1,6 +1,7 @@
 import os
 import re
 import unicodedata
+from datetime import datetime, timedelta
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -423,14 +424,53 @@ def reject_claim(identifier: str) -> None:
     print(f"[!] No pending claim request or clinic submission found with ID '{identifier}'.")
 
 
-def check_analytics() -> None:
+def check_analytics(timeframe: str = "week", filter_type: str = "all") -> None:
+    timeframe = (timeframe or "week").strip().lower()
+    filter_type = (filter_type or "all").strip().lower()
+
+    now = datetime.utcnow()
+    if timeframe == "today":
+        cutoff = datetime(now.year, now.month, now.day)
+        label = "Today"
+    elif timeframe == "week":
+        cutoff = now - timedelta(days=7)
+        label = "Last 7 Days (Week)"
+    elif timeframe == "month":
+        cutoff = now - timedelta(days=30)
+        label = "Last 30 Days (Month)"
+    else:
+        cutoff = now - timedelta(days=7)
+        label = "Last 7 Days (Week)"
+
     try:
         supabase = create_admin_client()
-        res = supabase.table("analytics_events").select("*").order("created_at", desc=True).limit(500).execute()
+        res = supabase.table("analytics_events")\
+            .select("*")\
+            .gte("created_at", cutoff.isoformat())\
+            .order("created_at", desc=True)\
+            .limit(1000)\
+            .execute()
         events = res.data or []
 
+        type_map = {
+            "views": "page_view",
+            "searches": "search_query",
+            "clicks": "clinic_click",
+            "claims": "claim_start"
+        }
+
+        target_name = type_map.get(filter_type)
+        if target_name:
+            events = [e for e in events if e.get("event_name") == target_name]
+
         print("=== Asian Health Hub Analytics ===")
-        print(f"Aggregating last {len(events)} events:")
+        print(f"Timeframe: {label}")
+        print(f"Filter type: {filter_type.upper()}")
+        print(f"Total matched events: {len(events)}")
+
+        if not events:
+            print("No events logged for this query filter.")
+            return
 
         counts = {"page_view": 0, "search_query": 0, "clinic_click": 0, "claim_start": 0}
         for e in events:
@@ -438,32 +478,55 @@ def check_analytics() -> None:
             if evt in counts:
                 counts[evt] += 1
 
-        for name, c in counts.items():
-            print(f" - {name}: {c}")
+        if filter_type == "all":
+            print("\nEvent Counts:")
+            for name, c in counts.items():
+                print(f" - {name}: {c}")
 
-        searches = {}
-        for e in events:
-            if e.get("event_name") == "search_query" and e.get("metadata"):
-                q = e["metadata"].get("query")
-                if q:
-                    q = q.strip().lower()
-                    searches[q] = searches.get(q, 0) + 1
+        if filter_type in ("all", "searches"):
+            searches = {}
+            for e in events:
+                if e.get("event_name") == "search_query" and e.get("metadata"):
+                    q = e["metadata"].get("query")
+                    if q:
+                        q = q.strip().lower()
+                        searches[q] = searches.get(q, 0) + 1
+            sorted_searches = sorted(searches.items(), key=lambda x: x[1], reverse=True)[:5]
+            print("\nTop Search Queries:")
+            if sorted_searches:
+                for query, count in sorted_searches:
+                    print(f" - \"{query}\": {count} searches")
+            else:
+                print(" - None")
 
-        sorted_searches = sorted(searches.items(), key=lambda x: x[1], reverse=True)[:5]
-        print("\nTop Search Queries:")
-        for query, count in sorted_searches:
-            print(f" - \"{query}\": {count} searches")
+        if filter_type in ("all", "clicks"):
+            clicks = {}
+            for e in events:
+                if e.get("event_name") == "clinic_click" and e.get("metadata"):
+                    name = e["metadata"].get("clinic_name", "Unknown Clinic")
+                    clicks[name] = clicks.get(name, 0) + 1
+            sorted_clicks = sorted(clicks.items(), key=lambda x: x[1], reverse=True)[:5]
+            print("\nTop Clicked Clinics:")
+            if sorted_clicks:
+                for name, count in sorted_clicks:
+                    print(f" - {name}: {count} clicks")
+            else:
+                print(" - None")
 
-        clicks = {}
-        for e in events:
-            if e.get("event_name") == "clinic_click" and e.get("metadata"):
-                name = e["metadata"].get("clinic_name", "Unknown Clinic")
-                clicks[name] = clicks.get(name, 0) + 1
+        if filter_type == "views":
+            paths = {}
+            for e in events:
+                if e.get("event_name") == "page_view" and e.get("path"):
+                    p = e.get("path")
+                    paths[p] = paths.get(p, 0) + 1
+            sorted_paths = sorted(paths.items(), key=lambda x: x[1], reverse=True)[:5]
+            print("\nTop Visited Paths:")
+            if sorted_paths:
+                for path, count in sorted_paths:
+                    print(f" - {path}: {count} views")
+            else:
+                print(" - None")
 
-        sorted_clicks = sorted(clicks.items(), key=lambda x: x[1], reverse=True)[:5]
-        print("\nTop Clicked Clinics:")
-        for name, count in sorted_clicks:
-            print(f" - {name}: {count} clicks")
     except Exception as e:
         print(f"[!] Analytics check failed: {e}")
 
@@ -471,14 +534,43 @@ def check_analytics() -> None:
 def get_analytics_summary() -> str:
     try:
         supabase = create_admin_client()
-        res = supabase.table("analytics_events").select("event_name, created_at, metadata").order("created_at", desc=True).limit(500).execute()
+        now = datetime.utcnow()
+        cutoff_month = now - timedelta(days=30)
+        res = supabase.table("analytics_events")\
+            .select("event_name, created_at, metadata")\
+            .gte("created_at", cutoff_month.isoformat())\
+            .order("created_at", desc=True)\
+            .limit(3000)\
+            .execute()
         events = res.data or []
 
-        counts = {"page_view": 0, "search_query": 0, "clinic_click": 0, "claim_start": 0}
+        cutoff_today = datetime(now.year, now.month, now.day)
+        cutoff_week = now - timedelta(days=7)
+
+        counts_today = {"page_view": 0, "search_query": 0, "clinic_click": 0, "claim_start": 0}
+        counts_week = {"page_view": 0, "search_query": 0, "clinic_click": 0, "claim_start": 0}
+        counts_month = {"page_view": 0, "search_query": 0, "clinic_click": 0, "claim_start": 0}
+
         for e in events:
             evt = e.get("event_name")
-            if evt in counts:
-                counts[evt] += 1
+            if evt not in counts_month:
+                continue
+            
+            created_at_str = e.get("created_at")
+            if not created_at_str:
+                continue
+            
+            try:
+                clean_time = created_at_str.replace("Z", "").split("+")[0]
+                evt_time = datetime.fromisoformat(clean_time)
+            except Exception:
+                continue
+
+            counts_month[evt] += 1
+            if evt_time >= cutoff_week:
+                counts_week[evt] += 1
+            if evt_time >= cutoff_today:
+                counts_today[evt] += 1
 
         searches = {}
         for e in events:
@@ -499,13 +591,12 @@ def get_analytics_summary() -> str:
         clicks_str = ", ".join([f"{name} ({c})" for name, c in sorted_clicks])
 
         return (
-            f"Analytics Summary (last 500 events):\n"
-            f" - Page views: {counts['page_view']}\n"
-            f" - Search queries: {counts['search_query']}\n"
-            f" - Clinic clicks: {counts['clinic_click']}\n"
-            f" - Claims started: {counts['claim_start']}\n"
-            f"Top searches: {searches_str or 'None'}\n"
-            f"Top clinics: {clicks_str or 'None'}"
+            "Analytics Summary:\n"
+            f" - TODAY: Views={counts_today['page_view']}, Searches={counts_today['search_query']}, Clicks={counts_today['clinic_click']}\n"
+            f" - WEEK (7 Days): Views={counts_week['page_view']}, Searches={counts_week['search_query']}, Clicks={counts_week['clinic_click']}, Claims={counts_week['claim_start']}\n"
+            f" - MONTH (30 Days): Views={counts_month['page_view']}, Searches={counts_month['search_query']}, Clicks={counts_month['clinic_click']}, Claims={counts_month['claim_start']}\n"
+            f"Top searches (30d): {searches_str or 'None'}\n"
+            f"Top clinics (30d): {clicks_str or 'None'}"
         )
     except Exception as exc:
         return f"Analytics summary unavailable: {exc}"

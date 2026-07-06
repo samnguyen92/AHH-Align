@@ -336,12 +336,12 @@ def reject_claim_job(identifier: str) -> str:
     )
 
 
-def check_analytics_job() -> str:
+def check_analytics_job(timeframe: str = "week", filter_type: str = "all") -> str:
     from admin_actions import check_analytics
 
     return _run_with_captured_output(
         "check_analytics",
-        lambda: check_analytics(),
+        lambda: check_analytics(timeframe, filter_type),
     )
 
 

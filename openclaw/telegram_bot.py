@@ -875,6 +875,8 @@ Return JSON:
   "use_memory": false,
   "limit": null,
   "rewrite_instruction": null,
+  "timeframe": "week",
+  "filter_type": "all",
   "reason": "short internal reason"
 }}
 """.strip()
@@ -1087,12 +1089,16 @@ Return JSON:
             if target:
                 return self.build_rewrite_article_action(target, rewrite_instruction)
         if action == "check_analytics":
+            timeframe = str(data.get("timeframe") or "week").strip().lower()
+            filter_type = str(data.get("filter_type") or "all").strip().lower()
             return {
                 "type": "check_analytics",
-                "name": "check_analytics",
+                "name": f"check_analytics ({timeframe}, {filter_type})",
+                "timeframe": timeframe,
+                "filter_type": filter_type,
                 "summary": (
-                    "You want to check the website visitor statistics and popular searches, correct?\n\n"
-                    "Reply `approve` to run the analytics overview report."
+                    f"You want to run the analytics overview report for timeframe '{timeframe}' and filter type '{filter_type.upper()}', correct?\n\n"
+                    "Reply `approve` to start the check."
                 ),
             }
 
@@ -1821,7 +1827,9 @@ Return JSON:
         elif action_type == "multi_agent_research":
             self.run_job(chat_id, action["name"], lambda: research_job(action["request"]), action_type=action_type)
         elif action_type == "check_analytics":
-            self.run_job(chat_id, action["name"], check_analytics_job, action_type=action_type)
+            timeframe = action.get("timeframe", "week")
+            filter_type = action.get("filter_type", "all")
+            self.run_job(chat_id, action["name"], lambda: check_analytics_job(timeframe, filter_type), action_type=action_type)
         else:
             self.send_message(chat_id, "I do not know how to run this action yet. Please send a clearer request.")
 
@@ -1833,7 +1841,33 @@ Return JSON:
         elif command == "/status":
             self.send_message(chat_id, check_status())
         elif command in {"/analytics", "/check_analytics"}:
-            self.send_message(chat_id, check_analytics_job())
+            args = text.split()[1:]
+            timeframe = "week"
+            filter_type = "all"
+            for arg in args:
+                arg_lower = arg.lower().strip()
+                if arg_lower in ("today", "ngay", "hom-nay", "hôm-nay"):
+                    timeframe = "today"
+                elif arg_lower in ("week", "tuan", "tuần"):
+                    timeframe = "week"
+                elif arg_lower in ("month", "thang", "tháng"):
+                    timeframe = "month"
+                
+                if arg_lower in ("views", "view", "truy-cap", "truy-cập"):
+                    filter_type = "views"
+                elif arg_lower in ("searches", "search", "tim-kiem", "tìm-kiếm"):
+                    filter_type = "searches"
+                elif arg_lower in ("clicks", "click"):
+                    filter_type = "clicks"
+                elif arg_lower in ("claims", "claim"):
+                    filter_type = "claims"
+            
+            self.run_job(
+                chat_id,
+                f"check_analytics ({timeframe}, {filter_type})",
+                lambda: check_analytics_job(timeframe, filter_type),
+                action_type="check_analytics"
+            )
         elif command == "/tail":
             self.send_message(chat_id, tail_log())
         elif command == "/prompt":

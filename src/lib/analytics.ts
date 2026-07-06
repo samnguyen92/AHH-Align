@@ -12,6 +12,18 @@ export function trackEvent(
     return;
   }
 
+  // Forward to Google Analytics 4 (GA4) if available
+  if ((window as any).gtag) {
+    try {
+      (window as any).gtag('event', eventName, {
+        page_path: window.location.pathname,
+        ...metadata,
+      });
+    } catch (e) {
+      console.warn('[analytics] GA4 event forwarding failed:', e);
+    }
+  }
+
   const payload = JSON.stringify({
     event_name: eventName,
     path: window.location.pathname,

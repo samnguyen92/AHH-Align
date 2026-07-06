@@ -21,12 +21,26 @@ export async function GET(request: Request) {
 
   const supabase = createServerSupabaseClient();
 
-  // Fetch the last 2000 events to compute metrics on the fly
+  const { searchParams } = new URL(request.url);
+  const range = searchParams.get('range') || '7d';
+
+  let daysLimit = 7;
+  if (range === '30d') {
+    daysLimit = 30;
+  } else if (range === '1y') {
+    daysLimit = 365;
+  }
+
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - daysLimit);
+
+  // Fetch events based on range selection
   const { data: events, error } = await supabase
     .from('analytics_events')
     .select('*')
+    .gte('created_at', cutoffDate.toISOString())
     .order('created_at', { ascending: false })
-    .limit(2000);
+    .limit(4000);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -91,27 +105,47 @@ export async function GET(request: Request) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  // Daily page views for last 7 days
-  const dailyViews: Record<string, number> = {};
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    dailyViews[dateStr] = 0;
+  // 5. Daily or Monthly Trend
+  const trendViews: Record<string, number> = {};
+
+  if (range === '1y') {
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const dateStr = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      trendViews[dateStr] = 0;
+    }
+
+    events.forEach((e) => {
+      if (e.event_name === 'page_view') {
+        const dateStr = new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+        if (trendViews[dateStr] !== undefined) {
+          trendViews[dateStr]++;
+        }
+      }
+    });
+  } else {
+    const days = range === '30d' ? 30 : 7;
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      trendViews[dateStr] = 0;
+    }
+
+    events.forEach((e) => {
+      if (e.event_name === 'page_view') {
+        const dateStr = new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        if (trendViews[dateStr] !== undefined) {
+          trendViews[dateStr]++;
+        }
+      }
+    });
   }
 
-  events.forEach((e) => {
-    if (e.event_name === 'page_view') {
-      const dateStr = new Date(e.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      if (dailyViews[dateStr] !== undefined) {
-        dailyViews[dateStr]++;
-      }
-    }
-  });
+  const dailyTrend = Object.entries(trendViews).map(([date, count]) => ({ date, count }));
 
-  const dailyTrend = Object.entries(dailyViews).map(([date, count]) => ({ date, count }));
-
-  // 5. Recent events stream
+  // 6. Recent events stream
   const recentEvents = events.slice(0, 30);
 
   return NextResponse.json({

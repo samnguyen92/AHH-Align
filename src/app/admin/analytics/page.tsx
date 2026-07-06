@@ -25,8 +25,9 @@ export default function AnalyticsDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [range, setRange] = useState("7d")
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = async (selectedRange: string = "7d") => {
     setError(null)
     try {
       const { data: sessionData } = await supabase.auth.getSession()
@@ -37,7 +38,7 @@ export default function AnalyticsDashboardPage() {
         headers["Authorization"] = `Bearer ${token}`
       }
 
-      const res = await fetch("/api/admin/analytics", { headers })
+      const res = await fetch(`/api/admin/analytics?range=${selectedRange}`, { headers })
       if (!res.ok) {
         if (res.status === 403) {
           throw new Error("You must be logged in as an admin to view this page.")
@@ -56,12 +57,18 @@ export default function AnalyticsDashboardPage() {
   }
 
   useEffect(() => {
-    fetchAnalytics()
+    fetchAnalytics(range)
   }, [])
 
   const handleRefresh = () => {
     setRefreshing(true)
-    fetchAnalytics()
+    fetchAnalytics(range)
+  }
+
+  const handleRangeChange = (newRange: string) => {
+    setRefreshing(true)
+    setRange(newRange)
+    fetchAnalytics(newRange)
   }
 
   if (loading) {
@@ -159,28 +166,73 @@ export default function AnalyticsDashboardPage() {
 
       {/* Page Views Trend Chart */}
       <Card className="border border-border bg-card shadow-sm">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-md font-semibold text-foreground flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-primary" /> Page Views Trend (Last 7 Days)
-          </CardTitle>
+        <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between pb-6 gap-4">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-primary" />
+            <div>
+              <CardTitle className="text-md font-semibold text-foreground">Page Views Trend</CardTitle>
+              <p className="text-xs text-muted-foreground">Historical traffic view count</p>
+            </div>
+          </div>
+          {/* Time range filters */}
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/30 p-1 shrink-0">
+            {[
+              { id: "7d", label: "7 Days" },
+              { id: "30d", label: "30 Days" },
+              { id: "1y", label: "1 Year" },
+            ].map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => handleRangeChange(opt.id)}
+                className={`rounded-md px-3 py-1 text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                  range === opt.id
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </CardHeader>
-        <CardContent className="p-6">
+        <CardContent className="p-6 pt-0">
           {(() => {
             const dailyTrend = data?.dailyTrend || [];
             const maxVal = Math.max(...dailyTrend.map((d: { count: number }) => d.count), 1);
             const gridLines = [0, 0.25, 0.5, 0.75, 1];
 
+            // Spacing parameters
+            const chartWidth = 700;
+            const chartHeight = 180;
+            const paddingLeft = 50;
+            const paddingRight = 30;
+            const paddingTop = 20;
+            const paddingBottom = 40;
+
+            const graphWidth = chartWidth - paddingLeft - paddingRight;
+            const graphHeight = chartHeight - paddingTop - paddingBottom;
+
+            const barWidth = dailyTrend.length > 20 ? 12 : (dailyTrend.length > 10 ? 24 : 38);
+            const colWidth = graphWidth / dailyTrend.length;
+
             return (
               <div className="w-full">
-                <div className="relative h-64 w-full">
-                  <svg className="w-full h-full" viewBox="0 0 600 240" preserveAspectRatio="none">
+                <div className={`relative h-64 w-full transition-opacity duration-200 ${refreshing ? 'opacity-50' : 'opacity-100'}`}>
+                  <svg className="w-full h-full" viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#14b8a6" /> {/* teal-500 */}
+                        <stop offset="100%" stopColor="#3b82f6" /> {/* blue-500 */}
+                      </linearGradient>
+                    </defs>
+
                     {/* Grid lines */}
                     {gridLines.map((ratio, idx) => {
-                      const y = 30 + (1 - ratio) * 160;
+                      const y = paddingTop + (1 - ratio) * graphHeight;
                       const label = Math.round(ratio * maxVal);
                       return (
-                        <g key={idx} className="opacity-40">
-                          <line x1="50" y1={y} x2="570" y2={y} stroke="currentColor" className="text-border" strokeWidth="1" strokeDasharray="3 3" />
+                        <g key={idx} className="opacity-30">
+                          <line x1={paddingLeft} y1={y} x2={chartWidth - paddingRight} y2={y} stroke="currentColor" className="text-border" strokeWidth="1" strokeDasharray="3 3" />
                           <text x="15" y={y + 4} className="text-[10px] fill-muted-foreground font-semibold text-right" textAnchor="start">
                             {label}
                           </text>
@@ -190,22 +242,31 @@ export default function AnalyticsDashboardPage() {
 
                     {/* Bars */}
                     {dailyTrend.map((item: { date: string; count: number }, index: number) => {
-                      const barWidth = 36;
-                      const colWidth = (520) / dailyTrend.length;
-                      const x = 50 + index * colWidth + (colWidth - barWidth) / 2;
-                      const barHeight = (item.count / maxVal) * 160;
-                      const y = 190 - barHeight;
+                      const x = paddingLeft + index * colWidth + (colWidth - barWidth) / 2;
+                      const barHeight = (item.count / maxVal) * graphHeight;
+                      const y = chartHeight - paddingBottom - barHeight;
+
+                      const showLabel = dailyTrend.length > 20 ? (index % 5 === 0 || index === dailyTrend.length - 1) : true;
 
                       return (
                         <g key={index} className="group">
+                          {/* Hover highlight background column */}
+                          <rect
+                            x={paddingLeft + index * colWidth}
+                            y={paddingTop}
+                            width={colWidth}
+                            height={graphHeight}
+                            className="fill-muted/20 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                          />
                           {/* Interactive Bar */}
                           <rect
                             x={x}
                             y={y}
                             width={barWidth}
                             height={Math.max(barHeight, 2)}
-                            rx="4"
-                            className="fill-primary opacity-80 hover:opacity-100 transition-all duration-200 cursor-pointer"
+                            rx="3"
+                            fill="url(#barGradient)"
+                            className="opacity-90 hover:opacity-100 transition-all duration-200 cursor-pointer"
                           />
                           {/* Value label on top of bar on hover */}
                           <text
@@ -217,20 +278,22 @@ export default function AnalyticsDashboardPage() {
                             {item.count}
                           </text>
                           {/* X Axis Date Label */}
-                          <text
-                            x={x + barWidth / 2}
-                            y="215"
-                            textAnchor="middle"
-                            className="text-[10px] font-semibold fill-muted-foreground"
-                          >
-                            {item.date}
-                          </text>
+                          {showLabel && (
+                            <text
+                              x={x + barWidth / 2}
+                              y={chartHeight - 15}
+                              textAnchor="middle"
+                              className="text-[10px] font-semibold fill-muted-foreground"
+                            >
+                              {item.date}
+                            </text>
+                          )}
                         </g>
                       );
                     })}
 
                     {/* Bottom axis line */}
-                    <line x1="50" y1="190" x2="570" y2="190" stroke="currentColor" className="text-border" strokeWidth="1.5" />
+                    <line x1={paddingLeft} y1={chartHeight - paddingBottom} x2={chartWidth - paddingRight} y2={chartHeight - paddingBottom} stroke="currentColor" className="text-border" strokeWidth="1.5" />
                   </svg>
                 </div>
               </div>
