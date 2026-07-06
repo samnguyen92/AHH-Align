@@ -7,6 +7,7 @@ export interface AdminClinicRow {
   name: string;
   specialty: string;
   status: string;
+  slug: string;
 }
 
 export interface AdminArticleRow {
@@ -96,6 +97,7 @@ function mapClinic(clinic: Clinic): AdminClinicRow {
     name: clinic.name,
     specialty: clinic.specialty ?? 'Primary Care',
     status: clinicStatus(clinic),
+    slug: clinic.slug,
   };
 }
 
@@ -335,4 +337,20 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
       lastSignInAt: user.last_sign_in_at ?? null,
     };
   });
+}
+
+export async function getAdminClinicById(id: string): Promise<Clinic | null> {
+  const supabase = createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from('clinics')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[admin-service] getAdminClinicById error:', error);
+    return null;
+  }
+
+  return data as Clinic | null;
 }

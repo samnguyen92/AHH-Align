@@ -423,4 +423,93 @@ def reject_claim(identifier: str) -> None:
     print(f"[!] No pending claim request or clinic submission found with ID '{identifier}'.")
 
 
+def check_analytics() -> None:
+    try:
+        supabase = create_admin_client()
+        res = supabase.table("analytics_events").select("*").order("created_at", desc=True).limit(500).execute()
+        events = res.data or []
+
+        print("=== Asian Health Hub Analytics ===")
+        print(f"Aggregating last {len(events)} events:")
+
+        counts = {"page_view": 0, "search_query": 0, "clinic_click": 0, "claim_start": 0}
+        for e in events:
+            evt = e.get("event_name")
+            if evt in counts:
+                counts[evt] += 1
+
+        for name, c in counts.items():
+            print(f" - {name}: {c}")
+
+        searches = {}
+        for e in events:
+            if e.get("event_name") == "search_query" and e.get("metadata"):
+                q = e["metadata"].get("query")
+                if q:
+                    q = q.strip().lower()
+                    searches[q] = searches.get(q, 0) + 1
+
+        sorted_searches = sorted(searches.items(), key=lambda x: x[1], reverse=True)[:5]
+        print("\nTop Search Queries:")
+        for query, count in sorted_searches:
+            print(f" - \"{query}\": {count} searches")
+
+        clicks = {}
+        for e in events:
+            if e.get("event_name") == "clinic_click" and e.get("metadata"):
+                name = e["metadata"].get("clinic_name", "Unknown Clinic")
+                clicks[name] = clicks.get(name, 0) + 1
+
+        sorted_clicks = sorted(clicks.items(), key=lambda x: x[1], reverse=True)[:5]
+        print("\nTop Clicked Clinics:")
+        for name, count in sorted_clicks:
+            print(f" - {name}: {count} clicks")
+    except Exception as e:
+        print(f"[!] Analytics check failed: {e}")
+
+
+def get_analytics_summary() -> str:
+    try:
+        supabase = create_admin_client()
+        res = supabase.table("analytics_events").select("event_name, created_at, metadata").order("created_at", desc=True).limit(500).execute()
+        events = res.data or []
+
+        counts = {"page_view": 0, "search_query": 0, "clinic_click": 0, "claim_start": 0}
+        for e in events:
+            evt = e.get("event_name")
+            if evt in counts:
+                counts[evt] += 1
+
+        searches = {}
+        for e in events:
+            if e.get("event_name") == "search_query" and e.get("metadata"):
+                q = e["metadata"].get("query")
+                if q:
+                    q = q.strip().lower()
+                    searches[q] = searches.get(q, 0) + 1
+        sorted_searches = sorted(searches.items(), key=lambda x: x[1], reverse=True)[:5]
+        searches_str = ", ".join([f'"{q}" ({c})' for q, c in sorted_searches])
+
+        clicks = {}
+        for e in events:
+            if e.get("event_name") == "clinic_click" and e.get("metadata"):
+                name = e["metadata"].get("clinic_name", "Unknown Clinic")
+                clicks[name] = clicks.get(name, 0) + 1
+        sorted_clicks = sorted(clicks.items(), key=lambda x: x[1], reverse=True)[:5]
+        clicks_str = ", ".join([f"{name} ({c})" for name, c in sorted_clicks])
+
+        return (
+            f"Analytics Summary (last 500 events):\n"
+            f" - Page views: {counts['page_view']}\n"
+            f" - Search queries: {counts['search_query']}\n"
+            f" - Clinic clicks: {counts['clinic_click']}\n"
+            f" - Claims started: {counts['claim_start']}\n"
+            f"Top searches: {searches_str or 'None'}\n"
+            f"Top clinics: {clicks_str or 'None'}"
+        )
+    except Exception as exc:
+        return f"Analytics summary unavailable: {exc}"
+
+
+
 

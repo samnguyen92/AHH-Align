@@ -18,9 +18,16 @@ def build_context() -> str:
     except Exception as exc:
         status = f"Status unavailable: {exc}"
 
+    try:
+        from admin_actions import get_analytics_summary
+        analytics = get_analytics_summary()
+    except Exception as exc:
+        analytics = f"Analytics summary unavailable: {exc}"
+
     return (
         "Runtime context:\n"
         f"{status}\n\n"
+        f"{analytics}\n\n"
         "Reminder: normal chat cannot run jobs. Jobs only run through slash commands."
     )
 

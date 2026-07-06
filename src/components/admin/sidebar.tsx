@@ -13,10 +13,12 @@ import {
   ChevronLeft,
   Bot,
   Users,
+  BarChart3,
 } from "lucide-react"
 
 const baseNavigation: { href: string; name: string; icon: React.ElementType }[] = [
   { href: "/admin", name: "Dashboard", icon: LayoutDashboard },
+  { href: "/admin/analytics", name: "Analytics", icon: BarChart3 },
   { href: "/admin/clinics", name: "Clinics Management", icon: Building2 },
   { href: "/admin/articles", name: "Content CMS", icon: FileText },
   { href: "/admin/claims", name: "Claim Requests", icon: ClipboardList },

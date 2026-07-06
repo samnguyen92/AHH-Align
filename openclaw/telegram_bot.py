@@ -41,6 +41,7 @@ from jobs import (
     check_claims_job,
     approve_claim_job,
     reject_claim_job,
+    check_analytics_job,
 )
 
 load_dotenv(".env")
@@ -345,6 +346,7 @@ class TelegramBot:
             "/generate_pulse [topic] - generate one monthly AHH Pulse newsletter issue (spotlights clinics, drafts advice column, generates cover image)\n"
             "/research <topic> - run multi-agent research and return a sourced report\n"
             "/ask <message> - ask the OpenClaw AI agent\n"
+            "/analytics - show traffic stats, top searches, and clicked clinics\n"
             "/prompt - show the current agent system prompt\n"
             "/tail - show recent OpenClaw log\n"
             "/help - show this menu\n\n"
@@ -764,9 +766,11 @@ Allowed actions:
 - find_clinics
 - scrape_clinic_url
 - multi_agent_research
+- check_analytics
 
 Rules:
 - Decision priority:
+  0. If the user asks to see, check, view, list, print, or report analytics, visitor stats, traffic numbers, search queries, or clinic click counts, choose check_analytics.
   1. If the user asks to scrape, add, import, save, or create a clinic/directory profile from one exact clinic website URL, choose scrape_clinic_url.
   2. If the user asks to change, replace, update, regenerate, or "thay đổi" images/photos for one specific article/blog/insight, choose regenerate_article_images.
   3. If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, choose rewrite_article.
@@ -1082,6 +1086,15 @@ Return JSON:
             rewrite_instruction = str(data.get("rewrite_instruction") or original_text).strip()
             if target:
                 return self.build_rewrite_article_action(target, rewrite_instruction)
+        if action == "check_analytics":
+            return {
+                "type": "check_analytics",
+                "name": "check_analytics",
+                "summary": (
+                    "You want to check the website visitor statistics and popular searches, correct?\n\n"
+                    "Reply `approve` to run the analytics overview report."
+                ),
+            }
 
         return None
 
@@ -1807,6 +1820,8 @@ Return JSON:
             self.run_job(chat_id, action["name"], lambda: generate_guide_job(action.get("topic")), action_type=action_type)
         elif action_type == "multi_agent_research":
             self.run_job(chat_id, action["name"], lambda: research_job(action["request"]), action_type=action_type)
+        elif action_type == "check_analytics":
+            self.run_job(chat_id, action["name"], check_analytics_job, action_type=action_type)
         else:
             self.send_message(chat_id, "I do not know how to run this action yet. Please send a clearer request.")
 
@@ -1817,6 +1832,8 @@ Return JSON:
             self.send_message(chat_id, self.help_text())
         elif command == "/status":
             self.send_message(chat_id, check_status())
+        elif command in {"/analytics", "/check_analytics"}:
+            self.send_message(chat_id, check_analytics_job())
         elif command == "/tail":
             self.send_message(chat_id, tail_log())
         elif command == "/prompt":

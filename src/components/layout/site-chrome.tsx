@@ -1,12 +1,15 @@
 "use client"
 
-import { usePathname } from "next/navigation"
+import { useEffect } from "react"
+import { usePathname, useRouter } from "next/navigation"
 import { Header } from "@/components/layout/header"
 import { BottomCTA } from "@/components/layout/bottom-cta"
 import { Footer } from "@/components/layout/footer"
+import { supabase } from "@/services/supabase-client"
 
 export function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
   const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/")
   const isHome = pathname === "/"
   const isAbout = pathname === "/about"
@@ -16,6 +19,16 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
   const isInsightDetail = /^\/insights\/[^/]+/.test(pathname)
   const isClinicDetail = /^\/clinics\/[^/]+/.test(pathname)
   const isClaim = pathname === "/claim" || pathname.startsWith("/claim/")
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        router.push('/auth/reset-password')
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [router])
 
   if (isAdmin) {
     return <>{children}</>

@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
   const token = getBearerToken(request) ?? cookieStore.get(AUTH_COOKIE_NAME)?.value;
   const user = token ? await getUserFromAccessToken(token) : null;
 
-  const proofData = body.proof_data ?? {};
+  const proofData = (body.proof_data as any) ?? {};
   if (!user) {
     const { full_name, email, phone, role } = proofData;
     if (!full_name || !email || !phone || !role) {
@@ -173,10 +173,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Telegram notification
-  const claimantName = user ? (user.user_metadata?.full_name || 'Authenticated User') : proofData.full_name;
-  const claimantEmail = user ? user.email : proofData.email;
-  const claimantPhone = user ? (user.phone || 'N/A') : proofData.phone;
+  const claimantName = user ? (user.name || 'Authenticated User') : proofData.full_name;
+  const claimantEmail = user ? (user.email || 'N/A') : proofData.email;
+  const claimantPhone = user ? 'N/A' : proofData.phone;
   const claimantRole = user ? 'Authenticated Owner' : proofData.role;
 
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });

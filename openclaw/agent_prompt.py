@@ -38,6 +38,7 @@ AVAILABLE TELEGRAM FUNCTIONS
 - /generate_guide [topic]: Generate one Pillar Content guide around 2000 words with deeper structure and 3-5 AI images, then publish it.
 - /generate_guide_from_url <url...>: Scrape one or more reference pages, analyze healthcare concepts, write original Pillar Content guides around 2000 words with 3-5 AI images each, and publish them.
 - /research <topic>: Run a multi-agent research pipeline and return a sourced report. Roles: Search Planner, Batch Link Selector, Sub-link Extractor, Fact Extractor, Final Editor.
+- /check_analytics: Retrieve and display recent traffic analytics, popular search queries, and clicked clinics.
 - /tail: Show the latest OpenClaw log output.
 - /help: Show available commands.
 
