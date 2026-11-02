@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { NewsletterForm } from './newsletter-form';
-import { BrandLogo } from './brand-logo';
 
 const socialLinks = [
   {
@@ -33,144 +32,126 @@ const socialLinks = [
 ];
 
 export function Footer() {
+  const year = new Date().getFullYear();
+
   return (
-    <footer className="home-footer bg-[#E5F0EB] px-[10px] pb-[10px] pt-[10px]">
-      <section className="home-newsletter mx-auto flex min-h-[299px] w-full max-w-[1420px] items-center rounded-[16px] bg-white px-5 py-12 sm:px-10 lg:px-20">
-        <div className="brand-container">
-          <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
-            <div className="max-w-xl">
-              <h3 className="text-[32px] font-medium leading-tight text-[var(--ahh-ink)]">Subscribe to AHH Pulse</h3>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--ahh-muted)]">
-                Monthly health insights, directory updates, and community resources.
-              </p>
+    <footer className="lg-footer">
+      <div className="lg-wrap">
+        {/* Top Row: Newsletter Bar */}
+        <div className="lg-footer-top">
+          <div>
+            <h3>Subscribe to AHH Pulse</h3>
+            <p>Monthly health insights, directory updates, and culturally informed care guides.</p>
+          </div>
+          <NewsletterForm />
+        </div>
+
+        {/* Middle Row: 5-Column Directory & Navigation Grid */}
+        <div className="lg-footer-grid">
+          <div className="lg-footer-brand">
+            <Link href="/" aria-label="Asian Health Hub home">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/brand/ahh-logo-new-white.svg" alt="Asian Health Hub" width="96" height="44" />
+            </Link>
+            <p>
+              Connecting Vietnamese, Korean, and Chinese-speaking patients with trusted clinics across the United States.
+            </p>
+            <div className="lg-footer-socials">
+              {socialLinks.map((social) => (
+                <a key={social.label} href={social.href} aria-label={social.label}>
+                  {social.icon}
+                </a>
+              ))}
             </div>
-            <NewsletterForm />
+          </div>
+
+          <div className="lg-footer-col">
+            <h4>Specialties</h4>
+            <ul>
+              {[
+                { href: '/search?specialty=Primary%20Care', label: 'Primary Care' },
+                { href: '/search?specialty=Dental', label: 'Dental Care' },
+                { href: '/search?specialty=Pediatrics', label: 'Pediatrics' },
+                { href: '/search?specialty=OB%2FGYN', label: 'Women’s Health' },
+                { href: '/search?specialty=Mental%20Health', label: 'Mental Health' },
+              ].map((link) => (
+                <li key={link.label}>
+                  <Link href={link.href}>{link.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="lg-footer-col">
+            <h4>Top Cities</h4>
+            <ul>
+              {[
+                { href: '/search?city=Los%20Angeles', label: 'Los Angeles, CA' },
+                { href: '/search?city=Houston', label: 'Houston, TX' },
+                { href: '/search?city=San%20Jose', label: 'San Jose, CA' },
+                { href: '/search?city=San%20Francisco', label: 'San Francisco, CA' },
+                { href: '/search?city=Seattle', label: 'Seattle, WA' },
+              ].map((link) => (
+                <li key={link.label}>
+                  <Link href={link.href}>{link.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="lg-footer-col">
+            <h4>Resources</h4>
+            <ul>
+              {[
+                { href: '/search', label: 'View All Clinics' },
+                { href: '/insights', label: 'Health Guides' },
+                { href: '/pulse', label: 'AHH Pulse' },
+                { href: '/search?language=Vietnamese', label: 'Vietnamese Care' },
+                { href: '/search?language=Korean', label: 'Korean Care' },
+              ].map((link) => (
+                <li key={link.label}>
+                  <Link href={link.href}>{link.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="lg-footer-col">
+            <h4>For Clinics &amp; Company</h4>
+            <ul>
+              {[
+                { href: '/claim', label: 'Claim a Free Profile' },
+                { href: '/dashboard', label: 'Provider Dashboard' },
+                { href: '/about', label: 'About Asian Health Hub' },
+                { href: '/about#mission', label: 'Our Mission' },
+                { href: '/claim', label: 'Contact Support' },
+              ].map((link) => (
+                <li key={link.label}>
+                  <Link href={link.href}>{link.label}</Link>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
-      </section>
 
-      <section
-        className="home-footer-panel relative isolate mx-auto mt-[10px] min-h-[520px] w-full max-w-[1420px] overflow-hidden rounded-[16px] px-5 py-10 sm:px-10 lg:min-h-[560px] lg:px-20"
-        style={{ backgroundColor: '#FFFFFF' }}
-      >
-        <div className="brand-container relative z-10">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute opacity-95"
-            style={{
-              left: '50%',
-              bottom: '-40px',
-              width: 'min(92vw, 1560px)',
-              maxWidth: '100%',
-              zIndex: -1,
-              transform: 'translateX(-50%)',
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/asian-footer-bg.svg" alt="" className="h-auto w-full" />
-          </div>
-
-          <div className="footer-link-grid pb-12">
-            <div>
-              <div className="mb-4">
-                <BrandLogo />
-              </div>
-              <p className="mb-5 max-w-xs text-xs leading-relaxed text-[var(--ahh-muted)]">
-                Connecting Vietnamese and Korean-speaking patients with trusted clinics across the United States.
-              </p>
-              <div className="flex items-center gap-3">
-                {socialLinks.map((social) => (
-                  <a
-                    key={social.label}
-                    href={social.href}
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-[#E5F0ED] text-[var(--ahh-deep-teal)] transition-colors hover:bg-[var(--ahh-lime)]"
-                    aria-label={social.label}
-                  >
-                    {social.icon}
-                  </a>
-                ))}
-              </div>
+        {/* Bottom Row: Legal Disclaimer & Copyright (Longevity .legal style) */}
+        <div className="lg-footer-legal">
+          <p>
+            Educational, not medical advice. Clinic details, pricing, and language availability are listed to help
+            patients compare care options. Always confirm services, language support, and insurance coverage directly
+            with the clinic before booking an appointment.
+          </p>
+          <div className="lg-footer-legal-row">
+            <span>© {year} Asian Health Hub. All rights reserved.</span>
+            <div className="lg-footer-legal-links">
+              <Link href="/search">Directory</Link>
+              <Link href="/insights">Insights</Link>
+              <Link href="/about">About</Link>
+              <Link href="/claim">Claim Profile</Link>
             </div>
-
-            <div>
-              <h4 className="mb-3 text-xs font-extrabold uppercase text-[var(--ahh-deep-teal)]">Directory</h4>
-              <ul className="space-y-2">
-                {[
-                  { href: '/search?groupBy=specialty', label: 'Browse by Specialty' },
-                  { href: '/search?groupBy=city', label: 'Browse by City' },
-                  { href: '/search?groupBy=language', label: 'Browse by Language' },
-                  { href: '/search', label: 'View All Clinics' },
-                ].map((link) => (
-                  <li key={`directory-${link.label}-${link.href}`}>
-                    <Link href={link.href} className="text-sm text-[var(--ahh-muted)] transition-colors hover:text-[var(--ahh-deep-teal)]">
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="mb-3 text-xs font-extrabold uppercase text-[var(--ahh-deep-teal)]">Resources</h4>
-              <ul className="space-y-2">
-                {[
-                  { href: '/insights', label: 'Health Guide' },
-                  { href: '/pulse', label: 'AHH Pulse' },
-                  { href: '#faq', label: 'Patient FAQ' },
-                  { href: '/claim', label: 'For Providers' },
-                ].map((link) => (
-                  <li key={`resources-${link.label}-${link.href}`}>
-                    <Link href={link.href} className="text-sm text-[var(--ahh-muted)] transition-colors hover:text-[var(--ahh-deep-teal)]">
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="mb-3 text-xs font-extrabold uppercase text-[var(--ahh-deep-teal)]">For Clinics</h4>
-              <ul className="space-y-2">
-                {[
-                  { href: '/claim', label: 'Claim a Free Profile' },
-                  { href: '/dashboard', label: 'Profile Management' },
-                  { href: '/search', label: 'Clinic Directory' },
-                  { href: '/claim', label: 'Contact Support' },
-                ].map((link) => (
-                  <li key={`clinics-${link.label}-${link.href}`}>
-                    <Link href={link.href} className="text-sm text-[var(--ahh-muted)] transition-colors hover:text-[var(--ahh-deep-teal)]">
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="mb-3 text-xs font-extrabold uppercase text-[var(--ahh-deep-teal)]">Company</h4>
-              <ul className="space-y-2">
-                {[
-                  { href: '/about', label: 'About Us' },
-                  { href: '/about#mission', label: 'Our Mission' },
-                  { href: '/insights', label: 'Press' },
-                  { href: '/claim', label: 'Contact' },
-                ].map((link) => (
-                  <li key={`company-${link.label}-${link.href}`}>
-                    <Link href={link.href} className="text-sm text-[var(--ahh-muted)] transition-colors hover:text-[var(--ahh-deep-teal)]">
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <div className="relative z-10 mt-8 flex flex-col gap-3 border-t border-[var(--ahh-border)] pt-5 text-xs text-[var(--ahh-muted)] sm:flex-row sm:items-center sm:justify-between lg:mt-16">
-            <p>Brand Identity v1.0 · {new Date().getFullYear()}</p>
-            <p>© {new Date().getFullYear()} Asian Health Hub. All rights reserved.</p>
           </div>
         </div>
-      </section>
+      </div>
     </footer>
   );
 }

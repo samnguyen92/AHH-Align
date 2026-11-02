@@ -59,6 +59,20 @@ export interface ClinicMetadata {
   google_photo_attributions?: unknown[];
   third_party_profiles?: ThirdPartyProfile[];
   external_sources?: ExternalSource[];
+  /** Organization-level profile (Longevity-style): memberships, many locations, care model */
+  profile_updated_at?: string;
+  founded_year?: number;
+  price_tier?: '$' | '$$' | '$$$' | '$$$$' | string;
+  memberships?: MembershipTier[];
+  pricing_summary?: PricingSummary;
+  locations?: ClinicLocation[];
+  opening_locations?: string[];
+  care_model?: CareModel;
+  diagnostics?: DiagnosticOffering[];
+  what_to_know?: HighlightItem[];
+  before_you_book?: HighlightItem[];
+  differentiators?: HighlightItem[];
+  licenses?: string[];
   location?: {
     latitude?: number;
     longitude?: number;
@@ -73,6 +87,64 @@ export interface ClinicMetadata {
     nearby_landmarks?: string[];
     map_url?: string | null;
   };
+}
+
+export interface MembershipTier {
+  name: string;
+  /** Display price, e.g. "$250" */
+  price: string;
+  /** e.g. "per month", "per year", "one-time" */
+  period?: string | null;
+  description?: string | null;
+  benefits?: string[];
+  /** Price when billed yearly, e.g. "$3,000" */
+  yearly_price?: string | null;
+  cancel_anytime?: boolean | null;
+  is_featured?: boolean;
+}
+
+export interface PricingSummary {
+  starting_price?: string | null;
+  starting_unit?: string | null;
+  typical_annual_range?: string | null;
+  payment_methods?: string | null;
+  accepts_hsa_fsa?: boolean | null;
+  checked_at?: string | null;
+}
+
+export interface ClinicLocation {
+  name: string;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  phone?: string | null;
+  /** open | opening_soon | closed */
+  status?: 'open' | 'opening_soon' | 'closed' | string;
+  description?: string | null;
+  highlights?: string[];
+  hours_note?: string | null;
+  map_url?: string | null;
+  /** Slug of the clinic row for this location, if it has its own profile */
+  clinic_slug?: string | null;
+}
+
+export interface CareModel {
+  engagement?: string[];
+  free_consultation?: boolean | null;
+  mobile_app?: boolean | null;
+  provider_count?: number | null;
+  telehealth?: boolean | null;
+  interpreter_available?: boolean | null;
+}
+
+export interface DiagnosticOffering {
+  name: string;
+  price_from?: string | null;
+  /** in_clinic | at_home | lab */
+  setting?: string | null;
+  detail?: string | null;
+  description?: string | null;
 }
 
 export interface HighlightItem {
@@ -103,6 +175,8 @@ export interface TeamMember {
   role?: string | null;
   languages_spoken?: string[];
   bio_snippet?: string | null;
+  image_url?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface PricingItem {

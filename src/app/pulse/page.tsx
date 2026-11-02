@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ArrowRight, Leaf, Mail, Search } from 'lucide-react';
 import { getPublishedArticles } from '@/services/article-service';
 import NewsletterForm from '@/components/pulse/NewsletterForm';
+import { Reveal, SplitTitle } from '@/components/lg/motion';
 
 export const metadata: Metadata = {
   title: 'AHH Pulse',
@@ -164,9 +165,11 @@ export default async function PulsePage() {
                 <Leaf className="h-3.5 w-3.5 text-[var(--ahh-lime)]" />
                 Monthly Newsletter
               </p>
-              <h1 className="text-[48px] font-light leading-[1.05] tracking-normal sm:text-[62px] lg:text-[76px]">
-                AHH Pulse
-              </h1>
+              <SplitTitle
+                text="AHH Pulse"
+                tintFrom={1}
+                className="text-[48px] font-light leading-[1.05] tracking-normal sm:text-[62px] lg:text-[76px]"
+              />
 
               <div className="relative mt-2 mb-6 w-32">
                 <div className="h-[1.5px] w-full bg-[#3E8070] rounded-full" />
@@ -206,9 +209,9 @@ export default async function PulsePage() {
           </div>
 
           <div className="space-y-6">
-            {displayNewsletters.map((newsletter) => (
+            {displayNewsletters.map((newsletter, i) => (
+              <Reveal key={newsletter.issue + newsletter.title} delay={i * 0.06}>
               <Link
-                key={newsletter.issue + newsletter.title}
                 href={newsletter.href}
                 className="group relative flex flex-col sm:flex-row gap-6 sm:gap-8 rounded-[24px] bg-white border border-[#E9EEF4] p-5 sm:p-6 transition duration-300 hover:shadow-[0_12px_30px_rgba(0,0,0,0.04)] hover:-translate-y-0.5 cursor-pointer"
               >
@@ -250,6 +253,7 @@ export default async function PulsePage() {
                   </div>
                 </div>
               </Link>
+              </Reveal>
             ))}
           </div>
         </section>
@@ -272,7 +276,8 @@ export default async function PulsePage() {
 
           <div className="grid gap-6 md:grid-cols-3">
             {displayInsights.map((insight, idx) => (
-              <Link key={insight.title + idx} href={insight.href} className="brand-card group overflow-hidden bg-white transition hover:-translate-y-0.5 hover:shadow-md">
+              <Reveal key={insight.title + idx} delay={idx * 0.07} className="lg-fill">
+              <Link href={insight.href} className="brand-card group overflow-hidden bg-white transition hover:-translate-y-0.5 hover:shadow-md">
                 <div className="relative overflow-hidden bg-[#E9EEF4] aspect-[16/10]">
                   <Image
                     alt={insight.title}
@@ -288,6 +293,7 @@ export default async function PulsePage() {
                   </h3>
                 </div>
               </Link>
+              </Reveal>
             ))}
           </div>
         </section>

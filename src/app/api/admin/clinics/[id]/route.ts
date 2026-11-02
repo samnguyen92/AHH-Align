@@ -103,6 +103,9 @@ export async function PATCH(request: Request, { params }: RouteProps) {
 
   revalidatePath('/admin/clinics');
   revalidatePath(`/clinics/${id}`);
+  if (updated?.slug) {
+    revalidatePath(`/clinics/${updated.slug}`);
+  }
   revalidatePath('/search');
 
   return NextResponse.json({ ok: true, clinic: updated });

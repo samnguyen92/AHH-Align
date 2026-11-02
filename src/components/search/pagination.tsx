@@ -1,7 +1,6 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/button';
 
 interface PaginationProps {
   currentPage: number;
@@ -20,7 +19,6 @@ export function SearchPagination({ currentPage, totalPages }: PaginationProps) {
     router.push(`/search?${params.toString()}`);
   }
 
-  // Generate visible page numbers (max 5 around current)
   const pages: number[] = [];
   const start = Math.max(1, currentPage - 2);
   const end = Math.min(totalPages, currentPage + 2);
@@ -29,58 +27,54 @@ export function SearchPagination({ currentPage, totalPages }: PaginationProps) {
   }
 
   return (
-    <nav className="flex items-center justify-center gap-1 py-8" aria-label="Pagination">
-      <Button
-        variant="outline"
-        size="sm"
+    <nav className="lg-pagination" aria-label="Pagination">
+      <button
+        type="button"
         disabled={currentPage <= 1}
         onClick={() => goToPage(currentPage - 1)}
-        className="mr-2"
+        className="lg-page-btn"
       >
-        Previous
-      </Button>
+        ← Prev
+      </button>
 
       {start > 1 && (
         <>
-          <Button variant="ghost" size="sm" onClick={() => goToPage(1)}>1</Button>
-          {start > 2 && <span className="px-1 text-muted-foreground">…</span>}
+          <button type="button" onClick={() => goToPage(1)} className="lg-page-btn">
+            1
+          </button>
+          {start > 2 && <span className="px-1 text-sm text-[#5A7A70]">…</span>}
         </>
       )}
 
       {pages.map((page) => (
-        <Button
+        <button
           key={page}
-          variant={page === currentPage ? 'default' : 'ghost'}
-          size="sm"
+          type="button"
           onClick={() => goToPage(page)}
-          className={
-            page === currentPage
-              ? 'bg-[var(--ahh-deep-teal)] hover:bg-[var(--ahh-deep-teal)]/90 text-white font-bold shadow-sm'
-              : ''
-          }
+          className={`lg-page-btn ${page === currentPage ? 'is-active' : ''}`}
+          aria-current={page === currentPage ? 'page' : undefined}
         >
           {page}
-        </Button>
+        </button>
       ))}
 
       {end < totalPages && (
         <>
-          {end < totalPages - 1 && <span className="px-1 text-muted-foreground">…</span>}
-          <Button variant="ghost" size="sm" onClick={() => goToPage(totalPages)}>
+          {end < totalPages - 1 && <span className="px-1 text-sm text-[#5A7A70]">…</span>}
+          <button type="button" onClick={() => goToPage(totalPages)} className="lg-page-btn">
             {totalPages}
-          </Button>
+          </button>
         </>
       )}
 
-      <Button
-        variant="outline"
-        size="sm"
+      <button
+        type="button"
         disabled={currentPage >= totalPages}
         onClick={() => goToPage(currentPage + 1)}
-        className="ml-2"
+        className="lg-page-btn"
       >
-        Next
-      </Button>
+        Next →
+      </button>
     </nav>
   );
 }

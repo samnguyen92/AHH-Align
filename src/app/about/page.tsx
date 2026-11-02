@@ -1,315 +1,389 @@
 import type { Metadata } from 'next';
-import Image from 'next/image';
 import Link from 'next/link';
 import {
   ArrowRight,
   HeartHandshake,
   Languages,
-  MapPin,
-  Search,
   ShieldCheck,
-  Stethoscope,
   Users,
 } from 'lucide-react';
+import { CountUp, ParallaxImage, Reveal, SplitTitle } from '@/components/lg/motion';
 
 export const metadata: Metadata = {
   title: 'About Us',
   description:
-    'Asian Health Hub helps Vietnamese and Korean-speaking patients find language-accessible clinics across the United States.',
+    'Asian Health Hub helps Vietnamese, Korean, and Chinese-speaking patients find language-accessible clinics across the United States.',
   alternates: {
     canonical: '/about',
   },
 };
 
+const ARROW = (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <path d="M3 8h10M9 4l4 4-4 4" />
+  </svg>
+);
+
 const stats = [
   {
-    value: '9',
-    label: 'Medical Specialties',
-    detail: 'Covered in the directory',
+    to: 9,
+    suffix: '',
+    label: 'Medical specialties covered in the directory',
   },
   {
-    value: '10',
-    label: 'Top Asian Population Metros',
-    detail: 'Coast to coast coverage',
+    to: 10,
+    suffix: '',
+    label: 'Top Asian population metros coast to coast',
   },
   {
-    value: '+2',
-    label: 'Language Support',
-    detail: 'Vietnamese and Korean',
+    to: 3,
+    suffix: '+',
+    label: 'Languages supported (Vietnamese, Korean & Chinese)',
   },
   {
-    value: '100%',
-    label: 'Free for Patients',
-    detail: 'Always, forever',
+    to: 100,
+    suffix: '%',
+    label: 'Free for patients and families, always',
+  },
+] as const;
+
+const storyPoints = [
+  {
+    k: <><b>3.4M+</b> patients</>,
+    title: 'Closing the communication gap',
+    text: 'Over 3.4 million Vietnamese and Korean Americans face language barriers when seeking medical care, leading to delayed visits and avoidable stress.',
+    image: '/brand/about/hero-language-care.webp',
+    alt: 'Asian American patient speaking with a healthcare professional',
+    href: '/search',
+  },
+  {
+    k: <><b>Verified</b> profiles</>,
+    title: 'Clear language & specialty details',
+    text: 'We verify which languages are spoken by doctors and staff, alongside specialties, hours, insurance, and patient reviews in one transparent profile.',
+    image: '/brand/lg/primary-care.jpg',
+    alt: 'Doctor consulting with a patient in a bright clinic',
+    href: '/search?groupBy=language',
+  },
+  {
+    k: <><b>Under 5</b> minutes</>,
+    title: 'From search to direct booking',
+    text: 'Instead of calling multiple offices to ask about language support, families can compare clinics and connect directly in minutes.',
+    image: '/brand/lg/family.jpg',
+    alt: 'Multigenerational family walking out of a clinic together',
+    href: '/search?groupBy=city',
   },
 ] as const;
 
 const values = [
   {
     title: 'Language First',
-    body: 'We believe language is not a barrier. It is a right. Every patient deserves care they can fully understand.',
+    body: 'We believe language is not a barrier—it is a right. Every patient deserves medical care they can fully understand and trust.',
     icon: Languages,
   },
   {
     title: 'Radical Transparency',
-    body: 'Every clinic listing is verified. We show what we know and do not publish what we cannot confirm.',
+    body: 'Every clinic profile highlights clear, actionable facts. We show what we verify and never hide essential details behind paywalls.',
     icon: ShieldCheck,
   },
   {
     title: 'Free for Patients',
-    body: 'Asian Health Hub is free to use for every patient. Healthcare access should not cost extra.',
+    body: 'Asian Health Hub is 100% free for patients and caregivers. Finding culturally and linguistically aligned healthcare should never cost extra.',
     icon: HeartHandshake,
   },
   {
     title: 'Community First',
-    body: 'We are built for Vietnamese and Korean American communities, powered by patient needs, not advertisers.',
+    body: 'Built specifically for Vietnamese, Korean, and Chinese American families—guided by real patient needs rather than ad networks.',
     icon: Users,
   },
 ] as const;
 
 const steps = [
   {
+    step: 'Step 01',
     title: 'Search the Directory',
-    body: 'Enter your specialty, city, and preferred language filter.',
+    body: 'Select your medical specialty, metro area, and preferred language filter.',
     href: '/search',
-    cta: 'Browse the Directory',
+    cta: 'Browse Directory',
     image: '/brand/about/step-search-directory.webp',
     imageAlt: 'Patient searching a clinic directory on a tablet',
   },
   {
-    title: 'Browse Clinic Profiles',
-    body: 'Each profile shows languages spoken, services, hours, insurance, and patient reviews.',
+    step: 'Step 02',
+    title: 'Compare Clinic Profiles',
+    body: 'Review languages spoken, services offered, hours, insurance, and patient feedback.',
     href: '/search?groupBy=specialty',
-    cta: 'Browse by Specialty',
+    cta: 'By Specialty',
     image: '/brand/about/step-browse-profiles.webp',
     imageAlt: 'Patient browsing a clinic profile on a tablet',
   },
   {
+    step: 'Step 03',
     title: 'Filter by City or Language',
-    body: 'Narrow down by the US cities we cover, or filter directly to Vietnamese or Korean language support.',
+    body: 'Narrow down to major US metros or filter directly to Vietnamese, Korean, or Chinese support.',
     href: '/search?groupBy=city',
-    cta: 'Find Clinics in Your City',
+    cta: 'By City',
     image: '/brand/about/step-filter-language.webp',
     imageAlt: 'Patient filtering clinics by map and language options',
   },
   {
-    title: 'Contact the Clinic',
-    body: 'Call, visit the clinic website, or book directly. No account needed.',
+    step: 'Step 04',
+    title: 'Book With the Clinic',
+    body: 'Call the office or book directly on the clinic’s website—no account or middleman required.',
     href: '/search',
-    cta: 'Find a Clinic Now',
+    cta: 'Find a Clinic',
     image: '/brand/about/step-contact-clinic.webp',
     imageAlt: 'Patient calling a clinic while viewing contact details',
   },
 ] as const;
 
-const featureLinks = [
-  {
-    title: 'Directory',
-    body: 'Search by specialty, city, and language.',
-    icon: Search,
-  },
-  {
-    title: 'Language Access',
-    body: 'Compare verified language support before booking.',
-    icon: Languages,
-  },
-  {
-    title: 'Local Care',
-    body: 'Find clinics across major Asian American population metros.',
-    icon: MapPin,
-  },
-] as const;
-
-function AboutImage({
-  src,
-  alt,
-  className = '',
-  priority = false,
-}: {
-  src: string;
-  alt: string;
-  className?: string;
-  priority?: boolean;
-}) {
-  return (
-    <div className={`relative overflow-hidden rounded-[12px] bg-[#E9EEF4] ${className}`}>
-      <Image
-        src={src}
-        alt={alt}
-        fill
-        priority={priority}
-        sizes="(max-width: 768px) 100vw, 520px"
-        className="object-cover"
-      />
-    </div>
-  );
-}
-
 export default function AboutPage() {
   return (
-    <div className="bg-[#E5F0EB] px-[10px] pb-[10px]">
-      <div className="home-shell">
-        <section className="overflow-hidden rounded-[16px] bg-[var(--ahh-deep-teal)] text-white">
-          <div className="grid min-h-[660px] items-center gap-10 px-6 pb-16 pt-32 sm:px-10 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-24 lg:pb-20 lg:pt-40">
-            <div className="max-w-3xl">
-              <p className="mb-5 inline-flex rounded-full bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-white/75">
-                About Asian Health Hub
+    <div className="lg">
+      {/* ===== Section 1: Editorial Split Hero ===== */}
+      <section className="lg-about-hero">
+        <div className="lg-wrap">
+          <div className="grid">
+            <div>
+              <span className="eyebrow-pill">About Asian Health Hub</span>
+              <SplitTitle
+                className="lg-title"
+                text="Bridging the Language Gap in Asian American Healthcare"
+                tintFrom={4}
+              />
+              <p className="lg-lede">
+                Asian Health Hub was built on a simple belief: every patient deserves access to a clinic they can fully
+                communicate with. We connect Vietnamese, Korean, and Chinese-speaking patients across the United States
+                with trusted clinics that speak their language.
               </p>
-              <h1 className="text-[44px] font-light leading-[1.05] tracking-normal sm:text-[58px] lg:text-[72px]">
-                Bridging the Language Gap in Asian American Healthcare
-              </h1>
-              <p className="mt-7 max-w-2xl text-[17px] leading-7 text-white/70">
-                Asian Health Hub was built on a simple belief: every patient deserves access to a clinic they can fully communicate with. We connect Vietnamese and Korean-speaking patients across the US with verified clinics that speak their language.
-              </p>
-              <Link href="/search" className="brand-button mt-8">
-                <Search className="h-4 w-4" />
-                Find a Clinic
-              </Link>
-            </div>
-            <AboutImage
-              src="/brand/about/hero-language-care.webp"
-              alt="Asian American patient speaking with a healthcare professional"
-              className="min-h-[260px] w-full bg-white/90 lg:min-h-[340px]"
-              priority
-            />
-          </div>
-        </section>
-
-        <section className="home-stats-grid">
-          {stats.map((stat) => (
-            <div key={stat.label} className="min-h-[220px] rounded-[20px] bg-white p-7 shadow-[0_18px_50px_rgba(2,78,68,0.08)]">
-              <p className="text-[64px] font-bold leading-none text-[var(--ahh-deep-teal)]">{stat.value}</p>
-              <h2 className="mt-4 max-w-[240px] text-2xl font-medium leading-tight text-[var(--ahh-ink)]">{stat.label}</h2>
-              <p className="mt-3 text-[13px] leading-5 text-[var(--ahh-muted)]">{stat.detail}</p>
-            </div>
-          ))}
-        </section>
-
-        <section className="home-section grid gap-12 rounded-[16px] bg-white px-5 py-20 sm:px-10 lg:grid-cols-[minmax(0,1fr)_520px] lg:items-center lg:px-20 lg:py-[110px]">
-          <div>
-            <h2 className="max-w-lg text-[42px] font-light leading-[1.08] text-[var(--ahh-ink)] lg:text-[58px]">Our Story</h2>
-            <div className="mt-8 space-y-6 text-[15px] leading-7 text-[var(--ahh-muted)]">
-              <p>
-                Language barriers in healthcare lead to misdiagnoses, medication errors, and patients avoiding necessary clinic visits altogether. For Vietnamese and Korean Americans, this is a daily reality. We believe that should not be the case, healthcare is too important to be limited by language.
-              </p>
-              <p>
-                Asian Health Hub was created to change that: to build a free, trusted, searchable clinic directory that puts Vietnamese and Korean-speaking patients first. A place where finding the right clinic takes minutes, not days.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-[18px] border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)] p-6">
-              <div className="flex gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--ahh-mist)] text-[var(--ahh-blue)]">
-                  <Users className="h-4 w-4" />
-                </span>
-                <p className="text-xs leading-5 text-[var(--ahh-muted)]">
-                  <strong className="text-[var(--ahh-ink)]">3.4M+</strong> Vietnamese and Korean Americans who face language barriers every time they seek clinic care in the US.
-                </p>
+              <div className="mt-7 flex flex-wrap items-center gap-3">
+                <Link href="/search" className="lg-cta lg-cta--lime">
+                  Find a Clinic {ARROW}
+                </Link>
+                <Link href="/claim" className="lg-cta lg-cta--line">
+                  Claim a Free Profile
+                </Link>
               </div>
             </div>
-            <div className="rounded-[18px] border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)] p-6">
-              <div className="flex gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--ahh-mist)] text-[var(--ahh-blue)]">
-                  <Stethoscope className="h-4 w-4" />
-                </span>
-                <p className="text-xs leading-5 text-[var(--ahh-muted)]">
-                  <strong className="text-[var(--ahh-ink)]">Result:</strong> delayed care, missed diagnoses, and avoidance of clinics.
-                </p>
+
+            <Reveal className="lg-about-photo" delay={0.1}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/brand/about/hero-language-care.webp"
+                alt="Asian American patient speaking with a healthcare professional"
+                fetchPriority="high"
+              />
+              <div className="lg-about-chip">
+                <b>3.4M+</b>
+                <span>Vietnamese &amp; Korean Americans navigating language access in US healthcare</span>
               </div>
+            </Reveal>
+          </div>
+        </div>
+      </section>
+
+      {/* ===== Section 2: Our Story (Sticky Claim + 3 Proof Rows) ===== */}
+      <section className="lg-intro">
+        <div className="lg-wrap">
+          <div className="grid">
+            <div className="lg-claim">
+              <Reveal as="span" className="lg-eyebrow">Our Story</Reveal>
+              <Reveal as="h2" delay={0.05}>
+                Healthcare is too important to be <em>limited by language.</em>
+              </Reveal>
+              <Reveal as="p" delay={0.08} style={{ color: 'var(--lg-ink-2)', fontSize: 15.5, lineHeight: 1.65 }}>
+                Language barriers in healthcare lead to misdiagnoses, medication errors, and patients avoiding necessary
+                clinic visits altogether. Asian Health Hub was created to change that—putting language-first search in
+                every family’s hands.
+              </Reveal>
+              <Reveal delay={0.12}>
+                <Link href="/search" className="lg-link">Explore the clinic directory {ARROW}</Link>
+              </Reveal>
+            </div>
+
+            <div className="lg-points">
+              {storyPoints.map((p, i) => (
+                <Reveal key={p.title} delay={0.05 + i * 0.07}>
+                  <Link className="lg-point" href={p.href}>
+                    <span className="ph">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.image} alt={p.alt} loading="lazy" />
+                    </span>
+                    <div>
+                      <span className="k">{p.k}</span>
+                      <h3>{p.title}</h3>
+                      <p>{p.text}</p>
+                    </div>
+                    <span className="go" aria-hidden="true">{ARROW}</span>
+                  </Link>
+                </Reveal>
+              ))}
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section id="mission" className="home-section grid gap-12 rounded-[16px] bg-[var(--ahh-mist-2)] px-5 py-20 sm:px-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] lg:items-center lg:px-20 lg:py-[100px]">
-          <div className="space-y-10">
+      {/* ===== Section 3: Mission & Vision Split (Comp F Proof) ===== */}
+      <section id="mission" className="lg-proof">
+        <div className="lg-wrap">
+          <div className="grid">
+            <Reveal as="figure">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/brand/about/mission-family-care.webp"
+                alt="Healthcare professional discussing care with an older patient and family caregiver"
+                loading="lazy"
+              />
+            </Reveal>
+
             <div>
-              <h2 className="text-[42px] font-light leading-[1.08] text-[var(--ahh-ink)] lg:text-[58px]">Our Mission</h2>
-              <p className="mt-6 max-w-xl text-[15px] leading-7 text-[var(--ahh-muted)]">
-                To make language-accessible healthcare easy to find for every Vietnamese and Korean patient in the United States for free, without barriers.
-              </p>
-            </div>
-            <div>
-              <h2 className="text-[42px] font-light leading-[1.08] text-[var(--ahh-ink)] lg:text-[58px]">Our Vision</h2>
-              <p className="mt-6 max-w-xl text-[15px] leading-7 text-[var(--ahh-muted)]">
-                A United States where every Vietnamese or Korean patient can find a verified, language-compatible clinic in under 5 minutes from any city, for any specialty.
-              </p>
+              <Reveal as="span" className="lg-eyebrow">Mission &amp; Vision</Reveal>
+              <Reveal as="h2" className="lg-h2" style={{ marginTop: 8 }}>
+                Built so every family can choose care with clarity
+              </Reveal>
+              <Reveal as="p" delay={0.06} style={{ marginTop: 14, color: 'var(--lg-ink-2)', fontSize: 16, lineHeight: 1.65 }}>
+                <strong style={{ color: 'var(--lg-ink)', fontWeight: 600 }}>Our Mission:</strong> To make
+                language-accessible healthcare easy to find for every Vietnamese, Korean, and Chinese-speaking patient
+                in the United States—for free, without barriers.
+              </Reveal>
+              <Reveal as="p" delay={0.1} style={{ marginTop: 12, color: 'var(--lg-ink-2)', fontSize: 16, lineHeight: 1.65 }}>
+                <strong style={{ color: 'var(--lg-ink)', fontWeight: 600 }}>Our Vision:</strong> A United States where
+                every patient can find a verified, language-compatible clinic in under 5 minutes from any city, for any
+                specialty.
+              </Reveal>
+
+              <ul>
+                <Reveal as="li" delay={0.12}>Verified Vietnamese, Korean, and Chinese language support</Reveal>
+                <Reveal as="li" delay={0.16}>Transparent specialties, insurance, hours, and patient reviews</Reveal>
+                <Reveal as="li" delay={0.2}>Direct connection to clinics with zero patient fees</Reveal>
+              </ul>
+
+              <Reveal delay={0.24}>
+                <Link href="/search" className="lg-cta lg-cta--green">
+                  Find clinics near me {ARROW}
+                </Link>
+              </Reveal>
             </div>
           </div>
-          <AboutImage
-            src="/brand/about/mission-family-care.webp"
-            alt="Healthcare professional discussing care with an older patient and family caregiver"
-            className="min-h-[360px] w-full"
-          />
-        </section>
+        </div>
+      </section>
 
-        <section className="home-section rounded-[16px] bg-white px-5 py-20 sm:px-10 lg:px-20 lg:py-[92px]">
-          <h2 className="text-[42px] font-light leading-tight text-[var(--ahh-ink)] lg:text-[56px]">What We Stand For</h2>
-          <p className="mt-5 max-w-3xl text-sm leading-6 text-[var(--ahh-muted)]">
-            These are the principles that shape how we build Asian Health Hub and how we serve our community.
-          </p>
+      {/* ===== Section 4: Dark Stats Band (Comp F Night) ===== */}
+      <section className="lg-night">
+        <div className="lg-wrap">
+          <div className="grid">
+            <div>
+              <Reveal as="h2">
+                Built for community scale. <em>Free for every patient.</em>
+              </Reveal>
+              <Reveal as="p" delay={0.08}>
+                We focus on the specialties and metropolitan areas where Asian American families live and work, making
+                culturally informed care easier to discover nationwide.
+              </Reveal>
+            </div>
 
-          <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {values.map((value) => {
+            <div className="lg-stats">
+              {stats.map((stat, i) => (
+                <Reveal key={stat.label} className="lg-stat" delay={i * 0.06}>
+                  <CountUp to={stat.to} suffix={stat.suffix} />
+                  <span>{stat.label}</span>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ===== Section 5: What We Stand For (Core Values) ===== */}
+      <section className="lg-section">
+        <div className="lg-wrap">
+          <div className="lg-head">
+            <div>
+              <Reveal as="span" className="lg-eyebrow">Core Principles</Reveal>
+              <Reveal as="h2" style={{ marginTop: 6 }}>What we stand for</Reveal>
+              <Reveal as="p" className="sub">
+                The principles that shape how we build Asian Health Hub and serve our community.
+              </Reveal>
+            </div>
+          </div>
+
+          <div className="lg-cgrid">
+            {values.map((value, i) => {
               const Icon = value.icon;
               return (
-                <div key={value.title} className="rounded-[18px] bg-[var(--ahh-mist-2)] p-6 lg:min-h-[230px]">
-                  <Icon className="h-5 w-5 text-[var(--ahh-blue)]" />
-                  <h3 className="mt-4 text-sm font-bold text-[var(--ahh-ink)]">{value.title}</h3>
-                  <p className="mt-3 text-xs leading-6 text-[var(--ahh-muted)]">{value.body}</p>
-                </div>
+                <Reveal key={value.title} delay={i * 0.06} className="lg-fill">
+                  <div className="lg-vcard">
+                    <span className="ico">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <h3>{value.title}</h3>
+                    <p>{value.body}</p>
+                  </div>
+                </Reveal>
               );
             })}
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="home-section rounded-[16px] bg-[var(--ahh-mist-2)] px-5 py-20 sm:px-10 lg:px-20 lg:py-[96px]">
-          <div className="mb-8">
-            <h2 className="text-[42px] font-light leading-tight text-[var(--ahh-ink)] lg:text-[56px]">How Asian Health Hub Works</h2>
-            <p className="mt-5 max-w-2xl text-[15px] leading-7 text-[var(--ahh-muted)]">
-              Finding a language-accessible clinic near you should be simple.
-            </p>
+      {/* ===== Section 6: How Asian Health Hub Works ===== */}
+      <section className="lg-section lg-section--band">
+        <div className="lg-wrap">
+          <div className="lg-head">
+            <div>
+              <Reveal as="span" className="lg-eyebrow">How It Works</Reveal>
+              <Reveal as="h2" style={{ marginTop: 6 }}>How Asian Health Hub works</Reveal>
+            </div>
+            <Reveal>
+              <Link href="/search" className="lg-link">Open Directory {ARROW}</Link>
+            </Reveal>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+          <div className="lg-cgrid">
             {steps.map((step, index) => (
-              <div key={step.title} className="brand-card overflow-hidden">
-                <AboutImage src={step.image} alt={step.imageAlt} className="h-40 rounded-none bg-[#D9D9D9]" />
-                <div className="p-5">
-                  <h3 className="text-sm font-bold text-[var(--ahh-ink)]">
-                    {index + 1}. {step.title}
-                  </h3>
-                  <p className="mt-3 min-h-[72px] text-xs leading-6 text-[var(--ahh-muted)]">{step.body}</p>
-                  <Link href={step.href} className="brand-button-secondary mt-4 min-h-8 px-4 py-2 text-xs">
-                    {step.cta}
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              </div>
+              <Reveal key={step.title} delay={index * 0.06} className="lg-fill">
+                <Link href={step.href} className="lg-ccard">
+                  <div className="ph">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={step.image} alt={step.imageAlt} className="h-full w-full object-cover" loading="lazy" />
+                  </div>
+                  <div className="bd">
+                    <div>
+                      <span className="lg-eyebrow" style={{ fontSize: 11 }}>{step.step}</span>
+                      <h3 style={{ marginTop: 4 }}>{step.title}</h3>
+                      <p style={{ marginTop: 6, fontSize: 14, lineHeight: 1.55, color: 'var(--lg-ink-2)' }}>
+                        {step.body}
+                      </p>
+                    </div>
+                    <div className="foot">
+                      <span>{step.cta}</span>
+                      <b>Go <ArrowRight className="h-3.5 w-3.5" /></b>
+                    </div>
+                  </div>
+                </Link>
+              </Reveal>
             ))}
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="home-section rounded-[16px] bg-white px-5 py-12 sm:px-10 lg:px-20">
-          <div className="grid gap-5 rounded-[16px] bg-[var(--ahh-mist-2)] p-6 sm:grid-cols-3 sm:p-8">
-            {featureLinks.map((item) => {
-              const ItemIcon = item.icon;
-              return (
-                <div key={item.title} className="flex gap-4">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ahh-mist)] text-[var(--ahh-blue)]">
-                    <ItemIcon className="h-5 w-5" />
-                  </span>
-                  <div>
-                    <h3 className="text-sm font-bold text-[var(--ahh-ink)]">{item.title}</h3>
-                    <p className="mt-1 text-xs leading-5 text-[var(--ahh-muted)]">{item.body}</p>
-                  </div>
-                </div>
-              );
-            })}
+      {/* ===== Section 7: Parallax Film CTA ===== */}
+      <section className="lg-film">
+        <div className="lg-wrap">
+          <div className="lg-panel">
+            <ParallaxImage src="/brand/lg/family.jpg" alt="A family walks out of a clinic together" />
+            <div className="copy">
+              <Reveal as="h2">Ready to find care in the language your family trusts?</Reveal>
+              <Reveal as="p" delay={0.08}>
+                Browse verified clinics by language, specialty, or city—or claim your clinic’s free profile today.
+              </Reveal>
+              <Reveal delay={0.16} className="flex flex-wrap gap-3">
+                <Link href="/search" className="lg-cta lg-cta--lime">Browse the Directory {ARROW}</Link>
+                <Link href="/claim" className="lg-cta lg-cta--line">Claim Your Profile</Link>
+              </Reveal>
+            </div>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   );
 }

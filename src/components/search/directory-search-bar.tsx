@@ -7,7 +7,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@/components/ui/select';
 
 const SPECIALTIES = [
@@ -50,7 +49,6 @@ export function DirectorySearchBar() {
   const [city, setCity] = useState(searchParams.get('city') ?? '');
   const [language, setLanguage] = useState(searchParams.get('language') ?? '');
 
-  // Bidirectional sync: Update local states when URL changes (e.g. via Sidebar Filters)
   useEffect(() => {
     setKeyword(searchParams.get('query') ?? '');
     setSpecialty(searchParams.get('specialty') ?? '');
@@ -85,7 +83,7 @@ export function DirectorySearchBar() {
       params.delete('language');
     }
 
-    params.delete('page'); // Reset pagination
+    params.delete('page');
     router.push(`/search?${params.toString()}`);
   }
 
@@ -100,26 +98,37 @@ export function DirectorySearchBar() {
   }
 
   return (
-    <div className="brand-input-shell mx-auto max-w-[1360px] p-2 bg-white shadow-[0_18px_50px_rgba(2,78,68,0.06)] rounded-lg">
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+    <div className="lg-dir-searchbox">
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2">
         {/* Keyword Search */}
         <div className="flex-[2] relative">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ahh-deep-teal)" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#024E44"
+            strokeWidth="2.2"
+            className="absolute left-3.5 top-1/2 -translate-y-1/2"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
           </svg>
           <input
             type="text"
-            placeholder="Search by specialty, clinic name, or keyword..."
+            placeholder="Search by clinic name, doctor, symptom, or keyword..."
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-full h-10 pl-9 pr-3 text-sm text-[var(--ahh-ink)] placeholder:text-[var(--ahh-muted-2)] bg-transparent border-0 outline-none"
+            className="w-full h-11 pl-10 pr-3 text-[14.5px] font-medium text-[#0D1F1C] placeholder:text-[#5A7A70] bg-transparent border-0 outline-none"
           />
         </div>
 
-        {/* Dividers & Select Dropdowns */}
-        <div className="my-1 hidden w-px self-stretch bg-gray-200 sm:block" />
+        <div className="my-1.5 hidden w-px self-stretch bg-[#024E44]/12 lg:block" />
 
+        {/* Specialty Dropdown */}
         <Select
           value={specialty || 'all-specialties'}
           onValueChange={(val) => {
@@ -128,9 +137,9 @@ export function DirectorySearchBar() {
             applyFilters(keyword, finalVal, city, language);
           }}
         >
-          <SelectTrigger className="flex-1 h-10 border-0 bg-transparent text-sm focus:ring-0 text-[var(--ahh-ink)] placeholder:text-[var(--ahh-muted-2)] flex items-center justify-between">
-            <span className="flex flex-1 text-left">
-              {specialty ? specialty : "All Specialties"}
+          <SelectTrigger className="flex-1 h-11 border-0 bg-transparent px-3 text-[14px] font-medium focus:ring-0 text-[#0D1F1C] flex items-center justify-between">
+            <span className="flex flex-1 text-left truncate">
+              {specialty ? specialty : 'All Specialties'}
             </span>
           </SelectTrigger>
           <SelectContent>
@@ -141,31 +150,43 @@ export function DirectorySearchBar() {
           </SelectContent>
         </Select>
 
-        <div className="my-1 hidden w-px self-stretch bg-gray-200 sm:block" />
+        <div className="my-1.5 hidden w-px self-stretch bg-[#024E44]/12 lg:block" />
 
+        {/* City Dropdown */}
         <Select
-          value={city || 'all-cities'}
+          value={city.includes(',') ? 'multi-city' : city || 'all-cities'}
           onValueChange={(val) => {
+            if (val === 'multi-city') return;
             const finalVal = val === 'all-cities' ? '' : (val || '');
             setCity(finalVal);
             applyFilters(keyword, specialty, finalVal, language);
           }}
         >
-          <SelectTrigger className="flex-1 h-10 border-0 bg-transparent text-sm focus:ring-0 text-[var(--ahh-ink)] placeholder:text-[var(--ahh-muted-2)] flex items-center justify-between">
-            <span className="flex flex-1 text-left">
-              {city ? city : "All Cities"}
+          <SelectTrigger className="flex-1 h-11 border-0 bg-transparent px-3 text-[14px] font-medium focus:ring-0 text-[#0D1F1C] flex items-center justify-between">
+            <span className="flex flex-1 text-left truncate">
+              {city
+                ? city.includes(',')
+                  ? `${city.split(',').length} Cities (${city.replace(/,/g, ', ')})`
+                  : city
+                : 'All Cities'}
             </span>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all-cities">All Cities</SelectItem>
+            <SelectItem value="all-cities">All Cities (Clear)</SelectItem>
+            {city.includes(',') && (
+              <SelectItem value="multi-city">
+                Selected: {city.replace(/,/g, ', ')}
+              </SelectItem>
+            )}
             {CITIES.map((c) => (
               <SelectItem key={c} value={c}>{c}</SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        <div className="my-1 hidden w-px self-stretch bg-gray-200 sm:block" />
+        <div className="my-1.5 hidden w-px self-stretch bg-[#024E44]/12 lg:block" />
 
+        {/* Language Dropdown */}
         <Select
           value={language || 'all-languages'}
           onValueChange={(val) => {
@@ -174,9 +195,9 @@ export function DirectorySearchBar() {
             applyFilters(keyword, specialty, city, finalVal);
           }}
         >
-          <SelectTrigger className="flex-1 h-10 border-0 bg-transparent text-sm focus:ring-0 text-[var(--ahh-ink)] placeholder:text-[var(--ahh-muted-2)] flex items-center justify-between">
-            <span className="flex flex-1 text-left">
-              {language ? language : "All Languages"}
+          <SelectTrigger className="flex-1 h-11 border-0 bg-transparent px-3 text-[14px] font-medium focus:ring-0 text-[#0D1F1C] flex items-center justify-between">
+            <span className="flex flex-1 text-left truncate">
+              {language ? language : 'All Languages'}
             </span>
           </SelectTrigger>
           <SelectContent>
@@ -191,10 +212,11 @@ export function DirectorySearchBar() {
         <button
           type="button"
           onClick={handleSearchClick}
-          className="brand-button-secondary h-10 px-6 text-sm flex items-center justify-center shrink-0 rounded-md"
+          className="lg-cta lg-cta--lime shrink-0 justify-center h-11 px-6"
+          style={{ borderRadius: 14 }}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mr-1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-          Search
+          <span>Search Directory</span>
+          <span className="arr" aria-hidden="true">→</span>
         </button>
       </div>
     </div>

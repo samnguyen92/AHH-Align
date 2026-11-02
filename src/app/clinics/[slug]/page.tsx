@@ -1,9 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getClinicBySlug } from '@/services/clinic-service';
-import { ClinicHero } from '@/components/clinic/clinic-hero';
-import { ClinicMainContent } from '@/components/clinic/clinic-main-content';
-import { ClinicSidebar } from '@/components/clinic/clinic-sidebar';
+import { LgClinicProfile } from '@/components/clinic/lg-clinic-profile';
 
 export const revalidate = 3600;
 
@@ -42,21 +40,5 @@ export default async function ClinicPage({ params }: ClinicPageProps) {
     notFound();
   }
 
-  return (
-    <div className="bg-[#E5F0EB] px-[10px] pb-[10px] min-h-screen">
-      <div className="w-full sm:w-[min(1420px,calc(100vw-20px))] mx-auto space-y-6">
-        {/* Clinic Hero Card */}
-        <ClinicHero clinic={clinic} />
-        
-        {/* Columns Wrapper */}
-        <div className="flex flex-col lg:flex-row gap-6 items-start pb-12">
-          {/* Left Column: Main Content */}
-          <ClinicMainContent clinic={clinic} />
-
-          {/* Right Column: Sidebar */}
-          <ClinicSidebar clinic={clinic} />
-        </div>
-      </div>
-    </div>
-  );
+  return <LgClinicProfile clinic={clinic} />;
 }

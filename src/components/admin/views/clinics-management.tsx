@@ -44,7 +44,7 @@ export function ClinicsManagement({
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<
-    "general" | "hours_contact" | "about" | "highlights" | "services" | "team" | "pricing" | "insurance" | "images"
+    "general" | "hours_contact" | "about" | "highlights" | "services" | "team" | "pricing" | "memberships" | "locations" | "care_diagnostics" | "insurance" | "images"
   >("general")
 
   const handleEditClick = async (clinicId: string) => {
@@ -99,6 +99,15 @@ export function ClinicsManagement({
           services_offered: data.clinic.metadata?.services_offered || [],
           team_members: data.clinic.metadata?.team_members || [],
           pricing: data.clinic.metadata?.pricing || [],
+          memberships: data.clinic.metadata?.memberships || [],
+          pricing_summary: data.clinic.metadata?.pricing_summary || {},
+          locations: data.clinic.metadata?.locations || [],
+          opening_locations: Array.isArray(data.clinic.metadata?.opening_locations) ? data.clinic.metadata.opening_locations.join(", ") : "",
+          care_model: data.clinic.metadata?.care_model || {},
+          diagnostics: data.clinic.metadata?.diagnostics || [],
+          founded_year: data.clinic.metadata?.founded_year || "",
+          price_tier: data.clinic.metadata?.price_tier || "",
+          profile_updated_at: data.clinic.metadata?.profile_updated_at || "",
           images: Array.isArray(data.clinic.metadata?.images) ? data.clinic.metadata.images : [],
           working_hours: workingHours,
           website: data.clinic.metadata?.website || "",
@@ -134,6 +143,10 @@ export function ClinicsManagement({
       ? editingClinic.metadata.services.split(',').map((s: string) => s.trim()).filter(Boolean)
       : editingClinic.metadata?.services || []
 
+    const openingLocationsArray = typeof editingClinic.metadata?.opening_locations === 'string'
+      ? editingClinic.metadata.opening_locations.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : editingClinic.metadata?.opening_locations || []
+
     try {
       const { data: sessionData } = await supabase.auth.getSession()
       const token = sessionData.session?.access_token
@@ -155,6 +168,8 @@ export function ClinicsManagement({
             ...editingClinic.metadata,
             insurance_accepted: insuranceArray,
             services: servicesArray,
+            opening_locations: openingLocationsArray,
+            founded_year: editingClinic.metadata?.founded_year ? Number(editingClinic.metadata.founded_year) : undefined,
           }
         }),
       })
@@ -401,6 +416,39 @@ export function ClinicsManagement({
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab("memberships")}
+                className={`px-3 py-2 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
+                  activeTab === "memberships"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Memberships
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("locations")}
+                className={`px-3 py-2 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
+                  activeTab === "locations"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Locations
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("care_diagnostics")}
+                className={`px-3 py-2 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
+                  activeTab === "care_diagnostics"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Care & Diagnostics
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab("insurance")}
                 className={`px-3 py-2 text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
                   activeTab === "insurance"
@@ -496,6 +544,45 @@ export function ClinicsManagement({
                       <Input
                         value={editingClinic.zip_code || ""}
                         onChange={(e) => setEditingClinic({ ...editingClinic, zip_code: e.target.value })}
+                        className="bg-background border-border"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 sm:col-span-2 pt-2 border-t border-border">
+                    <label className="block">
+                      <span className="text-xs font-semibold text-muted-foreground block mb-1">Founded Year</span>
+                      <Input
+                        placeholder="e.g. 2016"
+                        value={editingClinic.metadata?.founded_year || ""}
+                        onChange={(e) => setEditingClinic({
+                          ...editingClinic,
+                          metadata: { ...editingClinic.metadata, founded_year: e.target.value }
+                        })}
+                        className="bg-background border-border"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-semibold text-muted-foreground block mb-1">Price Tier</span>
+                      <Input
+                        placeholder="e.g. $$"
+                        value={editingClinic.metadata?.price_tier || ""}
+                        onChange={(e) => setEditingClinic({
+                          ...editingClinic,
+                          metadata: { ...editingClinic.metadata, price_tier: e.target.value }
+                        })}
+                        className="bg-background border-border"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-semibold text-muted-foreground block mb-1">Profile Updated Date</span>
+                      <Input
+                        type="date"
+                        value={editingClinic.metadata?.profile_updated_at || ""}
+                        onChange={(e) => setEditingClinic({
+                          ...editingClinic,
+                          metadata: { ...editingClinic.metadata, profile_updated_at: e.target.value }
+                        })}
                         className="bg-background border-border"
                       />
                     </label>
@@ -901,11 +988,71 @@ export function ClinicsManagement({
               )}
 
               {activeTab === "pricing" && (
-                <div className="space-y-3">
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 bg-muted/15 border border-border p-3 rounded-lg">
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-muted-foreground block mb-1">Starting Price (e.g. $250)</span>
+                      <Input
+                        value={editingClinic.metadata?.pricing_summary?.starting_price || ""}
+                        onChange={(e) => setEditingClinic({
+                          ...editingClinic,
+                          metadata: {
+                            ...editingClinic.metadata,
+                            pricing_summary: { ...editingClinic.metadata?.pricing_summary, starting_price: e.target.value }
+                          }
+                        })}
+                        className="bg-background border-border h-8 text-xs"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-muted-foreground block mb-1">Starting Unit (e.g. mo, visit)</span>
+                      <Input
+                        value={editingClinic.metadata?.pricing_summary?.starting_unit || ""}
+                        onChange={(e) => setEditingClinic({
+                          ...editingClinic,
+                          metadata: {
+                            ...editingClinic.metadata,
+                            pricing_summary: { ...editingClinic.metadata?.pricing_summary, starting_unit: e.target.value }
+                          }
+                        })}
+                        className="bg-background border-border h-8 text-xs"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-muted-foreground block mb-1">Typical Annual Range</span>
+                      <Input
+                        placeholder="e.g. $3,000/yr - $8,000/yr"
+                        value={editingClinic.metadata?.pricing_summary?.typical_annual_range || ""}
+                        onChange={(e) => setEditingClinic({
+                          ...editingClinic,
+                          metadata: {
+                            ...editingClinic.metadata,
+                            pricing_summary: { ...editingClinic.metadata?.pricing_summary, typical_annual_range: e.target.value }
+                          }
+                        })}
+                        className="bg-background border-border h-8 text-xs"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-semibold text-muted-foreground block mb-1">Payment Methods</span>
+                      <Input
+                        placeholder="e.g. Self-pay · HSA/FSA accepted"
+                        value={editingClinic.metadata?.pricing_summary?.payment_methods || ""}
+                        onChange={(e) => setEditingClinic({
+                          ...editingClinic,
+                          metadata: {
+                            ...editingClinic.metadata,
+                            pricing_summary: { ...editingClinic.metadata?.pricing_summary, payment_methods: e.target.value }
+                          }
+                        })}
+                        className="bg-background border-border h-8 text-xs"
+                      />
+                    </label>
+                  </div>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-semibold text-muted-foreground">Service Pricing</span>
                   </div>
-                  <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                     {((editingClinic.metadata?.pricing || []) as any[]).map((priceItem, index) => (
                       <div key={index} className="flex gap-2 items-center bg-muted/20 border border-border p-3 rounded-lg">
                         <div className="flex-1 grid grid-cols-3 gap-2">
@@ -913,10 +1060,10 @@ export function ClinicsManagement({
                             <span className="text-[10px] font-semibold text-muted-foreground block mb-0.5">Service Name *</span>
                             <Input
                               placeholder="Service Name"
-                              value={priceItem.service_name || ""}
+                              value={priceItem.name || priceItem.service_name || ""}
                               onChange={(e) => {
                                 const newPricing = [...(editingClinic.metadata?.pricing || [])]
-                                newPricing[index] = { ...newPricing[index], service_name: e.target.value }
+                                newPricing[index] = { ...newPricing[index], name: e.target.value, service_name: e.target.value }
                                 setEditingClinic({
                                   ...editingClinic,
                                   metadata: { ...editingClinic.metadata, pricing: newPricing }
@@ -945,10 +1092,10 @@ export function ClinicsManagement({
                             <span className="text-[10px] font-semibold text-muted-foreground block mb-0.5">Note</span>
                             <Input
                               placeholder="e.g. Free consultation, sliding scale"
-                              value={priceItem.note || ""}
+                              value={priceItem.notes || priceItem.note || ""}
                               onChange={(e) => {
                                 const newPricing = [...(editingClinic.metadata?.pricing || [])]
-                                newPricing[index] = { ...newPricing[index], note: e.target.value }
+                                newPricing[index] = { ...newPricing[index], notes: e.target.value, note: e.target.value }
                                 setEditingClinic({
                                   ...editingClinic,
                                   metadata: { ...editingClinic.metadata, pricing: newPricing }
@@ -978,7 +1125,7 @@ export function ClinicsManagement({
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      const newPricing = [...(editingClinic.metadata?.pricing || []), { service_name: "", price: "", note: "" }]
+                      const newPricing = [...(editingClinic.metadata?.pricing || []), { name: "", price: "", notes: "" }]
                       setEditingClinic({
                         ...editingClinic,
                         metadata: { ...editingClinic.metadata, pricing: newPricing }
@@ -987,6 +1134,297 @@ export function ClinicsManagement({
                     className="w-full bg-background border-dashed border-2 hover:bg-muted/30"
                   >
                     <Plus className="mr-2 h-4 w-4" /> Add Pricing Item
+                  </Button>
+                </div>
+              )}
+
+              {activeTab === "memberships" && (
+                <div className="space-y-3">
+                  <span className="text-xs font-semibold text-muted-foreground block mb-1">Membership Tiers</span>
+                  <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+                    {((editingClinic.metadata?.memberships || []) as any[]).map((tier, index) => (
+                      <div key={index} className="bg-muted/20 border border-border p-4 rounded-lg relative space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = (editingClinic.metadata?.memberships || []).filter((_: any, i: number) => i !== index)
+                            setEditingClinic({
+                              ...editingClinic,
+                              metadata: { ...editingClinic.metadata, memberships: next }
+                            })
+                          }}
+                          className="absolute top-2 right-2 text-destructive hover:text-destructive/85 p-1 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        <div className="grid gap-2 sm:grid-cols-3 pt-1">
+                          <Input
+                            placeholder="Tier Name (e.g. Optimize)"
+                            value={tier.name || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.memberships || [])]
+                              next[index] = { ...next[index], name: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, memberships: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="Price (e.g. $250)"
+                            value={tier.price || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.memberships || [])]
+                              next[index] = { ...next[index], price: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, memberships: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="Period (e.g. per month)"
+                            value={tier.period || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.memberships || [])]
+                              next[index] = { ...next[index], period: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, memberships: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="Yearly Price (e.g. $3,000/yr)"
+                            value={tier.yearly_price || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.memberships || [])]
+                              next[index] = { ...next[index], yearly_price: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, memberships: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs sm:col-span-3"
+                          />
+                          <Input
+                            placeholder="Short description"
+                            value={tier.description || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.memberships || [])]
+                              next[index] = { ...next[index], description: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, memberships: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs sm:col-span-3"
+                          />
+                          <Input
+                            placeholder="Benefits (comma separated)"
+                            value={Array.isArray(tier.benefits) ? tier.benefits.join(", ") : tier.benefits || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.memberships || [])]
+                              next[index] = {
+                                ...next[index],
+                                benefits: e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                              }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, memberships: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs sm:col-span-3"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const next = [...(editingClinic.metadata?.memberships || []), { name: "", price: "", period: "per month", description: "", benefits: [], cancel_anytime: true }]
+                      setEditingClinic({
+                        ...editingClinic,
+                        metadata: { ...editingClinic.metadata, memberships: next }
+                      })
+                    }}
+                    className="w-full bg-background border-dashed border-2 hover:bg-muted/30"
+                  >
+                    <Plus className="mr-2 h-4 w-4" /> Add Membership Tier
+                  </Button>
+                </div>
+              )}
+
+              {activeTab === "locations" && (
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="text-xs font-semibold text-muted-foreground block mb-1">Opening Soon Cities (comma separated)</span>
+                    <Input
+                      placeholder="e.g. Irvine, CA, San Diego, CA"
+                      value={editingClinic.metadata?.opening_locations || ""}
+                      onChange={(e) => setEditingClinic({
+                        ...editingClinic,
+                        metadata: { ...editingClinic.metadata, opening_locations: e.target.value }
+                      })}
+                      className="bg-background border-border h-8 text-xs"
+                    />
+                  </label>
+                  <span className="text-xs font-semibold text-muted-foreground block">Multi-Location Branches</span>
+                  <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                    {((editingClinic.metadata?.locations || []) as any[]).map((loc, index) => (
+                      <div key={index} className="bg-muted/20 border border-border p-4 rounded-lg relative space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = (editingClinic.metadata?.locations || []).filter((_: any, i: number) => i !== index)
+                            setEditingClinic({
+                              ...editingClinic,
+                              metadata: { ...editingClinic.metadata, locations: next }
+                            })
+                          }}
+                          className="absolute top-2 right-2 text-destructive hover:text-destructive/85 p-1 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        <div className="grid gap-2 sm:grid-cols-2 pt-1">
+                          <Input
+                            placeholder="Branch Name (e.g. Century City, CA)"
+                            value={loc.name || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.locations || [])]
+                              next[index] = { ...next[index], name: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, locations: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="Status (open or opening_soon)"
+                            value={loc.status || "open"}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.locations || [])]
+                              next[index] = { ...next[index], status: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, locations: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="Street Address"
+                            value={loc.address || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.locations || [])]
+                              next[index] = { ...next[index], address: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, locations: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs sm:col-span-2"
+                          />
+                          <Input
+                            placeholder="Description"
+                            value={loc.description || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.locations || [])]
+                              next[index] = { ...next[index], description: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, locations: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs sm:col-span-2"
+                          />
+                          <Input
+                            placeholder="Highlights (comma separated)"
+                            value={Array.isArray(loc.highlights) ? loc.highlights.join(", ") : loc.highlights || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.locations || [])]
+                              next[index] = {
+                                ...next[index],
+                                highlights: e.target.value.split(",").map((s) => s.trim()).filter(Boolean)
+                              }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, locations: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs sm:col-span-2"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const next = [...(editingClinic.metadata?.locations || []), { name: "", status: "open", address: "", description: "", highlights: [] }]
+                      setEditingClinic({
+                        ...editingClinic,
+                        metadata: { ...editingClinic.metadata, locations: next }
+                      })
+                    }}
+                    className="w-full bg-background border-dashed border-2 hover:bg-muted/30"
+                  >
+                    <Plus className="mr-2 h-4 w-4" /> Add Location Branch
+                  </Button>
+                </div>
+              )}
+
+              {activeTab === "care_diagnostics" && (
+                <div className="space-y-3">
+                  <span className="text-xs font-semibold text-muted-foreground block">Diagnostics & Testing Panels</span>
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+                    {((editingClinic.metadata?.diagnostics || []) as any[]).map((diag, index) => (
+                      <div key={index} className="bg-muted/20 border border-border p-4 rounded-lg relative space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = (editingClinic.metadata?.diagnostics || []).filter((_: any, i: number) => i !== index)
+                            setEditingClinic({
+                              ...editingClinic,
+                              metadata: { ...editingClinic.metadata, diagnostics: next }
+                            })
+                          }}
+                          className="absolute top-2 right-2 text-destructive hover:text-destructive/85 p-1 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        <div className="grid gap-2 sm:grid-cols-3 pt-1">
+                          <Input
+                            placeholder="Test Name (e.g. Baseline Test)"
+                            value={diag.name || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.diagnostics || [])]
+                              next[index] = { ...next[index], name: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, diagnostics: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="Price From (e.g. $349)"
+                            value={diag.price_from || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.diagnostics || [])]
+                              next[index] = { ...next[index], price_from: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, diagnostics: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="Detail (e.g. 50+ biomarkers)"
+                            value={diag.detail || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.diagnostics || [])]
+                              next[index] = { ...next[index], detail: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, diagnostics: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs"
+                          />
+                          <Input
+                            placeholder="Description"
+                            value={diag.description || ""}
+                            onChange={(e) => {
+                              const next = [...(editingClinic.metadata?.diagnostics || [])]
+                              next[index] = { ...next[index], description: e.target.value }
+                              setEditingClinic({ ...editingClinic, metadata: { ...editingClinic.metadata, diagnostics: next } })
+                            }}
+                            className="bg-background border-border h-8 text-xs sm:col-span-3"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const next = [...(editingClinic.metadata?.diagnostics || []), { name: "", price_from: "", setting: "in_clinic", detail: "", description: "" }]
+                      setEditingClinic({
+                        ...editingClinic,
+                        metadata: { ...editingClinic.metadata, diagnostics: next }
+                      })
+                    }}
+                    className="w-full bg-background border-dashed border-2 hover:bg-muted/30"
+                  >
+                    <Plus className="mr-2 h-4 w-4" /> Add Diagnostic Panel
                   </Button>
                 </div>
               )}

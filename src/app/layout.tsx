@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { DM_Sans } from 'next/font/google';
+import { DM_Sans, Geist, Geist_Mono } from 'next/font/google';
 import { PageViewTracker } from '@/components/layout/page-view-tracker';
 import { SiteChrome } from '@/components/layout/site-chrome';
 import { JsonLd } from '@/lib/json-ld';
@@ -7,12 +7,16 @@ import { absoluteUrl, SITE_NAME, SITE_URL } from '@/lib/site';
 import '@uiw/react-md-editor/markdown-editor.css';
 import '@uiw/react-markdown-preview/markdown.css';
 import './globals.css';
+import './longevity.css';
 
 const dmSans = DM_Sans({
   variable: '--font-sans',
   subsets: ['latin', 'latin-ext'],
   display: 'swap',
 });
+
+const geist = Geist({ variable: '--font-lg-sans', subsets: ['latin', 'latin-ext'], display: 'swap' });
+const geistMono = Geist_Mono({ variable: '--font-lg-mono', subsets: ['latin'], display: 'swap' });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -43,6 +47,14 @@ export const metadata: Metadata = {
   alternates: {
     canonical: '/',
   },
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: '32x32' },
+    ],
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
+  },
   robots: {
     index: true,
     follow: true,
@@ -61,7 +73,7 @@ export default function RootLayout({
     '@type': 'Organization',
     name: SITE_NAME,
     url: SITE_URL,
-    logo: absoluteUrl('/favicon.ico'),
+    logo: absoluteUrl('/icon.svg'),
   };
 
   const websiteJsonLd = {
@@ -79,7 +91,7 @@ export default function RootLayout({
   const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 
   return (
-    <html lang="en" className={`${dmSans.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang="en" className={`${dmSans.variable} ${geist.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col font-sans">
         {gaId && (
           <>

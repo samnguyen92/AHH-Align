@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { Header } from "@/components/layout/header"
+import { LgHeader } from "@/components/lg/lg-header"
 import { BottomCTA } from "@/components/layout/bottom-cta"
 import { Footer } from "@/components/layout/footer"
 import { supabase } from "@/services/supabase-client"
@@ -36,9 +37,9 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Header variant={isHome || isAbout || isPulse || isSearch || isInsightsIndex || isClinicDetail || isClaim ? "home" : isInsightDetail ? "overlay" : "default"} />
+      <LgHeader overHero={isHome || isAbout || isSearch || isInsightsIndex} />
       <main className="flex-1">{children}</main>
-      <BottomCTA />
+      {!isHome && !isAbout && !isClinicDetail && !isSearch && !isInsightsIndex && <BottomCTA />}
       <Footer />
     </>
   )

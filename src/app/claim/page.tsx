@@ -14,6 +14,7 @@ import {
   ImagePlus,
   Info,
 } from 'lucide-react';
+import { Reveal, SplitTitle } from '@/components/lg/motion';
 
 export default function ClaimLandingPage() {
   const router = useRouter();
@@ -123,9 +124,11 @@ export default function ClaimLandingPage() {
               <p className="mb-5 inline-flex rounded-full bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-white/75">
                 Provider Ownership
               </p>
-              <h1 className="text-[36px] sm:text-[48px] lg:text-[54px] font-light leading-[1.1] tracking-normal">
-                Reach Vietnamese & Korean Patients – Claim Your Free Clinic Profile
-              </h1>
+              <SplitTitle
+                text="Reach Vietnamese & Korean Patients – Claim Your Free Clinic Profile"
+                tintFrom={6}
+                className="text-[36px] sm:text-[48px] lg:text-[54px] font-light leading-[1.1] tracking-normal"
+              />
               <p className="mt-6 max-w-xl text-sm sm:text-base leading-7 text-white/70">
                 Already listed or new? Claim your profile to update your info, show in our directory list, and start attracting thousands of Vietnamese and Korean speaking patients.
               </p>
@@ -170,7 +173,7 @@ export default function ClaimLandingPage() {
             </div>
 
             {/* SVG Profile Mockup */}
-            <div className="relative overflow-hidden rounded-[18px] bg-white/5 border border-white/10 p-6 flex flex-col justify-between shadow-2xl h-[340px] text-white">
+            <Reveal delay={0.12} className="relative overflow-hidden rounded-[18px] bg-white/5 border border-white/10 p-6 flex flex-col justify-between shadow-2xl h-[340px] text-white">
               <div className="flex justify-between items-start">
                 <div>
                   <div className="flex items-center gap-2">
@@ -212,7 +215,7 @@ export default function ClaimLandingPage() {
                 <span>Attracting patients 24/7</span>
                 <span className="text-emerald-400 font-bold">AHH #1 List</span>
               </div>
-            </div>
+            </Reveal>
           </div>
         </section>
 
