@@ -150,21 +150,21 @@ const FALLBACK_ARTICLES = [
     category: 'Patient Guide',
     slug: 'find-clinic-that-speaks-your-language',
     excerpt: 'Simple steps to compare language access, reviews, and care fit.',
-    image: null,
+    image: '/brand/pulse/insight-healthcare-guide.webp',
   },
   {
     title: 'Preparing for a Visit With a New Doctor',
     category: 'Visit Prep',
     slug: 'preparing-for-a-visit-with-a-new-doctor',
     excerpt: 'What to bring, what to ask, and how to involve family.',
-    image: null,
+    image: '/brand/pulse/insight-clinic-questions.webp',
   },
   {
     title: 'What to Ask Before Booking Care Online',
     category: 'Healthcare Access',
     slug: 'what-to-ask-before-booking-care-online',
     excerpt: 'Questions about insurance, language support, and follow-up care.',
-    image: null,
+    image: '/brand/pulse/insight-vietnamese-doctor.webp',
   },
 ] as const;
 
