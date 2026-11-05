@@ -2,7 +2,14 @@ import os
 import uuid
 import re
 import unicodedata
+from dotenv import load_dotenv
 from supabase import create_client, Client
+
+_OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
+load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
+load_dotenv(".env")
+load_dotenv(".env.local")
 
 def generate_slug(text):
     text = text.replace("Đ", "D").replace("đ", "d")

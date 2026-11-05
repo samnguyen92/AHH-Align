@@ -10,8 +10,11 @@ from typing import Callable, Optional
 
 from dotenv import load_dotenv
 
+_OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
+load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
 load_dotenv(".env")
-load_dotenv("../.env.local")
+load_dotenv(".env.local")
 
 
 LOG_PATH = os.path.join(os.path.dirname(__file__), "openclaw.log")

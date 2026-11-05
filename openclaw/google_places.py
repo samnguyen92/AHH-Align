@@ -12,8 +12,11 @@ from openai import OpenAI
 
 from storage import safe_storage_name, upload_image_value
 
+_OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
+load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
 load_dotenv(".env")
-load_dotenv("../.env.local")
+load_dotenv(".env.local")
 
 PLACES_BASE_URL = "https://places.googleapis.com/v1"
 SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
@@ -35,8 +38,12 @@ def request_json(url: str, api_key: str, method: str = "GET", body: Optional[dic
         data = json.dumps(body).encode("utf-8")
 
     request = Request(url, data=data, headers=headers, method=method)
-    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        print(f"[!] Google Places get_place_details failed for {place_id}: {exc}")
+        return {}
 
 
 def build_search_query(clinic_data: dict) -> str:
@@ -78,11 +85,14 @@ def text_search_place(clinic_data: dict, api_key: str) -> Optional[dict]:
         method="POST",
     )
 
-    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-
-    places = payload.get("places") or []
-    return places[0] if places else None
+    try:
+        with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        places = payload.get("places") or []
+        return places[0] if places else None
+    except Exception as exc:
+        print(f"[!] Google Places text search failed: {exc}")
+        return None
 
 
 def search_places_by_text(
@@ -167,10 +177,13 @@ def search_places_by_text(
         method="POST",
     )
 
-    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-
-    return payload.get("places") or []
+    try:
+        with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return payload.get("places") or []
+    except Exception as exc:
+        print(f"[!] Google Places search failed: {exc}. Please ensure Google Cloud Places API (New) is enabled with active billing.")
+        return []
 
 
 def get_place_details(place_id: str, api_key: str) -> dict:
@@ -204,8 +217,12 @@ def get_place_details(place_id: str, api_key: str) -> dict:
         },
         method="GET",
     )
-    with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        print(f"[!] Google Places get_place_details failed for {place_id}: {exc}")
+        return {}
 
 
 def get_photo_uri(photo_name: str, api_key: str, max_width: int = 1200) -> Optional[str]:

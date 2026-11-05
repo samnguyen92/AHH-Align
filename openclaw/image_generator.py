@@ -1,6 +1,9 @@
 import base64
+import json
 import os
 import re
+import urllib.parse
+import urllib.request
 from typing import Optional
 
 from openai import OpenAI
@@ -65,17 +68,51 @@ def save_generated_image(image_value: Optional[str], slug: str) -> Optional[str]
     return None
 
 
-def generate_clinic_image(clinic_data: dict) -> Optional[str]:
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        print("[!] OPENROUTER_API_KEY is not set; skipping image generation.")
+def search_real_clinic_photo(specialty: str, city: str) -> Optional[str]:
+    """Search for authentic real clinic/medical photography on Unsplash."""
+    brave_key = os.environ.get("BRAVE_SEARCH_API_KEY")
+    if not brave_key:
         return None
 
+    spec = specialty or "medical clinic"
+    query = f"site:unsplash.com modern {spec} clinic doctor office consultation"
+    url = f"https://api.search.brave.com/res/v1/images/search?q={urllib.parse.quote(query)}&count=5"
+    req = urllib.request.Request(
+        url,
+        headers={"X-Subscription-Token": brave_key, "Accept": "application/json", "User-Agent": "AsianHealthHub/1.0"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            for item in data.get("results", []):
+                img_url = item.get("properties", {}).get("url")
+                if img_url and ("svg" not in img_url.lower()) and ("icon" not in img_url.lower()):
+                    return img_url
+    except Exception as exc:
+        print(f"[!] Real clinic photo search error: {exc}")
+    return None
+
+
+def generate_clinic_image(clinic_data: dict) -> Optional[str]:
     name = clinic_data.get("name") or "Asian Health Hub clinic"
     specialty = clinic_data.get("specialty") or "healthcare"
     city = clinic_data.get("city") or "the United States"
     languages = ", ".join(clinic_data.get("languages") or ["English"])
     slug = slugify(name)
+
+    # 1. Prefer authentic real photography
+    real_photo_url = search_real_clinic_photo(specialty, city)
+    if real_photo_url:
+        print(f"[+] Found authentic real clinic photo for {name}: {real_photo_url}")
+        cloud_url = save_generated_image(real_photo_url, slug)
+        if cloud_url:
+            return cloud_url
+
+    # 2. Fallback to AI image preview if search fails
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        print("[!] OPENROUTER_API_KEY is not set; skipping fallback image generation.")
+        return None
 
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
     prompt = (

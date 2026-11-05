@@ -1,10 +1,17 @@
 import json
 import os
 from typing import Any, List, Optional
+from dotenv import load_dotenv
 
 import instructor
 from openai import OpenAI
 from pydantic import BaseModel, Field
+
+_OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
+load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
+load_dotenv(".env")
+load_dotenv(".env.local")
 
 
 class InsuranceInfo(BaseModel):

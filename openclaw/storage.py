@@ -13,8 +13,11 @@ import certifi
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
+_OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
+load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
 load_dotenv(".env")
-load_dotenv("../.env.local")
+load_dotenv(".env.local")
 
 DEFAULT_BUCKET = "generated-images"
 SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())

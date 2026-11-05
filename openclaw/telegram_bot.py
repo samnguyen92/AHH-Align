@@ -44,8 +44,11 @@ from jobs import (
     check_analytics_job,
 )
 
+_OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
+load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
 load_dotenv(".env")
-load_dotenv("../.env.local")
+load_dotenv(".env.local")
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 MAX_MESSAGE_LENGTH = 3900

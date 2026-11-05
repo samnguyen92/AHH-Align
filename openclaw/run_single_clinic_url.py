@@ -14,8 +14,11 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
+_OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
+load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
 load_dotenv(".env")
-load_dotenv("../.env.local")
+load_dotenv(".env.local")
 
 from db import insert_clinic
 from extractor import extract_clinic_data
