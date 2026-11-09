@@ -27,28 +27,42 @@ PROVIDERS = {
     "healthgrades": "healthgrades.com",
     "webmd": "webmd.com",
     "vitals": "vitals.com",
+    "psychologytoday": "psychologytoday.com",
 }
 
-DEFAULT_PROVIDERS = ("zocdoc", "healthgrades")
+DEFAULT_PROVIDERS = ("zocdoc", "healthgrades", "webmd")
 SEARCH_TIMEOUT = int(os.environ.get("OPENCLAW_THIRD_PARTY_SEARCH_TIMEOUT", "15"))
 JINA_TIMEOUT = int(os.environ.get("OPENCLAW_THIRD_PARTY_JINA_TIMEOUT", "30"))
 JINA_MIN_CHARS = int(os.environ.get("OPENCLAW_THIRD_PARTY_JINA_MIN_CHARS", "500"))
-PROFILE_MODEL = os.environ.get("OPENCLAW_THIRD_PARTY_PROFILE_MODEL", "deepseek/deepseek-v4-flash")
+PROFILE_MODEL = os.environ.get("OPENCLAW_THIRD_PARTY_PROFILE_MODEL") or os.environ.get("OPENCLAW_TEXT_MODEL", "openai/gpt-6-luna")
 
 
 def third_party_enrichment_enabled() -> bool:
-    return os.environ.get("OPENCLAW_ENABLE_THIRD_PARTY_ENRICHMENT", "false").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    mode = os.environ.get("OPENCLAW_ENABLE_THIRD_PARTY_ENRICHMENT", "auto").strip().lower()
+    return mode in {"1", "true", "yes", "on", "auto"}
 
 
-def configured_providers() -> list[str]:
+def should_enrich_third_party(clinic_data: dict) -> bool:
+    mode = os.environ.get("OPENCLAW_ENABLE_THIRD_PARTY_ENRICHMENT", "auto").strip().lower()
+    if mode in {"0", "false", "no", "off"}:
+        return False
+    if mode in {"1", "true", "yes", "on"}:
+        return True
+    # Auto mode: trigger when official website scrape left gaps in insurance, team_members, or languages
+    ins = clinic_data.get("insurance_accepted") or (clinic_data.get("insurance") or {}).get("accepted_networks") or []
+    team = clinic_data.get("team_members") or []
+    langs = [l for l in (clinic_data.get("languages") or []) if str(l).lower() != "english"]
+    return not ins or not team or not langs
+
+
+def configured_providers(clinic_data: Optional[dict] = None) -> list[str]:
     raw = os.environ.get("OPENCLAW_THIRD_PARTY_PROVIDERS", "")
     names = [name.strip().lower() for name in raw.split(",") if name.strip()] if raw else list(DEFAULT_PROVIDERS)
-    return [name for name in names if name in PROVIDERS]
+    valid = [name for name in names if name in PROVIDERS]
+    specialty = str((clinic_data or {}).get("specialty") or "").lower()
+    if ("mental" in specialty or "psych" in specialty) and "psychologytoday" not in valid:
+        valid.append("psychologytoday")
+    return valid
 
 
 def _host_matches(url: str, domain: str) -> bool:
@@ -305,12 +319,56 @@ def _merge_profiles(existing: list, incoming: list) -> list:
     return merged
 
 
+def merge_third_party_into_clinic(clinic_data: dict, profiles: list[dict]) -> dict:
+    """
+    Merge verified insurance networks, languages, specialties, and appointment URLs
+    from Zocdoc / Healthgrades / WebMD / Psychology Today into the primary clinic dict
+    when the official website had gaps.
+    """
+    from normalize import normalize_insurance_networks, normalize_specialty
+
+    existing_ins = list(clinic_data.get("insurance_accepted") or [])
+    existing_langs = list(clinic_data.get("languages") or ["English"])
+    existing_services = list(clinic_data.get("services") or [])
+
+    for prof in profiles:
+        for net in (prof.get("insurance_networks") or []):
+            if net and net not in existing_ins:
+                existing_ins.append(net)
+        for lang in (prof.get("languages") or []):
+            cleaned_lang = str(lang).strip()
+            if cleaned_lang and cleaned_lang not in existing_langs:
+                existing_langs.append(cleaned_lang)
+        for spec in (prof.get("specialties") or []):
+            cleaned_spec = str(spec).strip()
+            if cleaned_spec and cleaned_spec not in existing_services:
+                existing_services.append(cleaned_spec)
+        if not clinic_data.get("specialty") and prof.get("specialties"):
+            clinic_data["specialty"] = normalize_specialty(", ".join(prof["specialties"]))
+        if not clinic_data.get("appointment_url") and prof.get("appointment_url"):
+            clinic_data["appointment_url"] = prof["appointment_url"]
+
+    if existing_ins:
+        canonical_ins = normalize_insurance_networks(existing_ins)
+        clinic_data["insurance_accepted"] = canonical_ins
+        ins_obj = dict(clinic_data.get("insurance") or {}) if isinstance(clinic_data.get("insurance"), dict) else {}
+        ins_obj["accepted_networks"] = canonical_ins
+        clinic_data["insurance"] = ins_obj
+
+    if existing_langs:
+        clinic_data["languages"] = existing_langs
+    if existing_services and not clinic_data.get("services"):
+        clinic_data["services"] = existing_services[:15]
+
+    return clinic_data
+
+
 def enrich_clinic_with_third_party_profiles(clinic_data: dict) -> dict:
-    if not third_party_enrichment_enabled():
-        print("[*] Third-party profile enrichment disabled.")
+    if not should_enrich_third_party(clinic_data):
+        print("[*] Third-party profile enrichment skipped (already complete or disabled).")
         return clinic_data
 
-    providers = configured_providers()
+    providers = configured_providers(clinic_data)
     if not providers:
         print("[*] No third-party profile providers configured.")
         return clinic_data
@@ -341,7 +399,5 @@ def enrich_clinic_with_third_party_profiles(clinic_data: dict) -> dict:
         for profile in clinic_data["third_party_profiles"]
         if profile.get("source") and profile.get("url")
     ]
-
-    # Keep Google/official review_profile as primary. Third-party review data is
-    # available in metadata for later UI display or audits.
+    merge_third_party_into_clinic(clinic_data, profiles)
     return clinic_data

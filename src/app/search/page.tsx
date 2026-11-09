@@ -8,15 +8,24 @@ import { searchClinics, getSearchFilterOptions } from '@/services/clinic-service
 import { DirectorySearchBar } from '@/components/search/directory-search-bar';
 import { ParallaxImage, SplitTitle } from '@/components/lg/motion';
 
+interface SearchUrlParams {
+  city?: string;
+  state?: string;
+  specialty?: string;
+  language?: string;
+  query?: string;
+  insurance?: string;
+  minRating?: string;
+  telehealth?: string;
+  openWeekend?: string;
+  acceptingNew?: string;
+  priceTier?: string;
+  sort?: 'rating' | 'reviews' | 'quality' | 'newest';
+  page?: string;
+}
+
 interface SearchPageProps {
-  searchParams: Promise<{
-    city?: string;
-    state?: string;
-    specialty?: string;
-    language?: string;
-    query?: string;
-    page?: string;
-  }>;
+  searchParams: Promise<SearchUrlParams>;
 }
 
 const QUICK_FILTERS = [
@@ -30,28 +39,69 @@ const QUICK_FILTERS = [
   { label: 'Los Angeles, CA', href: '/search?city=Los+Angeles', matchKey: 'city', matchVal: 'Los Angeles' },
 ];
 
-function buildRemoveFilterHref(
-  params: { city?: string; state?: string; specialty?: string; language?: string; query?: string },
-  removeKey: 'query' | 'language' | 'specialty' | 'city',
+const FAST_ACCESS_PILLS: Array<{
+  label: string;
+  key: keyof SearchUrlParams;
+  val: string;
+}> = [
+  { label: '★ 4.5+ Rated', key: 'minRating', val: '4.5' },
+  { label: 'Open Weekends', key: 'openWeekend', val: 'true' },
+  { label: 'Accepting New Patients', key: 'acceptingNew', val: 'true' },
+  { label: 'Medicare', key: 'insurance', val: 'Medicare' },
+  { label: 'Medicaid / Medi-Cal', key: 'insurance', val: 'Medicaid' },
+  { label: 'Telehealth', key: 'telehealth', val: 'true' },
+  { label: '$ Sliding Scale', key: 'priceTier', val: '$' },
+];
+
+const SORT_OPTIONS: Array<{ label: string; value: 'rating' | 'reviews' | 'quality' | 'newest' }> = [
+  { label: 'Top Rated', value: 'rating' },
+  { label: 'Most Reviewed', value: 'reviews' },
+  { label: 'Verified Data Score', value: 'quality' },
+  { label: 'Newest Added', value: 'newest' },
+];
+
+function buildModifiedHref(
+  params: SearchUrlParams,
+  updates: Partial<Record<keyof SearchUrlParams, string | undefined>>,
   removeCityValue?: string
 ) {
   const sp = new URLSearchParams();
-  if (params.query && removeKey !== 'query') sp.set('query', params.query);
-  if (params.language && removeKey !== 'language') sp.set('language', params.language);
-  if (params.specialty && removeKey !== 'specialty') sp.set('specialty', params.specialty);
-  if (params.city) {
-    if (removeKey === 'city' && removeCityValue) {
-      const remaining = params.city
+  const merged: Partial<Record<keyof SearchUrlParams, string | undefined>> = {
+    ...params,
+    ...updates,
+  };
+
+  const keys: Array<keyof SearchUrlParams> = [
+    'query',
+    'language',
+    'specialty',
+    'city',
+    'state',
+    'insurance',
+    'minRating',
+    'telehealth',
+    'openWeekend',
+    'acceptingNew',
+    'priceTier',
+    'sort',
+  ];
+
+  for (const k of keys) {
+    const val = merged[k];
+    if (!val) continue;
+    if (k === 'city' && removeCityValue) {
+      const remaining = val
         .split(',')
         .map((c) => c.trim())
         .filter((c) => c && c !== removeCityValue);
       if (remaining.length > 0) {
         sp.set('city', remaining.join(','));
       }
-    } else if (removeKey !== 'city') {
-      sp.set('city', params.city);
+      continue;
     }
+    sp.set(k, val);
   }
+
   const qs = sp.toString();
   return qs ? `/search?${qs}` : '/search';
 }
@@ -69,13 +119,15 @@ export async function generateMetadata({ searchParams }: SearchPageProps): Promi
 
   return {
     title,
-    description: `Search ${title.toLowerCase()} that speak your language. Browse verified profiles with reviews, hours, and contact info.`,
+    description: `Search ${title.toLowerCase()} that speak your language. Browse verified profiles with reviews, hours, insurance coverage, and contact info.`,
   };
 }
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   const params = await searchParams;
   const page = Number(params.page) || 1;
+  const minRating = params.minRating ? Number(params.minRating) : undefined;
+  const currentSort = params.sort ?? 'rating';
 
   const [result, filterOptions] = await Promise.all([
     searchClinics({
@@ -84,6 +136,13 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       specialty: params.specialty,
       language: params.language,
       query: params.query,
+      insurance: params.insurance,
+      minRating: minRating && !Number.isNaN(minRating) ? minRating : undefined,
+      telehealth: params.telehealth === 'true',
+      openWeekend: params.openWeekend === 'true',
+      acceptingNew: params.acceptingNew === 'true',
+      priceTier: params.priceTier,
+      sort: currentSort,
       page,
       limit: 12,
     }),
@@ -95,7 +154,16 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     ? params.city.split(',').map((c) => c.trim()).filter(Boolean)
     : [];
   const hasActiveFilters = Boolean(
-    selectedCities.length > 0 || params.specialty || params.language || params.query
+    selectedCities.length > 0 ||
+      params.specialty ||
+      params.language ||
+      params.query ||
+      params.insurance ||
+      params.minRating ||
+      params.telehealth ||
+      params.openWeekend ||
+      params.acceptingNew ||
+      params.priceTier
   );
 
   const headingParts: string[] = [];
@@ -172,22 +240,22 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                 <p>Primary care, dental, OB/GYN, and specialist clinics with bilingual Vietnamese staff.</p>
               </Link>
 
-              <Link href="/search" className="lg-dir-scard">
+              <Link href="/search?openWeekend=true" className="lg-dir-scard">
                 <div className="top">
-                  <b>{result.total > 0 ? result.total : 244}</b> <span>organizations</span>
+                  <b>Weekend</b> <span>access</span>
                 </div>
                 <span className="bar" />
-                <h3>In-person care</h3>
-                <p>Consults, diagnostics, preventive check-ups, and family care delivered at a verified clinic.</p>
+                <h3>Open Saturday &amp; Sunday</h3>
+                <p>Verified clinics with Saturday or Sunday hours so working families can visit together.</p>
               </Link>
 
-              <a href="#city-filter" className="lg-dir-scard">
+              <a href="#insurance-filter" className="lg-dir-scard">
                 <div className="top">
-                  <b>Place</b>
+                  <b>Coverage</b>
                 </div>
                 <span className="bar" />
-                <h3>Browse by location</h3>
-                <p>Select one or multiple cities at once—Houston, Los Angeles, San Jose, Seattle, and more.</p>
+                <h3>Browse by insurance</h3>
+                <p>Filter by Medicare, Medicaid, Blue Cross Blue Shield, Cigna, Aetna, or Delta Dental.</p>
               </a>
 
               <a href="#specialty-filter" className="lg-dir-scard">
@@ -201,6 +269,58 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
             </div>
           </div>
 
+          {/* Progressive-Disclosure Quick Access Bar (Track B) */}
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#024E44]/12 bg-white/80 px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#024E44]/70 mr-1">
+                Quick filters:
+              </span>
+              {FAST_ACCESS_PILLS.map((pill) => {
+                const isActive = params[pill.key] === pill.val;
+                const nextHref = buildModifiedHref(params, {
+                  [pill.key]: isActive ? undefined : pill.val,
+                });
+                return (
+                  <Link
+                    key={pill.label}
+                    href={nextHref}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                      isActive
+                        ? 'border-[#024E44] bg-[#024E44] text-white'
+                        : 'border-[#024E44]/15 bg-[#F6FAF8] text-[#0D1F1C] hover:border-[#024E44]/40'
+                    }`}
+                  >
+                    <span>{pill.label}</span>
+                    {isActive && <span aria-hidden="true">×</span>}
+                  </Link>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="font-semibold text-[#0D1F1C]/60 mr-1">Sort:</span>
+              {SORT_OPTIONS.map((opt) => {
+                const active = currentSort === opt.value;
+                const href = buildModifiedHref(params, {
+                  sort: opt.value === 'rating' ? undefined : opt.value,
+                });
+                return (
+                  <Link
+                    key={opt.value}
+                    href={href}
+                    className={`rounded-lg px-2.5 py-1 font-medium transition-colors ${
+                      active
+                        ? 'bg-[#024E44]/12 font-semibold text-[#024E44]'
+                        : 'text-[#0D1F1C]/70 hover:text-[#024E44]'
+                    }`}
+                  >
+                    {opt.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="lg-dir-bar">
             <div>
               <h2>{directoryHeading}</h2>
@@ -208,7 +328,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                 <div className="lg-dir-active-tags mt-2">
                   {params.query && (
                     <Link
-                      href={buildRemoveFilterHref(params, 'query')}
+                      href={buildModifiedHref(params, { query: undefined })}
                       className="lg-dir-active-pill"
                       title="Remove keyword filter"
                     >
@@ -218,7 +338,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                   )}
                   {params.language && (
                     <Link
-                      href={buildRemoveFilterHref(params, 'language')}
+                      href={buildModifiedHref(params, { language: undefined })}
                       className="lg-dir-active-pill"
                       title="Remove language filter"
                     >
@@ -228,7 +348,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                   )}
                   {params.specialty && (
                     <Link
-                      href={buildRemoveFilterHref(params, 'specialty')}
+                      href={buildModifiedHref(params, { specialty: undefined })}
                       className="lg-dir-active-pill"
                       title="Remove specialty filter"
                     >
@@ -236,10 +356,70 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                       <span aria-hidden="true">×</span>
                     </Link>
                   )}
+                  {params.insurance && (
+                    <Link
+                      href={buildModifiedHref(params, { insurance: undefined })}
+                      className="lg-dir-active-pill"
+                      title="Remove insurance filter"
+                    >
+                      <span>Insurance: {params.insurance}</span>
+                      <span aria-hidden="true">×</span>
+                    </Link>
+                  )}
+                  {params.priceTier && (
+                    <Link
+                      href={buildModifiedHref(params, { priceTier: undefined })}
+                      className="lg-dir-active-pill"
+                      title="Remove price tier filter"
+                    >
+                      <span>Tier: {params.priceTier}</span>
+                      <span aria-hidden="true">×</span>
+                    </Link>
+                  )}
+                  {params.minRating && (
+                    <Link
+                      href={buildModifiedHref(params, { minRating: undefined })}
+                      className="lg-dir-active-pill"
+                      title="Remove rating filter"
+                    >
+                      <span>{params.minRating}+ ★</span>
+                      <span aria-hidden="true">×</span>
+                    </Link>
+                  )}
+                  {params.openWeekend === 'true' && (
+                    <Link
+                      href={buildModifiedHref(params, { openWeekend: undefined })}
+                      className="lg-dir-active-pill"
+                      title="Remove weekend filter"
+                    >
+                      <span>Open Weekends</span>
+                      <span aria-hidden="true">×</span>
+                    </Link>
+                  )}
+                  {params.acceptingNew === 'true' && (
+                    <Link
+                      href={buildModifiedHref(params, { acceptingNew: undefined })}
+                      className="lg-dir-active-pill"
+                      title="Remove accepting new patients filter"
+                    >
+                      <span>Accepting New Patients</span>
+                      <span aria-hidden="true">×</span>
+                    </Link>
+                  )}
+                  {params.telehealth === 'true' && (
+                    <Link
+                      href={buildModifiedHref(params, { telehealth: undefined })}
+                      className="lg-dir-active-pill"
+                      title="Remove telehealth filter"
+                    >
+                      <span>Telehealth</span>
+                      <span aria-hidden="true">×</span>
+                    </Link>
+                  )}
                   {selectedCities.map((c) => (
                     <Link
                       key={c}
-                      href={buildRemoveFilterHref(params, 'city', c)}
+                      href={buildModifiedHref(params, {}, c)}
                       className="lg-dir-active-pill"
                       title={`Remove ${c} filter`}
                     >
@@ -265,6 +445,8 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
                 specialties={filterOptions.specialties}
                 languages={filterOptions.languages}
                 cities={filterOptions.cities}
+                insurances={filterOptions.insurances}
+                priceTiers={filterOptions.priceTiers}
               />
             </Suspense>
 

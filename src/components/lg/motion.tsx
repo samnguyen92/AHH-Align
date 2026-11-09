@@ -169,7 +169,6 @@ export function Rail({ title, children }: { title: string; children: ReactNode }
 /* ---------- Sub-nav tabs with a gliding indicator + scroll-spy ---------- */
 export function TabNav({ tabs }: { tabs: { id: string; label: string }[] }) {
   const [active, setActive] = useState(tabs[0]?.id);
-  const [offset, setOffset] = useState(false);
 
   useEffect(() => {
     const sections = tabs
@@ -178,36 +177,35 @@ export function TabNav({ tabs }: { tabs: { id: string; label: string }[] }) {
     if (!sections.length) return;
     const io = new IntersectionObserver(
       (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
         if (visible[0]) setActive(visible[0].target.id);
       },
-      { rootMargin: '-140px 0px -60% 0px', threshold: 0 }
+      { rootMargin: '-140px 0px -55% 0px', threshold: 0 }
     );
     sections.forEach((s) => io.observe(s));
     return () => io.disconnect();
   }, [tabs]);
 
-  // header hides on scroll-down, so the sticky bar can claim the top; shift below the header when it is visible
-  useEffect(() => {
-    let last = window.scrollY;
-    const onScroll = () => {
-      const y = window.scrollY;
-      setOffset(y < last && y > 400);
-      last = y;
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
   return (
-    <div className="lg-subnav" data-offset={offset}>
+    <div className="lg-subnav" data-offset="true">
       <div className="lg-prof-wrap">
         <nav className="lg-tabs" aria-label="On this profile">
           {tabs.map((t) => (
-            <a key={t.id} href={`#${t.id}`} aria-current={active === t.id}>
+            <a
+              key={t.id}
+              href={`#${t.id}`}
+              aria-current={active === t.id}
+              onClick={() => setActive(t.id)}
+            >
               {t.label}
               {active === t.id && (
-                <motion.span layoutId="lg-tab-indicator" className="ind" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />
+                <motion.span
+                  layoutId="lg-tab-indicator"
+                  className="ind"
+                  transition={{ type: 'spring', stiffness: 420, damping: 36 }}
+                />
               )}
             </a>
           ))}

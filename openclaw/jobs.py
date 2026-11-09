@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import io
 import logging
@@ -346,6 +348,153 @@ def check_analytics_job(timeframe: str = "week", filter_type: str = "all") -> st
         "check_analytics",
         lambda: check_analytics(timeframe, filter_type),
     )
+
+
+def check_clinic_quality(threshold: int = 85, limit: int = 15) -> str:
+    from supabase import create_client
+    from normalize import compute_quality
+
+    try:
+        supabase = create_client(
+            os.environ["NEXT_PUBLIC_SUPABASE_URL"],
+            os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
+        )
+        rows = (
+            supabase.table("clinics")
+            .select("name,slug,city,state,specialty,phone,address,zip_code,languages,metadata")
+            .limit(2000)
+            .execute()
+            .data
+        )
+    except Exception as exc:
+        return f"Could not load clinics: {exc}"
+
+    scored = []
+    for row in rows:
+        meta = row.get("metadata") or {}
+        score = meta.get("quality_score")
+        missing = meta.get("quality_missing")
+        if score is None or missing is None:
+            q = compute_quality(row)
+            score, missing = q["score"], q["missing"]
+        scored.append((int(score), row.get("name"), row.get("slug"), row.get("city"), row.get("state"), missing))
+
+    scored.sort(key=lambda item: (item[0], item[1] or ""))
+    avg = sum(item[0] for item in scored) / max(len(scored), 1)
+    below = [item for item in scored if item[0] < threshold]
+
+    lines = [
+        f"📊 Clinic Quality Report ({len(scored)} clinics)",
+        f"Average score: {avg:.1f}/100",
+        f"Text model: {os.environ.get('OPENCLAW_TEXT_MODEL', 'openai/gpt-6-luna')}",
+        f"Image model: {os.environ.get('OPENCLAW_IMAGE_MODEL', 'openai/gpt-image-2.5-sunburst')} (fallback: {os.environ.get('OPENCLAW_IMAGE_FALLBACK_MODEL', 'google/gemini-3.1-flash-image')})",
+        f"Below {threshold}/100: {len(below)} clinic(s)",
+        "",
+    ]
+    sample = below[:limit] if below else scored[: min(limit, 8)]
+    header = f"Lowest scoring clinics (<{threshold}):" if below else "Lowest scoring clinics:"
+    lines.append(header)
+    for score, name, slug, city, state, missing in sample:
+        loc = ", ".join(v for v in (city, state) if v)
+        miss = ", ".join(missing or []) or "none"
+        lines.append(f"• [{score}/100] {name} ({loc}) — slug: `{slug}` — missing: {miss}")
+    lines.append("\nTip: use `/scrape_clinic_url <name> | <url>` to re-scrape or `/delete_clinic <slug>` to remove.")
+    return "\n".join(lines)
+
+
+def directory_audit_job() -> str:
+    from audit_directory import audit_directory_coverage, format_directory_gaps_report
+
+    cov = audit_directory_coverage()["summary_text"]
+    gaps = format_directory_gaps_report(limit=8)
+    return f"{cov}\n\n{gaps}"
+
+
+def search_audit_job() -> str:
+    from audit_directory import format_search_benchmark_report
+
+    return format_search_benchmark_report()
+
+
+def scout_gaps_job(limit_gaps: int = 3, per_gap_limit: int = 2, telegram_updater_callback=None) -> str:
+    from audit_directory import discover_directory_gaps
+    from run_scout import scout_and_ingest
+
+    gaps = discover_directory_gaps(limit=max(1, min(limit_gaps, 6)))
+    if not gaps:
+        return "✅ Không còn khoảng trống nguồn cung (mọi ô City × Specialty × Language đều đã có >= 2 phòng khám)."
+
+    def run_all():
+        print(f"[*] Bắt đầu tự động trinh sát {len(gaps)} khoảng trống nguồn cung ưu tiên cao nhất...")
+        for idx, g in enumerate(gaps, 1):
+            q = g["scout_query"]
+            print(f"\n--- [Gap {idx}/{len(gaps)}] {g['city']}, {g['state']} | {g['language']} · {g['specialty']} ---")
+            if telegram_updater_callback:
+                telegram_updater_callback(
+                    f"🚀 [Gap {idx}/{len(gaps)}] Đang trinh sát: `{q}` (tối đa {per_gap_limit} phòng khám)..."
+                )
+            scout_and_ingest(
+                q,
+                limit=per_gap_limit,
+                required_languages=[g["language"]],
+                telegram_updater=telegram_updater_callback,
+            )
+
+    return _run_with_captured_output(f"scout_gaps({len(gaps)})", run_all)
+
+
+def web_edit_job(instruction: str, image_path: str | None = None, progress_callback=None) -> str:
+    from dev_agent import run_web_dev_agent
+
+    res = run_web_dev_agent(
+        instruction=instruction,
+        image_path=image_path,
+        progress_callback=progress_callback,
+    )
+    return res["summary"]
+
+
+def seo_audit_job(target_route: str | None = None) -> str:
+    from seo_agent import run_seo_audit
+
+    return run_seo_audit(target_route=target_route)
+
+
+def seo_setup_job(instruction: str, progress_callback=None) -> str:
+    from seo_agent import run_seo_setup
+
+    res = run_seo_setup(instruction=instruction, progress_callback=progress_callback)
+    return res["summary"]
+
+
+def site_analyze_job(target_route: str = "/", timeframe: str = "week") -> str:
+    from site_analyzer import run_site_analysis
+
+    return run_site_analysis(target_route=target_route, timeframe=timeframe)
+
+
+def dev_diff_job() -> str:
+    from git_publisher import get_git_diff_summary
+
+    return get_git_diff_summary()
+
+
+def rollback_code_job() -> str:
+    from git_publisher import rollback_changes
+
+    return rollback_changes()
+
+
+def publish_code_job(commit_message: str | None = None, telegram_updater_callback=None) -> str:
+    from git_publisher import publish_to_github_and_live
+
+    return publish_to_github_and_live(
+        commit_message=commit_message,
+        telegram_updater=telegram_updater_callback,
+    )
+
+
+
 
 
 

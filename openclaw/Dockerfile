@@ -6,6 +6,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app/openclaw
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    ca-certificates \
+    nodejs \
+    npm \
+    docker.io \
+    docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY openclaw/requirements.txt /app/openclaw/requirements.txt
 
 RUN python -m pip install --upgrade pip \

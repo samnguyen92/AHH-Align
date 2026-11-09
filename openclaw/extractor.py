@@ -167,8 +167,17 @@ class ClinicExtraction(BaseModel):
     fax: Optional[str] = None
     specialty: Optional[str] = Field(default=None, description="Primary specialty or facility type.")
     languages: List[str] = Field(
-        default_factory=lambda: ["English"],
-        description="Languages spoken by the clinic staff or providers. Extract all languages explicitly mentioned in the text (e.g., 'Spanish', 'Vietnamese', 'Korean', 'Chinese', 'Tagalog'). If a specific provider is listed as speaking a language, include that language. If no languages are found, default to ['English']."
+        default_factory=list,
+        description=(
+            "Languages explicitly offered by the clinic staff or providers, e.g. 'Vietnamese', 'Korean', 'Chinese', 'Spanish'. "
+            "Include a language ONLY when the source text states it (e.g. 'we speak Vietnamese', a provider bio, a language badge, "
+            "or the page itself being offered in that language). Do NOT add 'English' by assumption and do NOT guess from the "
+            "owner's surname or the neighbourhood. Return an empty list when nothing is stated."
+        ),
+    )
+    languages_evidence: List[str] = Field(
+        default_factory=list,
+        description="Short verbatim quotes (max 12 words each) from the source that prove each non-English language listed.",
     )
     accepting_new_patients: Optional[bool] = None
     is_telehealth_available: bool = False
@@ -289,6 +298,8 @@ def _with_pipeline_compatibility(extracted: dict) -> dict:
         if cleaned and cleaned not in cleaned_languages:
             cleaned_languages.append(cleaned)
             
+    # True only when a non-English language is backed by evidence in the source (see _verify_against_source).
+    extracted["languages_verified"] = any(lang.lower() != "english" for lang in cleaned_languages)
     if not cleaned_languages:
         cleaned_languages = ["English"]
         
@@ -322,6 +333,67 @@ def _with_pipeline_compatibility(extracted: dict) -> dict:
     return extracted
 
 
+LANGUAGE_ALIASES = {
+    "vietnamese": ["vietnamese", "tiếng việt", "tieng viet", "việt"],
+    "chinese": ["chinese", "mandarin", "cantonese", "中文", "华语", "國語", "国语", "粵語", "广东话", "普通话"],
+    "mandarin": ["mandarin", "chinese", "中文", "普通话", "國語", "国语"],
+    "cantonese": ["cantonese", "chinese", "粵語", "广东话", "廣東話"],
+    "korean": ["korean", "한국어", "한국", "韓國", "한의"],
+    "spanish": ["spanish", "español", "espanol", "se habla"],
+    "tagalog": ["tagalog", "filipino", "pilipino"],
+    "hindi": ["hindi", "हिन्दी"],
+    "japanese": ["japanese", "日本語"],
+    "english": ["english"],
+}
+
+
+def _normalize_insurance_name(name: str) -> str:
+    return "".join(ch for ch in name.lower() if ch.isalnum() or ch == " ").strip()
+
+
+def _verify_against_source(extracted: dict, source_text: str) -> dict:
+    """
+    Deterministic anti-hallucination pass: drop languages, insurance networks and team members that
+    cannot be found in the scraped source. Cheap, repeatable and independent of the LLM.
+    """
+    source = source_text.lower()
+    dropped: dict = {}
+
+    kept_languages, dropped_languages = [], []
+    for lang in extracted.get("languages") or []:
+        aliases = LANGUAGE_ALIASES.get(str(lang).strip().lower(), [str(lang).strip().lower()])
+        (kept_languages if any(alias in source for alias in aliases) else dropped_languages).append(lang)
+    extracted["languages"] = kept_languages
+    if dropped_languages:
+        dropped["languages"] = dropped_languages
+
+    insurance = extracted.get("insurance")
+    if isinstance(insurance, dict):
+        normalized_source = _normalize_insurance_name(source_text)
+        kept, removed = [], []
+        for network in insurance.get("accepted_networks") or []:
+            key = _normalize_insurance_name(str(network))
+            (kept if key and key in normalized_source else removed).append(network)
+        insurance["accepted_networks"] = kept
+        if removed:
+            dropped["insurance"] = removed
+
+    kept_team, removed_team = [], []
+    for member in extracted.get("team_members") or []:
+        name = str((member or {}).get("name") or "")
+        tokens = [t for t in name.replace(",", " ").replace(".", " ").split() if len(t) > 2]
+        found = bool(tokens) and any(token.lower() in source for token in tokens[-2:])
+        (kept_team if found else removed_team).append(member)
+    extracted["team_members"] = kept_team
+    if removed_team:
+        dropped["team_members"] = [m.get("name") for m in removed_team]
+
+    if dropped:
+        print(f"[*] Verification dropped unsupported data: {dropped}")
+    extracted["verification_dropped"] = dropped
+    return extracted
+
+
 def extract_clinic_data(hospital_name: str, text_content) -> Optional[dict]:
     """
     Extract structured clinic data from raw scraped content using Instructor
@@ -342,25 +414,30 @@ def extract_clinic_data(hospital_name: str, text_content) -> Optional[dict]:
     safe_text = extraction_context[:55000]
 
     system_prompt = (
-        "You extract clinic profile data for Asian Health Hub. "
-        "Use only the provided webpage content, JSON-LD, links, and iframe sources. "
-        "Extract all fields needed for the clinic detail wireframe: highlights, about, short description, cultural context, "
+        "You extract clinic profile data for Asian Health Hub, a directory of language-accessible care for Asian American patients. "
+        "Use ONLY the provided webpage content, JSON-LD, links, contact details and iframe sources. "
+        "Extract all fields needed for the clinic detail page: highlights, about, short description, cultural context, "
         "insurance, services, team, pricing, location, reviews, booking, hours, phone, and website. "
-        "Do not invent providers, prices, insurance, languages, reviews, hours, or cultural context. "
-        "If a value is not present, use null or an empty list as appropriate. "
-        "For boolean fields like accepts_medicaid and accepts_medicare, use null when not mentioned — do not default to false."
+        "Never invent providers, prices, insurance, languages, reviews, hours, or cultural context. "
+        "If a value is not present, use null or an empty list. "
+        "For boolean fields like accepts_medicaid and accepts_medicare, use null when not mentioned - do not default to false. "
+        "Treat the 'Verified Contact Details' section and JSON-LD as the highest-confidence source for phone, email, address and hours. "
+        "Data may be spread over several PAGE sections (home, about, team, insurance, contact) - read all of them before answering."
     )
     user_prompt = f"""
     Target clinic or hospital name: {hospital_name}
 
     Read the source content and extract a patient-facing clinic profile. Prioritize:
+    - specialty: ONE short primary specialty such as Dental, Primary Care, Acupuncture & TCM, Pediatrics, Cardiology, Hospital, Mental Health, Dermatology, Ophthalmology, OB/GYN, Orthopedics
+    - address split into street address, city, two-letter state and 5-digit zip (parse it from the footer/contact page/JSON-LD PostalAddress)
     - tab highlights, a 2-3 paragraph about section, and a separate short description (1-2 sentences) for the hero banner
     - culturally relevant Asian, immigrant, bilingual, or language-access context when present
-    - insurance networks, Medicaid/Medicare/private insurance, self-pay and verification notes
+    - languages: only those explicitly stated, each with a short verbatim quote in languages_evidence
+    - insurance: list every named plan/network (Delta Dental, Aetna, Medi-Cal, Cigna, ...) found in an insurance/payment section, footer logos or FAQ; plus Medicaid/Medicare/private/self-pay notes
     - service cards with short descriptions
-    - team member cards with roles, languages, and bio snippets
+    - team members with roles, languages, and bio snippets (providers listed on about/team pages)
     - transparent pricing, membership, free consult, financing, and procedure cost ranges
-    - location details, parking/transit/landmarks, maps links, phone, website, appointment links
+    - location details, parking/transit/landmarks, maps links, phone, website, appointment/booking links
     - review rating, review count, positive themes, concern themes, and featured review snippets
     - gallery image URLs from image candidates when they look clinic/provider/location related
 
@@ -373,9 +450,9 @@ def extract_clinic_data(hospital_name: str, text_content) -> Optional[dict]:
         {"role": "user", "content": user_prompt},
     ]
 
-    # Primary model: DeepSeek (fast, cost-effective, strong structured extraction)
-    PRIMARY_MODEL  = "deepseek/deepseek-v4-flash"
-    FALLBACK_MODEL = "minimax/minimax-m3"
+    # Models are configurable via .env (OPENCLAW_TEXT_MODEL / OPENCLAW_TEXT_FALLBACK_MODEL).
+    PRIMARY_MODEL  = os.environ.get("OPENCLAW_TEXT_MODEL", "openai/gpt-6-luna")
+    FALLBACK_MODEL = os.environ.get("OPENCLAW_TEXT_FALLBACK_MODEL", "deepseek/deepseek-v4-flash")
 
     print(f"[*] Sending extraction request to OpenRouter ({PRIMARY_MODEL})...")
     try:
@@ -406,5 +483,6 @@ def extract_clinic_data(hospital_name: str, text_content) -> Optional[dict]:
             return None
 
     extracted = data.model_dump()
+    extracted = _verify_against_source(extracted, extraction_context)
     print(f"[*] Successfully extracted data for {extracted.get('name')}")
     return _with_pipeline_compatibility(extracted)

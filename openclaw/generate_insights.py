@@ -17,6 +17,7 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 from storage import upload_image_value
 from progress import report_progress
+from image_generator import generate_image_value, build_article_prompt, IMAGE_MODEL, IMAGE_FALLBACK_MODEL
 
 # Load env vars
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,7 +26,6 @@ load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
 load_dotenv(".env")
 load_dotenv(".env.local")
 
-IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
 
 NATURAL_PHOTO_STYLE = (
     "Natural documentary healthcare photography, available window or overhead clinic light, "
@@ -39,7 +39,7 @@ REALISTIC_PHOTO_NEGATIVE_STYLE = (
     "glamour lighting, hyper-sharp HDR, surreal depth of field, distorted hands, extra fingers, "
     "fake medical equipment, unreadable gibberish text, logos, watermarks, captions, posters, and signage."
 )
-TEXT_MODEL = "deepseek/deepseek-v4-flash"
+TEXT_MODEL = os.environ.get("OPENCLAW_TEXT_MODEL", "openai/gpt-6-luna")
 CONTENT_WORD_TARGETS = {
     "insight": {"min": 1200, "max": 1500, "label": "1,200-1,500 words"},
     "guide": {"min": 3000, "max": 3500, "label": "3,000-3,500 words"},
@@ -1262,81 +1262,22 @@ def enforce_photorealistic_image_prompt(prompt: str) -> str:
         text = f"{text}, no watermarks"
     return text
 
-def search_authentic_article_photo(prompt_text: str, fallback_query: str = "") -> Optional[str]:
-    """Search for authentic real healthcare photographs via Brave Search (Unsplash) to avoid AI look."""
-    brave_key = os.environ.get("BRAVE_SEARCH_API_KEY")
-    if not brave_key:
-        return None
-
-    clean_prompt = re.sub(r"[^\w\s]", " ", prompt_text)
-    skip_words = {"create", "photo", "realistic", "photograph", "image", "editorial", "style", "authentic", "natural", "shot", "showing", "scene"}
-    words = [w for w in clean_prompt.split() if len(w) > 3 and w.lower() not in skip_words]
-    search_terms = " ".join(words[:5])
-    if not search_terms:
-        search_terms = fallback_query or "asian patient doctor medical consultation"
-
-    query = f"site:unsplash.com {search_terms} healthcare"
-    url = f"https://api.search.brave.com/res/v1/images/search?q={quote(query)}&count=6"
-    req = urllib.request.Request(
-        url,
-        headers={"X-Subscription-Token": brave_key, "Accept": "application/json", "User-Agent": "AsianHealthHub/1.0"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            data = json.loads(resp.read().decode())
-            for item in data.get("results", []):
-                img_url = item.get("properties", {}).get("url")
-                if img_url and ("svg" not in img_url.lower()) and ("icon" not in img_url.lower()):
-                    return img_url
-    except Exception as exc:
-        print(f"[!] Authentic photo search failed: {exc}")
-    return None
-
 def generate_article_images(client: OpenAI, data: dict, slug: str) -> List[str]:
-    """Generate all article images in parallel (max 2 concurrent) using authentic real photography first."""
+    """Generate all article images in parallel (max 2 concurrent) with the configured image model + fallback."""
     image_prompts = normalize_image_prompts(data)
     suffixes = ["hero", "inline-1", "inline-2", "inline-3", "inline-4"]
     run_id = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     total = len(image_prompts)
     results: dict[int, str] = {}
     semaphore = threading.Semaphore(2)  # max 2 concurrent image requests
-    report_progress(f"🎨 Đang tìm kiếm và xử lý {total} hình ảnh chân thực cho bài viết...")
+    report_progress(f"🎨 Đang tạo {total} hình ảnh cho bài viết...")
 
     def generate_one(index: int, prompt: str) -> tuple[int, str]:
         with semaphore:
             suffix = f"{suffixes[index]}-{run_id}"
-            title = data.get("title") or ""
-            # 1. Prefer authentic real photography
-            authentic_url = search_authentic_article_photo(prompt, title)
-            if authentic_url:
-                print(f"[+] Found authentic real photo for image {index + 1}/{total}: {authentic_url}")
-                url = save_generated_image(authentic_url, slug, suffix)
-                if url:
-                    return index, url
-
-            # 2. Fallback to AI generation if real photo search returned nothing
-            print(f"[*] Fallback: Generating image {index + 1}/{total} via {IMAGE_MODEL} using prompt: {prompt}")
+            print(f"[*] Generating image {index + 1}/{total} via {IMAGE_MODEL} (fallback {IMAGE_FALLBACK_MODEL}): {prompt}")
             try:
-                image_response = client.chat.completions.create(
-                    model=IMAGE_MODEL,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": (
-                                "Create one realistic documentary-style editorial healthcare photograph for Asian Health Hub. "
-                                "Make it feel like a real candid photo taken during an ordinary healthcare or family-care moment, not an AI-generated scene. "
-                                "Use natural available light, realistic clinic or home details, grounded emotion, ordinary clothing, authentic human expressions, "
-                                "natural skin texture, subtle wrinkles, unretouched faces, believable hands, and diverse Asian American patients or clinicians when people are shown. "
-                                "Keep the composition slightly imperfect and observational, with realistic color and mild grain. "
-                                f"{NATURAL_PHOTO_STYLE} "
-                                f"{REALISTIC_PHOTO_NEGATIVE_STYLE} "
-                                "Accurate healthcare context, no text, no logos, no watermarks. Topic: "
-                                f"{prompt}"
-                            ),
-                        }
-                    ],
-                )
-                image_value = extract_image_value(image_response.choices[0].message)
+                image_value = generate_image_value(client, build_article_prompt(prompt))
                 url = save_generated_image(image_value, slug, suffix)
                 return index, url or ""
             except Exception as exc:

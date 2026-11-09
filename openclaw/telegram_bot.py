@@ -42,7 +42,19 @@ from jobs import (
     approve_claim_job,
     reject_claim_job,
     check_analytics_job,
+    check_clinic_quality,
+    directory_audit_job,
+    search_audit_job,
+    scout_gaps_job,
+    web_edit_job,
+    seo_audit_job,
+    seo_setup_job,
+    site_analyze_job,
+    dev_diff_job,
+    rollback_code_job,
+    publish_code_job,
 )
+from dev_agent import capture_page_screenshot
 
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
@@ -136,6 +148,55 @@ class TelegramBot:
         chunks = [text[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(text), MAX_MESSAGE_LENGTH)] or [""]
         for chunk in chunks:
             self.request("sendMessage", {"chat_id": chat_id, "text": chunk})
+
+    def send_photo(self, chat_id: int, photo_path: str, caption: str = "") -> None:
+        if not photo_path or not os.path.exists(photo_path):
+            return
+        try:
+            import requests
+
+            url = TELEGRAM_API.format(token=self.token, method="sendPhoto")
+            with open(photo_path, "rb") as fh:
+                requests.post(
+                    url,
+                    data={"chat_id": str(chat_id), "caption": (caption or "")[:950]},
+                    files={"photo": fh},
+                    timeout=60,
+                )
+        except Exception as exc:
+            print(f"[!] Could not send Telegram photo: {exc}")
+
+    def download_telegram_photo(self, photos: list) -> Optional[str]:
+        if not photos:
+            return None
+        try:
+            best = photos[-1]
+            file_id = best.get("file_id")
+            if not file_id:
+                return None
+            file_info = self.request("getFile", {"file_id": file_id}).get("result") or {}
+            file_path = file_info.get("file_path")
+            if not file_path:
+                return None
+            dl_url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+            local_path = f"/tmp/tg_upload_{int(time.time())}.jpg"
+            urllib.request.urlretrieve(dl_url, local_path)
+            return local_path if os.path.exists(local_path) else None
+        except Exception as exc:
+            print(f"[!] Could not download Telegram photo: {exc}")
+            return None
+
+    def send_preview_screenshots(self, chat_id: int, route_path: str = "/") -> None:
+        clean_route = "/" + (route_path or "/").lstrip("/")
+        self.send_message(chat_id, f"📸 Đang chụp ảnh màn hình giao diện `{clean_route}` (Desktop & Mobile)...")
+        desk_img = capture_page_screenshot(clean_route, viewport="desktop")
+        mob_img = capture_page_screenshot(clean_route, viewport="mobile")
+        if desk_img:
+            self.send_photo(chat_id, desk_img, caption=f"🖥️ Desktop Preview: {clean_route}")
+        if mob_img:
+            self.send_photo(chat_id, mob_img, caption=f"📱 Mobile Preview: {clean_route}")
+        if not desk_img and not mob_img:
+            self.send_message(chat_id, f"⚠️ Không thể chụp ảnh màn hình cho `{clean_route}`.")
 
     def split_message(self, text: str) -> list[str]:
         if not text:
@@ -326,6 +387,18 @@ class TelegramBot:
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
             "/find_clinics <query> | [limit] - scout Google Places, scrape websites, extract clinic data, and save new clinics\n"
             "/scrape_clinic_url <clinic name> | <url> - scrape one known clinic website and save/update it\n"
+            "/clinic_quality [threshold] - show clinic data quality scores and lowest-scoring clinics\n"
+            "/directory_audit - show Track C entity/field/insurance/price coverage & Track E supply gaps\n"
+            "/search_audit - run the Track D 30-query search benchmark suite\n"
+            "/scout_gaps [count] - auto-scout top underserved (City x Specialty x Language) gaps\n"
+            "/web_edit <instruction> - ask the Autonomous Web-Dev Agent to edit UI/design/code in src/\n"
+            "/seo_audit [route] - audit Next.js metadata, JSON-LD schema, headings, alt tags, and DB SEO\n"
+            "/seo_setup <instruction> - ask the SEO Agent to code/update metadata, JSON-LD, or sitemaps\n"
+            "/site_analyze [route] - run deep Playwright UX/speed probe + Supabase conversion funnel analysis\n"
+            "/preview [route] - capture live Desktop & Mobile screenshots of a page\n"
+            "/dev_diff - view uncommitted code changes in src/ and public/\n"
+            "/publish [commit msg] - typecheck, git commit & push to GitHub main, and rebuild live web container\n"
+            "/rollback - discard uncommitted edits in src/ and public/\n"
             "/enrich_clinics_google - add Google Places photos, rating, reviews, and Maps links to existing clinics\n"
             "/repair_clinic_images - generate missing clinic directory images\n"
             "/repair_article_images - generate missing article images\n"
@@ -743,6 +816,12 @@ Return ONLY valid JSON. Do not answer the user.
 
 Allowed actions:
 - chat
+- web_edit
+- seo_audit
+- seo_setup
+- site_analyze
+- publish_code
+- rollback_code
 - generate_insight
 - generate_guide
 - generate_pulse
@@ -773,6 +852,10 @@ Allowed actions:
 
 Rules:
 - Decision priority:
+  0a. If the user asks to edit, modify, redesign, fix, add, or remove any UI element, section, form, button, hero, navbar, footer, layout, CSS, or page on the website (e.g., "edit homepage, xóa form question ở hero", "sửa giao diện trang chủ", "đổi màu nút", "sửa trang search"), choose `web_edit`. Do NOT choose `delete_article`, `delete_clinic`, or `chat` when the user is talking about editing a webpage/UI component!
+  0b. If the user asks to audit/check SEO, choose `seo_audit`. If the user asks to setup, add, or optimize SEO tags/schema/metadata/sitemap in code, choose `seo_setup`.
+  0c. If the user asks to analyze the website's performance/UX/funnel ("analyze website", "phân tích trang web"), choose `site_analyze`.
+  0d. If the user asks to publish/push code changes to GitHub or deploy/update live ("publish lên github", "push code", "update lên live"), choose `publish_code`. If they ask to revert/undo code edits ("rollback", "hoàn tác code"), choose `rollback_code`.
   0. If the user asks to see, check, view, list, print, or report analytics, visitor stats, traffic numbers, search queries, or clinic click counts, choose check_analytics.
   1. If the user asks to scrape, add, import, save, or create a clinic/directory profile from one exact clinic website URL, choose scrape_clinic_url.
   2. If the user asks to change, replace, update, regenerate, or "thay đổi" images/photos for one specific article/blog/insight, choose regenerate_article_images.
@@ -1102,6 +1185,72 @@ Return JSON:
                 "summary": (
                     f"You want to run the analytics overview report for timeframe '{timeframe}' and filter type '{filter_type.upper()}', correct?\n\n"
                     "Reply `approve` to start the check."
+                ),
+            }
+        if action == "web_edit":
+            instr = str(data.get("rewrite_instruction") or original_text).strip()
+            return {
+                "type": "web_edit",
+                "name": f"web_edit: {instr[:45]}",
+                "instruction": instr,
+                "image_path": None,
+                "summary": (
+                    f"Bạn muốn **Autonomous Web-Dev Agent** chỉnh sửa giao diện / mã nguồn website theo yêu cầu:\n“{instr}”\n\n"
+                    "Nếu bạn trả lời `approve`, Agent sẽ tự tìm file trong `src/`, thực hiện chỉnh sửa, kiểm tra TypeScript (`npx tsc --noEmit`) và báo cáo kết quả cho bạn trước khi `/publish`."
+                ),
+            }
+        if action == "seo_audit":
+            target_route = str(data.get("target") or "/").strip()
+            if not target_route.startswith("/"):
+                target_route = "/"
+            return {
+                "type": "seo_audit",
+                "name": f"seo_audit ({target_route})",
+                "route": target_route,
+                "summary": (
+                    f"Bạn muốn chạy **Technical SEO Audit** cho `{target_route}`, đúng không?\n\n"
+                    "Trả lời `approve` để bắt đầu."
+                ),
+            }
+        if action == "seo_setup":
+            instr = str(data.get("rewrite_instruction") or original_text).strip()
+            return {
+                "type": "seo_setup",
+                "name": f"seo_setup: {instr[:45]}",
+                "instruction": instr,
+                "summary": (
+                    f"Bạn muốn **SEO Agent** cập nhật cấu hình/mã nguồn SEO theo yêu cầu:\n“{instr}”\n\n"
+                    "Trả lời `approve` để bắt đầu."
+                ),
+            }
+        if action == "site_analyze":
+            return {
+                "type": "site_analyze",
+                "name": "site_analyze (/)",
+                "route": "/",
+                "timeframe": str(data.get("timeframe") or "week").strip().lower(),
+                "summary": (
+                    "Bạn muốn chạy **Deep Website Analyzer** (Playwright kiểm tra tốc độ/bố cục + phân tích phễu chuyển đổi Supabase), đúng không?\n\n"
+                    "Trả lời `approve` để bắt đầu."
+                ),
+            }
+        if action == "publish_code":
+            return {
+                "type": "publish_code",
+                "name": "publish_to_github_and_live",
+                "commit_message": str(data.get("rewrite_instruction") or original_text).strip(),
+                "summary": (
+                    "Bạn muốn kiểm tra TypeScript, commit các thay đổi hiện tại, **push lên GitHub (`origin main`)** và **cập nhật bản Live**, đúng không?\n\n"
+                    "Trả lời `approve` để thực thi."
+                ),
+            }
+        if action == "rollback_code":
+            return {
+                "type": "rollback_code",
+                "name": "rollback_code",
+                "summary": (
+                    "Bạn muốn hoàn tác (`rollback`) toàn bộ các thay đổi chưa commit trong `src/` và `public/`, đúng không?\n\n"
+                    "Trả lời `approve` để thực thi."
                 ),
             }
 
@@ -1649,6 +1798,159 @@ Return JSON:
 
             return self.build_topic_content_action(topic, mode=mode)
 
+        # Natural language routing for SEO Audit / Setup
+        if "seo" in normalized:
+            if any(w in normalized for w in ["audit", "kiểm tra", "kiem tra", "check", "đánh giá", "danh gia"]):
+                return {
+                    "type": "seo_audit",
+                    "name": "seo_audit",
+                    "route": "/",
+                    "summary": (
+                        "Bạn muốn chạy kiểm toán SEO toàn diện (Metadata, JSON-LD, Heading, Alt, Sitemap & DB SEO), đúng không?\n\n"
+                        "Trả lời `approve` để chạy ngay."
+                    ),
+                }
+            return {
+                "type": "seo_setup",
+                "name": f"seo_setup: {text[:45]}",
+                "instruction": text,
+                "summary": (
+                    f"Bạn muốn **SEO Agent** tự động thiết lập / chỉnh sửa code SEO theo yêu cầu:\n“{text}”\n\n"
+                    "Nếu bạn trả lời `approve`, Agent sẽ đọc mã nguồn `src/app/`, cập nhật Metadata / JSON-LD / Sitemap và kiểm tra TypeScript trước khi báo cáo."
+                ),
+            }
+
+        # Natural language routing for Publish / Push to GitHub & Live
+        if any(
+            phrase in normalized
+            for phrase in [
+                "publish lên github",
+                "publish len github",
+                "đẩy lên github",
+                "day len github",
+                "push lên github",
+                "push len github",
+                "update lên live",
+                "update len live",
+                "deploy live",
+            ]
+        ):
+            return {
+                "type": "publish_code",
+                "name": "publish_to_github_and_live",
+                "commit_message": text,
+                "summary": (
+                    "Bạn muốn kiểm tra TypeScript, commit các thay đổi hiện tại, **push lên GitHub (`origin main`)** và **cập nhật bản Live**, đúng không?\n\n"
+                    "Trả lời `approve` để thực thi."
+                ),
+            }
+
+        # Natural language routing for Deep Website Analysis
+        if any(
+            phrase in normalized
+            for phrase in [
+                "analyze website",
+                "phân tích website",
+                "phan tich website",
+                "kiểm tra website",
+                "kiem tra website",
+                "phân tích trang web",
+                "phan tich trang web",
+                "check analyze",
+            ]
+        ):
+            return {
+                "type": "site_analyze",
+                "name": "site_analyze",
+                "route": "/",
+                "timeframe": "week",
+                "summary": (
+                    "Bạn muốn chạy **Deep Website Analyzer** (Playwright kiểm tra tốc độ/bố cục/ảnh lỗi + phân tích phễu chuyển đổi Supabase), đúng không?\n\n"
+                    "Trả lời `approve` để bắt đầu."
+                ),
+            }
+
+        # Natural language routing for Web-Dev UI / Design / Code Edits
+        has_ui_target = any(
+            t in normalized
+            for t in [
+                "homepage",
+                "trang chủ",
+                "trang chu",
+                "hero",
+                "navbar",
+                "header",
+                "footer",
+                "sidebar",
+                "button",
+                "nút",
+                "form",
+                "section",
+                "layout",
+                "giao diện",
+                "giao dien",
+                "thiết kế",
+                "thiet ke",
+                "css",
+                "font",
+                "spacing",
+                "padding",
+                "margin",
+                "trang search",
+                "trang clinic",
+                "website",
+                "trang web",
+            ]
+        )
+        has_ui_verb = any(
+            v in normalized
+            for v in [
+                "edit",
+                "sửa",
+                "sua",
+                "chỉnh",
+                "chinh",
+                "xóa",
+                "xoa",
+                "bỏ",
+                "bo",
+                "thêm",
+                "them",
+                "đổi",
+                "doi",
+                "cập nhật",
+                "cap nhat",
+                "update",
+                "remove",
+                "fix",
+                "redesign",
+            ]
+        )
+        if (has_ui_target and has_ui_verb) or any(
+            phrase in normalized
+            for phrase in [
+                "edit design",
+                "sửa giao diện",
+                "sua giao dien",
+                "chỉnh sửa trang web",
+                "chinh sua trang web",
+                "sửa thiết kế",
+                "sua thiet ke",
+                "sửa code",
+                "sua code",
+            ]
+        ):
+            return {
+                "type": "web_edit",
+                "name": f"web_edit: {text[:45]}",
+                "instruction": text,
+                "image_path": None,
+                "summary": (
+                    f"Bạn muốn **Autonomous Web-Dev Agent** chỉnh sửa giao diện / mã nguồn theo yêu cầu:\n“{text}”\n\n"
+                    "Nếu bạn trả lời `approve`, Agent sẽ tìm file trong `src/`, áp dụng bản vá, chạy kiểm tra TypeScript (`tsc --noEmit`) và gửi kết quả kèm ảnh chụp màn hình để bạn duyệt trước khi `/publish`."
+                ),
+            }
+
         return None
 
     def run_url_batch(self, urls: list[str], fn: Callable[[str], str]) -> str:
@@ -1833,6 +2135,46 @@ Return JSON:
             timeframe = action.get("timeframe", "week")
             filter_type = action.get("filter_type", "all")
             self.run_job(chat_id, action["name"], lambda: check_analytics_job(timeframe, filter_type), action_type=action_type)
+        elif action_type == "web_edit":
+            instruction = action["instruction"]
+            img_path = action.get("image_path")
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: web_edit_job(
+                    instruction,
+                    image_path=img_path,
+                    progress_callback=lambda msg: self.send_message(chat_id, msg),
+                ),
+                action_type=action_type,
+            )
+        elif action_type == "seo_audit":
+            self.run_job(chat_id, action["name"], lambda: seo_audit_job(action.get("route")), action_type=action_type)
+        elif action_type == "seo_setup":
+            instruction = action["instruction"]
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: seo_setup_job(instruction, progress_callback=lambda msg: self.send_message(chat_id, msg)),
+                action_type=action_type,
+            )
+        elif action_type == "site_analyze":
+            route = action.get("route", "/")
+            tf = action.get("timeframe", "week")
+            self.run_job(chat_id, action["name"], lambda: site_analyze_job(route, tf), action_type=action_type)
+        elif action_type == "publish_code":
+            commit_msg = action.get("commit_message")
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: publish_code_job(
+                    commit_message=commit_msg,
+                    telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
+                ),
+                action_type=action_type,
+            )
+        elif action_type == "rollback_code":
+            self.send_message(chat_id, rollback_code_job())
         else:
             self.send_message(chat_id, "I do not know how to run this action yet. Please send a clearer request.")
 
@@ -1873,6 +2215,103 @@ Return JSON:
             )
         elif command == "/tail":
             self.send_message(chat_id, tail_log())
+        elif command in {"/clinic_quality", "/quality"}:
+            arg = re.sub(r"^/(?:clinic_quality|quality)(?:@\w+)?", "", text, count=1).strip()
+            threshold = int(arg) if arg.isdigit() else 85
+            self.send_message(chat_id, check_clinic_quality(threshold=threshold))
+        elif command in {"/directory_audit", "/audit_directory"}:
+            self.send_message(chat_id, directory_audit_job())
+        elif command in {"/search_audit", "/benchmark_search"}:
+            self.send_message(chat_id, search_audit_job())
+        elif command == "/scout_gaps":
+            arg = re.sub(r"^/scout_gaps(?:@\w+)?", "", text, count=1).strip()
+            limit_gaps = int(arg) if arg.isdigit() else 3
+            self.send_message(
+                chat_id,
+                f"Đã nhận lệnh `/scout_gaps`. Đang tự động tìm các ô (City × Specialty × Language) thiếu phòng khám nhất và chạy trinh sát cho {limit_gaps} ô đầu tiên...",
+            )
+            self.run_job(
+                chat_id,
+                f"scout_gaps ({limit_gaps} gaps)",
+                lambda: scout_gaps_job(
+                    limit_gaps=limit_gaps,
+                    per_gap_limit=2,
+                    telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
+                ),
+                action_type="find_clinics",
+            )
+        elif command in {"/web_edit", "/edit_web", "/code"}:
+            instruction = re.sub(r"^/(?:web_edit|edit_web|code)(?:@\w+)?", "", text, count=1).strip()
+            if not instruction:
+                self.send_message(
+                    chat_id,
+                    "Cách dùng: `/web_edit <mô tả chỉnh sửa giao diện hoặc tính năng>`\nVí dụ: `/web_edit Đổi tiêu đề phụ ở trang /search và thêm badge Verified cho các thẻ phòng khám`",
+                )
+            else:
+                self.run_job(
+                    chat_id,
+                    f"web_edit: {instruction[:42]}",
+                    lambda: web_edit_job(
+                        instruction,
+                        progress_callback=lambda msg: self.send_message(chat_id, msg),
+                    ),
+                    action_type="web_edit",
+                )
+        elif command == "/seo_audit":
+            route = re.sub(r"^/seo_audit(?:@\w+)?", "", text, count=1).strip() or None
+            self.run_job(
+                chat_id,
+                f"seo_audit ({route or 'all'})",
+                lambda: seo_audit_job(target_route=route),
+                action_type="seo_audit",
+            )
+        elif command == "/seo_setup":
+            instruction = re.sub(r"^/seo_setup(?:@\w+)?", "", text, count=1).strip()
+            if not instruction:
+                self.send_message(
+                    chat_id,
+                    "Cách dùng: `/seo_setup <yêu cầu tối ưu SEO>`\nVí dụ: `/seo_setup Kiểm tra và bổ sung JSON-LD Organization & WebSite vào src/app/layout.tsx`",
+                )
+            else:
+                self.run_job(
+                    chat_id,
+                    f"seo_setup: {instruction[:42]}",
+                    lambda: seo_setup_job(
+                        instruction,
+                        progress_callback=lambda msg: self.send_message(chat_id, msg),
+                    ),
+                    action_type="seo_setup",
+                )
+        elif command == "/site_analyze":
+            arg = re.sub(r"^/site_analyze(?:@\w+)?", "", text, count=1).strip()
+            route = arg if arg.startswith("/") else "/"
+            self.run_job(
+                chat_id,
+                f"site_analyze ({route})",
+                lambda: site_analyze_job(target_route=route, timeframe="week"),
+                action_type="site_analyze",
+            )
+        elif command == "/preview":
+            route = re.sub(r"^/preview(?:@\w+)?", "", text, count=1).strip() or "/"
+            threading.Thread(
+                target=lambda: self.send_preview_screenshots(chat_id, route),
+                daemon=True,
+            ).start()
+        elif command in {"/dev_diff", "/git_status"}:
+            self.send_message(chat_id, dev_diff_job())
+        elif command == "/rollback":
+            self.send_message(chat_id, rollback_code_job())
+        elif command == "/publish":
+            commit_msg = re.sub(r"^/publish(?:@\w+)?", "", text, count=1).strip() or None
+            self.run_job(
+                chat_id,
+                "publish_to_github_and_live",
+                lambda: publish_code_job(
+                    commit_message=commit_msg,
+                    telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
+                ),
+                action_type="publish_code",
+            )
         elif command == "/prompt":
             self.send_message(chat_id, OPENCLAW_AGENT_SYSTEM_PROMPT)
         elif command == "/research":
@@ -2099,15 +2538,35 @@ Return JSON:
                 for update in self.get_updates():
                     self.offset = update["update_id"] + 1
                     message = update.get("message") or {}
-                    text = message.get("text") or ""
+                    text = message.get("text") or message.get("caption") or ""
+                    photos = message.get("photo") or []
                     chat_id = message.get("chat", {}).get("id")
                     user_id = message.get("from", {}).get("id")
 
-                    if not chat_id or not user_id or not text:
+                    if not chat_id or not user_id or (not text and not photos):
                         continue
 
                     if not self.is_allowed(user_id):
                         self.send_message(chat_id, "You are not allowed to use this OpenClaw bot.")
+                        continue
+
+                    if photos and text:
+                        local_img = self.download_telegram_photo(photos)
+                        clean_instr = re.sub(r"^/(?:web_edit|edit_web|code)(?:@\w+)?", "", text, count=1).strip() or text
+                        self.send_message(
+                            chat_id,
+                            f"📸 Đã nhận ảnh chụp màn hình kèm yêu cầu: “{clean_instr}”. Đang chuyển vào Web-Dev Agent...",
+                        )
+                        self.run_job(
+                            chat_id,
+                            f"web_edit (vision): {clean_instr[:36]}",
+                            lambda instr=clean_instr, img=local_img: web_edit_job(
+                                instr,
+                                image_path=img,
+                                progress_callback=lambda msg: self.send_message(chat_id, msg),
+                            ),
+                            action_type="web_edit",
+                        )
                         continue
 
                     if text.startswith("/"):

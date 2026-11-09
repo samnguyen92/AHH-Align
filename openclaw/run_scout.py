@@ -29,7 +29,10 @@ from db import insert_clinic
 from extractor import extract_clinic_data
 from google_places import get_google_places_key, search_places_by_text, enrich_clinic_with_google_places
 from image_generator import generate_clinic_image
+from enrich_web import enrich_missing_with_brave, _brave_web_search
+from normalize import compute_quality, merge_deterministic_contacts
 from scraper import scrape_content_from_url
+from third_party_profiles import enrich_clinic_with_third_party_profiles
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +265,16 @@ def run_scout_pipeline(
     )
 
     places = search_places_by_text(query, api_key, limit=requested_count, included_types=included_types)
+    if not places:
+        _notify(
+            telegram_updater_callback,
+            "⚠️ Google Places không trả về kết quả (có thể do lỗi 403/Billing). Đang chuyển sang tìm kiếm dự phòng qua Brave Search...",
+        )
+        for item in _brave_web_search(f"{query} clinic official website", count=min(requested_count * 2, 10)):
+            url = str(item.get("url") or "").strip()
+            title = str(item.get("title") or "").split("|")[0].split("—")[0].split("-")[0].strip()
+            if _is_valid_website(url) and title:
+                places.append({"displayName": {"text": title[:80]}, "websiteUri": url, "types": ["medical_clinic"]})
 
     # ── Filter 1: Non-medical place type blocklist ────────────────────────────
     # Reject spas, nail salons, restaurants, gyms, etc. before any scraping.
@@ -322,6 +335,10 @@ def run_scout_pipeline(
         try:
             _notify(telegram_updater_callback, f"Đang cào dữ liệu: {name}...")
             content = scrape_content_from_url(website)
+            if content.get("dead_reason"):
+                skipped += 1
+                _notify(telegram_updater_callback, f"Bỏ qua {name}: website không hợp lệ ({content['dead_reason']}).")
+                continue
             text = content.get("markdown_content") or content.get("text") or ""
             if not text:
                 skipped += 1
@@ -333,6 +350,7 @@ def run_scout_pipeline(
                 skipped += 1
                 _notify(telegram_updater_callback, f"Bỏ qua {name}: AI không trích xuất được dữ liệu đủ tin cậy.")
                 continue
+            merge_deterministic_contacts(data, content)
 
             # ── Filter 2: Language validation gate (Soft match) ───────────────
             # If the required language is not explicitly found on the website by the AI extractor,
@@ -391,6 +409,8 @@ def run_scout_pipeline(
 
             _notify(telegram_updater_callback, f"Đang làm giàu Google Places: {name}...")
             data = enrich_clinic_with_google_places(data)
+            data = enrich_missing_with_brave(data)
+            data = enrich_clinic_with_third_party_profiles(data)
             data["google_metadata"] = {
                 **(data.get("google_metadata") or {}),
                 "scout_query": query,
@@ -405,7 +425,9 @@ def run_scout_pipeline(
 
             if insert_clinic(data):
                 saved += 1
-                _notify(telegram_updater_callback, f"✅ Đã lưu: {data.get('name') or name}")
+                q = compute_quality(data)
+                missing_str = f" (thiếu: {', '.join(q['missing'])})" if q["missing"] else ""
+                _notify(telegram_updater_callback, f"✅ Đã lưu: {data.get('name') or name} — Điểm chất lượng: {q['score']}/100{missing_str}")
             else:
                 failed += 1
                 _notify(telegram_updater_callback, f"Lưu thất bại: {name}")

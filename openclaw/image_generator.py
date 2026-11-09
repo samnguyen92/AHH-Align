@@ -1,20 +1,78 @@
 import base64
-import json
 import os
 import re
-import urllib.parse
-import urllib.request
 from typing import Optional
 
 from openai import OpenAI
 from storage import upload_image_value
 
-IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
-NATURAL_PHOTO_STYLE = (
-    "Shot on Sony A7R IV, 50mm lens, f/2.8 depth of field. "
-    "Natural skin texture, subtle wrinkles, unretouched, candid, highly detailed, "
-    "photorealistic, everyday life."
+# Models are configurable via .env. Primary -> fallback is tried in order.
+IMAGE_MODEL = os.environ.get("OPENCLAW_IMAGE_MODEL", "openai/gpt-image-2.5-sunburst")
+IMAGE_FALLBACK_MODEL = os.environ.get("OPENCLAW_IMAGE_FALLBACK_MODEL", "google/gemini-3.1-flash-image")
+
+# Shared prompt building blocks. The goal is a believable documentary photograph, never stock/AI gloss,
+# and NEVER any text, watermark or stamp inside the frame.
+PHOTO_REALISM = (
+    "Photojournalistic documentary photograph, shot on a full-frame camera with a 35mm or 50mm prime lens at f/4, "
+    "available natural light only (window light or ordinary overhead clinic lighting), slightly muted realistic colour, "
+    "very fine natural grain, a little imperfect framing as if taken by a staff photographer on an ordinary day. "
+    "People, if any, are candid and mid-action (talking, reading a chart, listening), not looking at the camera, "
+    "with natural skin texture, visible pores, small asymmetries, flyaway hair and ordinary everyday clothing."
 )
+PHOTO_NEGATIVE = (
+    "Absolutely NO text, letters, numbers, logos, signage, captions, watermarks, stamps, borders or UI overlays anywhere in the image. "
+    "Not an illustration, painting, 3D render, cartoon or infographic. Avoid plastic or waxy skin, perfect symmetry, "
+    "over-smiling stock-photo poses, glossy HDR, oversaturated colours, shallow bokeh blobs, distorted hands or extra fingers, "
+    "fake-looking medical equipment, and gibberish writing on walls or screens."
+)
+
+
+def build_clinic_prompt(clinic_data: dict) -> str:
+    name = clinic_data.get("name") or "a community clinic"
+    specialty = (clinic_data.get("specialty") or "healthcare").strip()
+    city = clinic_data.get("city") or "a US city"
+    state = clinic_data.get("state") or ""
+    languages = [lang for lang in (clinic_data.get("languages") or []) if str(lang).lower() != "english"]
+    cultural = (
+        f"Subtle cues of a neighbourhood serving {', '.join(languages)}-speaking families are fine (e.g. a multilingual-looking waiting area) "
+        "but must not rely on readable text. "
+        if languages
+        else ""
+    )
+    return (
+        f"Wide 4:3 photograph of the real-feeling interior of a small independent {specialty} clinic in {city}{', ' + state if state else ''}: "
+        "the reception and waiting area or a bright treatment room, clean but lived-in, with ordinary furniture, a few plants, "
+        "paperwork on the desk and slightly worn details. No patients' faces in focus; at most one staff member seen from behind or at the edge of the frame. "
+        f"{cultural}{PHOTO_REALISM} {PHOTO_NEGATIVE} Clinic context (do not render the name): {name}."
+    )
+
+
+def build_article_prompt(topic: str) -> str:
+    return (
+        "Editorial photograph for a patient-education health article about Asian American families and healthcare. "
+        f"Scene: {topic}. Show a believable everyday healthcare or family-care moment with ordinary diverse Asian American people "
+        "in a real clinic, pharmacy, kitchen or living room, appropriate to the topic. "
+        f"{PHOTO_REALISM} {PHOTO_NEGATIVE}"
+    )
+
+
+def generate_image_value(client: OpenAI, prompt: str) -> Optional[str]:
+    """Generate one image trying IMAGE_MODEL then IMAGE_FALLBACK_MODEL. Returns data URL / URL or None."""
+    for model in [m for m in (IMAGE_MODEL, IMAGE_FALLBACK_MODEL) if m]:
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                extra_body={"modalities": ["image", "text"]},
+            )
+            image_value = extract_image_value(response.choices[0].message)
+            if image_value:
+                print(f"[+] Image generated via {model}")
+                return image_value
+            print(f"[!] {model} returned no image; trying next model.")
+        except Exception as exc:
+            print(f"[!] Image model {model} failed: {exc}")
+    return None
 
 
 def slugify(text: str) -> str:
@@ -68,70 +126,16 @@ def save_generated_image(image_value: Optional[str], slug: str) -> Optional[str]
     return None
 
 
-def search_real_clinic_photo(specialty: str, city: str) -> Optional[str]:
-    """Search for authentic real clinic/medical photography on Unsplash."""
-    brave_key = os.environ.get("BRAVE_SEARCH_API_KEY")
-    if not brave_key:
-        return None
-
-    spec = specialty or "medical clinic"
-    query = f"site:unsplash.com modern {spec} clinic doctor office consultation"
-    url = f"https://api.search.brave.com/res/v1/images/search?q={urllib.parse.quote(query)}&count=5"
-    req = urllib.request.Request(
-        url,
-        headers={"X-Subscription-Token": brave_key, "Accept": "application/json", "User-Agent": "AsianHealthHub/1.0"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-            for item in data.get("results", []):
-                img_url = item.get("properties", {}).get("url")
-                if img_url and ("svg" not in img_url.lower()) and ("icon" not in img_url.lower()):
-                    return img_url
-    except Exception as exc:
-        print(f"[!] Real clinic photo search error: {exc}")
-    return None
-
-
 def generate_clinic_image(clinic_data: dict) -> Optional[str]:
-    name = clinic_data.get("name") or "Asian Health Hub clinic"
-    specialty = clinic_data.get("specialty") or "healthcare"
-    city = clinic_data.get("city") or "the United States"
-    languages = ", ".join(clinic_data.get("languages") or ["English"])
-    slug = slugify(name)
-
-    # 1. Prefer authentic real photography
-    real_photo_url = search_real_clinic_photo(specialty, city)
-    if real_photo_url:
-        print(f"[+] Found authentic real clinic photo for {name}: {real_photo_url}")
-        cloud_url = save_generated_image(real_photo_url, slug)
-        if cloud_url:
-            return cloud_url
-
-    # 2. Fallback to AI image preview if search fails
+    """Generate a realistic clinic photo (used only when no real photo from the website/Google Places exists)."""
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
-        print("[!] OPENROUTER_API_KEY is not set; skipping fallback image generation.")
+        print("[!] OPENROUTER_API_KEY is not set; skipping image generation.")
         return None
 
-    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
-    prompt = (
-        "Create a photorealistic documentary-style editorial healthcare photograph for a directory card. "
-        "It must look like a credible real photo, not AI art: welcoming modern clinic interior or exterior, warm natural light, clean medical environment, "
-        "authentic human expressions, natural skin texture, subtle wrinkles, unretouched candid faces, believable hands, diverse Asian American patients or staff when people are present. "
-        f"{NATURAL_PHOTO_STYLE} "
-        "No logos, no text, no readable signage, no illustration, no cartoon, no 3D render, no infographic, no plastic skin, no exaggerated stock-photo posing. "
-        f"Clinic context: {name}, {specialty}, {city}. Languages: {languages}."
-    )
-
-    try:
-        print(f"[*] Generating clinic image via {IMAGE_MODEL}: {name}")
-        response = client.chat.completions.create(
-            model=IMAGE_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        image_value = extract_image_value(response.choices[0].message)
-        return save_generated_image(image_value, slug)
-    except Exception as exc:
-        print(f"[!] Clinic image generation failed for {name}: {exc}")
-        return None
+    name = clinic_data.get("name") or "Asian Health Hub clinic"
+    slug = slugify(name)
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key, timeout=120.0)
+    print(f"[*] Generating clinic image: {name}")
+    image_value = generate_image_value(client, build_clinic_prompt(clinic_data))
+    return save_generated_image(image_value, slug) if image_value else None

@@ -51,6 +51,7 @@ export interface ClinicMetadata {
   npi_number?: string;
   google_place_id?: string;
   google_maps_url?: string;
+  google_maps_uri?: string;
   google_website_url?: string;
   google_formatted_address?: string;
   google_business_status?: string;
@@ -63,6 +64,13 @@ export interface ClinicMetadata {
   profile_updated_at?: string;
   founded_year?: number;
   price_tier?: '$' | '$$' | '$$$' | '$$$$' | string;
+  open_saturday?: boolean;
+  open_sunday?: boolean;
+  open_weekend?: boolean;
+  search_keywords?: string[];
+  search_text?: string;
+  quality_score?: number;
+  quality_missing?: string[];
   memberships?: MembershipTier[];
   pricing_summary?: PricingSummary;
   locations?: ClinicLocation[];
@@ -298,6 +306,13 @@ export interface ClinicSearchParams {
   specialty?: string;
   language?: string;
   query?: string;
+  insurance?: string;
+  minRating?: number;
+  telehealth?: boolean;
+  openWeekend?: boolean;
+  acceptingNew?: boolean;
+  priceTier?: string;
+  sort?: 'rating' | 'reviews' | 'quality' | 'newest';
   page?: number;
   limit?: number;
 }

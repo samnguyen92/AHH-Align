@@ -11,7 +11,7 @@ from storage import upload_image_value
 load_dotenv(".env")
 load_dotenv("../.env.local")
 
-IMAGE_MODEL = "google/gemini-3.1-flash-image-preview"
+from image_generator import generate_image_value, build_article_prompt
 NATURAL_PHOTO_STYLE = (
     "Shot on Sony A7R IV, 50mm lens, f/2.8 depth of field. "
     "Natural skin texture, subtle wrinkles, unretouched, candid, highly detailed, "
@@ -73,24 +73,11 @@ def save_generated_image(image_value: Optional[str], slug: str, suffix: str = "r
 
 def generate_article_image(client: OpenAI, article: dict, image_index: int = 1, run_id: Optional[str] = None) -> Optional[str]:
     image_role = "hero cover" if image_index == 1 else f"supporting inline image {image_index - 1}"
-    prompt = (
-        "Create a photorealistic documentary-style editorial healthcare photograph for Asian Health Hub. "
-        "The image must look like a credible real photograph, not AI art: natural available light, realistic clinic or home details, "
-        "authentic human expressions, natural skin texture, subtle wrinkles, unretouched candid faces, believable hands, diverse Asian American patients when people are shown, "
-        f"{NATURAL_PHOTO_STYLE} "
-        "accurate healthcare context, no text, no logos, no watermarks, no readable signage. "
-        "Avoid illustration, cartoon, vector art, 3D render, infographic, plastic skin, over-smoothed faces, exaggerated smiles, staged stock-photo poses, extra fingers, or distorted hands. "
-        f"Image role: {image_role}. Make this visually distinct from the other article images. "
-        f"Article title: {article.get('title')}. "
-        f"Summary: {article.get('excerpt') or article.get('category') or 'healthcare guide'}."
+    topic = (
+        f"{article.get('title')}. Summary: {article.get('excerpt') or article.get('category') or 'healthcare guide'}. "
+        f"Image role: {image_role}; make it visually distinct from the other article images"
     )
-
-    response = client.chat.completions.create(
-        model=IMAGE_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    image_value = extract_image_value(response.choices[0].message)
+    image_value = generate_image_value(client, build_article_prompt(topic))
     suffix = f"repair-{image_index}-{run_id}" if run_id else f"repair-{image_index}"
     return save_generated_image(image_value, article["slug"], suffix)
 

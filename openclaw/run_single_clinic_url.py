@@ -23,7 +23,9 @@ load_dotenv(".env.local")
 from db import insert_clinic
 from extractor import extract_clinic_data
 from google_places import enrich_clinic_with_google_places
+from enrich_web import enrich_missing_with_brave
 from image_generator import generate_clinic_image
+from normalize import compute_quality, merge_deterministic_contacts
 from scraper import scrape_content_from_url
 
 
@@ -69,6 +71,9 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
 
     _log("[1/5] Scraping source website...", progress_callback)
     content = scrape_content_from_url(url)
+    if content.get("dead_reason"):
+        _log(f"[!] Website is not usable: {content['dead_reason']}. Aborting.", progress_callback)
+        return False
     text = content.get("markdown_content") or content.get("text") or ""
     _log(
         "[1/5] Scrape summary: "
@@ -87,6 +92,7 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
     if not data:
         _log("[!] Extraction failed. Aborting.", progress_callback)
         return False
+    merge_deterministic_contacts(data, content)
     _log("[2/5] Extraction summary:", progress_callback)
     _log(json.dumps({
         "name": data.get("name"),
@@ -112,6 +118,7 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
 
     _log("[4/5] Enriching with Google Places and clinic imagery...", progress_callback)
     data = enrich_clinic_with_google_places(data)
+    data = enrich_missing_with_brave(data)
     if not data.get("images"):
         generated_image = generate_clinic_image(data)
         if generated_image:
@@ -124,7 +131,9 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
         _log("[!] Supabase insert/update failed.", progress_callback)
         return False
 
-    _log(f"[+] Saved clinic: {data.get('name')}", progress_callback)
+    q = compute_quality(data)
+    missing_str = f" (missing: {', '.join(q['missing'])})" if q["missing"] else ""
+    _log(f"[+] Saved clinic: {data.get('name')} — Quality score: {q['score']}/100{missing_str}", progress_callback)
     _log("[*] Single URL pipeline complete.", progress_callback)
     return True
 

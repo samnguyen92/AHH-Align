@@ -42,6 +42,45 @@ const CALENDAR_ICON = (
   </svg>
 );
 
+const STAR_ICON = (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="#F59E0B" aria-hidden="true">
+    <path d="M8.243 7.34l-6.38 .925l-.113 .023a1 1 0 0 0 -.44 1.684l4.622 4.499l-1.09 6.355l-.013 .11a1 1 0 0 0 1.464 .944l5.706 -3l5.693 3l.1 .046a1 1 0 0 0 1.352 -1.1l-1.091 -6.355l4.624 -4.5l.078 -.085a1 1 0 0 0 -.633 -1.62l-6.38 -.926l-2.852 -5.78a1 1 0 0 0 -1.794 0l-2.853 5.78z" />
+  </svg>
+);
+
+const PIN_ICON = (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+    <path d="M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z" />
+  </svg>
+);
+
+const GLOBE_ICON = (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+    <path d="M3.6 9h16.8" />
+    <path d="M3.6 15h16.8" />
+    <path d="M11.5 3a17 17 0 0 0 0 18" />
+    <path d="M12.5 3a17 17 0 0 1 0 18" />
+  </svg>
+);
+
+const PHONE_ICON = (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M5 4h4l2 5l-2.5 1.5a11 11 0 0 0 5 5l1.5 -2.5l5 2v4a2 2 0 0 1 -2 2a16 16 0 0 1 -15 -15a2 2 0 0 1 2 -2" />
+  </svg>
+);
+
+function cleanEditorialText(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/domain-parking|parked domain|could not be verified from the provided source|no verified clinic profile/i.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
 
 const LOCATION_FALLBACK_IMAGES = [
@@ -117,15 +156,18 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
   const rawImages = [...(m.images || []), ...(m.gallery_images || [])].filter((v, i, a) => v && a.indexOf(v) === i);
   const images = rawImages.length > 0 ? rawImages : ['/brand/lg/hero.jpg', '/brand/lg/primary-care.jpg', '/brand/lg/family.jpg'];
 
+  const cityState = [clinic.city, clinic.state]
+    .filter((v): v is string => Boolean(v && !['null', 'none', 'undefined'].includes(v.trim().toLowerCase())))
+    .join(', ');
   const about =
-    m.about_highlight ||
-    clinic.description ||
-    `${clinic.name} is a trusted ${clinic.specialty?.toLowerCase() || 'primary care'} clinic in ${clinic.city}, ${clinic.state}.`;
+    cleanEditorialText(m.about_highlight) ||
+    cleanEditorialText(clinic.description) ||
+    `${clinic.name} is a trusted ${clinic.specialty?.toLowerCase() || 'primary care'} clinic${cityState ? ` in ${cityState}` : ' in the United States'}.`;
   const lead =
-    m.short_description ||
+    cleanEditorialText(m.short_description) ||
     paragraphs(about)[0]?.split(/(?<=[.!?])\s+/).slice(0, 2).join(' ') ||
-    `${clinic.name} provides culturally informed ${clinic.specialty?.toLowerCase() || 'medical'} care in ${clinic.city}, ${clinic.state}.`;
-  const culturalContext = m.cultural_context || m.language_note;
+    `${clinic.name} provides culturally informed ${clinic.specialty?.toLowerCase() || 'medical'} care${cityState ? ` in ${cityState}` : ' across the United States'}.`;
+  const culturalContext = cleanEditorialText(m.cultural_context) || cleanEditorialText(m.language_note);
 
   const services: ServiceOffering[] = (m.services_offered?.length ? m.services_offered : m.services || [])
     .map((s) => (typeof s === 'string' ? { name: s } : s))
@@ -169,60 +211,10 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
   ];
   const hasLicenses = allLicenses.length > 0 || !!m.npi_number;
 
-  // Build factline items matching https://longevity.io/orgs/next-health
-  const factItems: React.ReactNode[] = [];
-  if (m.founded_year) {
-    factItems.push(
-      <span key="founded">
-        Founded <b>{m.founded_year}</b>
-      </span>
-    );
-  }
-  if (m.price_tier) {
-    factItems.push(<b key="tier">{m.price_tier}</b>);
-  }
-  if (summary?.starting_price) {
-    factItems.push(
-      <span key="from">
-        from <b>{summary.starting_price}{summary.starting_unit ? `/${summary.starting_unit}` : ''}</b>
-      </span>
-    );
-  }
-  if (locations.length > 0) {
-    const openCount = locations.filter((l) => l.status !== 'opening_soon').length;
-    const soonCount = locations.length - openCount + (m.opening_locations?.length || 0);
-    factItems.push(
-      <span key="locs">
-        <b>{locations.length}</b> locations{soonCount > 0 ? `, ${soonCount} opening` : ''}
-      </span>
-    );
-  } else if (clinic.city && clinic.state) {
-    factItems.push(
-      <span key="city">
-        <b>{clinic.city}</b>, {clinic.state}
-      </span>
-    );
-  }
-  if (ratingCount > 0) {
-    factItems.push(
-      <span key="reviews">
-        <b>{ratingCount.toLocaleString('en-US')}</b> reviews
-      </span>
-    );
-  } else if (rating > 0) {
-    factItems.push(
-      <span key="rating">
-        <b>{rating.toFixed(1)}</b> ★ rating
-      </span>
-    );
-  }
-  if (clinic.languages.length > 0) {
-    factItems.push(
-      <span key="langs">
-        Speaks <b>{clinic.languages.join(', ')}</b>
-      </span>
-    );
-  }
+  const streetShort = clinic.address ? clinic.address.split(',')[0]?.trim() : null;
+  const directionsUrl =
+    m.google_maps_url ||
+    (address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${clinic.name} ${address}`)}` : null);
 
   const tabs = [
     { id: 'overview', label: 'Overview' },
@@ -243,72 +235,139 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
 
   return (
     <div className="lg pb-14">
-      {/* ===== Hero Header (Longevity Single-Column Stack + Below Art Gallery) ===== */}
+      {/* ===== Hero Header (Editorial Profile Card + 3-Photo Bento Gallery) ===== */}
       <header className="lg-prof-hero">
         <div className="lg-prof-wrap">
-          <nav aria-label="Breadcrumb" className="lg-prof-crumbs">
-            <Link href="/search">Find care</Link>
-            <span aria-hidden="true">{CHEV_RIGHT}</span>
-            {clinic.specialty && (
-              <>
-                <Link href={`/search?specialty=${encodeURIComponent(clinic.specialty)}`}>{clinic.specialty}</Link>
-                <span aria-hidden="true">{CHEV_RIGHT}</span>
-              </>
-            )}
-            <span aria-current="page" className="cur">{clinic.name}</span>
-          </nav>
+          <div className="lg-prof-topbar">
+            <nav aria-label="Breadcrumb" className="lg-prof-crumbs">
+              <Link href="/search">Find care</Link>
+              <span aria-hidden="true">{CHEV_RIGHT}</span>
+              {clinic.specialty && (
+                <>
+                  <Link href={`/search?specialty=${encodeURIComponent(clinic.specialty)}`}>{clinic.specialty}</Link>
+                  <span aria-hidden="true">{CHEV_RIGHT}</span>
+                </>
+              )}
+              <span aria-current="page" className="cur">{clinic.name}</span>
+            </nav>
 
-          <div className="lg-prof-eyebrow">
-            {locations.length > 1 ? 'Organization profile · Clinic network' : `Clinic profile${clinic.specialty ? ` · ${clinic.specialty}` : ''}`}
-          </div>
-
-          <h1 className="lg-prof-title">{clinic.name}</h1>
-
-          {factItems.length > 0 && (
-            <div className="lg-prof-facts">
-              {factItems.map((item, idx) => (
-                <span key={idx} className="lg-prof-fact-item">
-                  {idx > 0 && <span aria-hidden="true" className="dot">·</span>}
-                  {item}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <p className="lg-prof-lead">{lead}</p>
-
-          <div className="lg-prof-actions">
-            {bookUrl && (
-              <a
-                href={bookUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="lg-prof-btn lg-prof-btn--primary"
-              >
-                <span>{websiteUrl ? 'Visit website' : 'Book a visit'}</span>
-                {EXT_ARROW}
-              </a>
-            )}
-            {phoneHref && (
-              <a href={phoneHref} className="lg-prof-btn lg-prof-btn--outline">
-                Call {clinic.phone}
-              </a>
-            )}
-            {!clinic.is_claimed && (
-              <Link href={`/claim/${clinic.id}`} className="lg-prof-btn lg-prof-btn--outline">
-                Claim profile
-              </Link>
-            )}
             <span className="lg-prof-updated">
               {CHECK_ICON}
-              Profile updated <time>{updated}</time>
+              <span>Verified profile · Updated <time>{updated}</time></span>
             </span>
           </div>
 
-          {/* 3-Photo Bento Gallery Panel Below Text */}
-          <LgGallery images={images} name={clinic.name} />
+          <div className="lg-prof-hero-card">
+            <div className="lg-prof-badges">
+              <span className="lg-prof-eyebrow-pill">
+                {locations.length > 1 ? 'Organization profile · Clinic network' : `Clinic profile${clinic.specialty ? ` · ${clinic.specialty}` : ''}`}
+              </span>
+              {m.accepting_new_patients !== false && (
+                <span className="lg-prof-status-pill">
+                  <i aria-hidden="true" className="dot" />
+                  Accepting new patients
+                </span>
+              )}
+              {clinic.is_telehealth_available && (
+                <span className="lg-prof-status-pill lg-prof-status-pill--soft">
+                  Telehealth available
+                </span>
+              )}
+            </div>
+
+            <h1 className="lg-prof-title">{clinic.name}</h1>
+
+            <div className="lg-prof-facts">
+              {(rating > 0 || ratingCount > 0) && (
+                <a href="#reviews" className="lg-prof-fact-pill lg-prof-fact-pill--rating">
+                  {STAR_ICON}
+                  {rating > 0 && <b>{rating.toFixed(1)}</b>}
+                  {ratingCount > 0 && <span className="muted">({ratingCount.toLocaleString('en-US')} reviews)</span>}
+                </a>
+              )}
+
+              {(cityState || locations.length > 0) && (
+                <a href="#locations" className="lg-prof-fact-pill">
+                  {PIN_ICON}
+                  {locations.length > 1 ? (
+                    <span>
+                      <b>{locations.length}</b> locations
+                    </span>
+                  ) : (
+                    <span>
+                      <b>{cityState}</b>
+                      {streetShort && <span className="muted"> · {streetShort}</span>}
+                    </span>
+                  )}
+                </a>
+              )}
+
+              {clinic.languages.length > 0 && (
+                <span className="lg-prof-fact-pill">
+                  {GLOBE_ICON}
+                  <span>
+                    Speaks <b>{clinic.languages.join(', ')}</b>
+                  </span>
+                </span>
+              )}
+
+              {m.founded_year && (
+                <span className="lg-prof-fact-pill">
+                  <span>
+                    Est. <b>{m.founded_year}</b>
+                  </span>
+                </span>
+              )}
+
+              {m.price_tier && (
+                <span className="lg-prof-fact-pill">
+                  <b>{m.price_tier}</b>
+                </span>
+              )}
+            </div>
+
+            <p className="lg-prof-lead">{lead}</p>
+
+            <div className="lg-prof-actions">
+              {bookUrl && (
+                <a
+                  href={bookUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="lg-prof-btn lg-prof-btn--primary"
+                >
+                  <span>{websiteUrl ? 'Visit website' : 'Book a visit'}</span>
+                  {EXT_ARROW}
+                </a>
+              )}
+              {phoneHref && (
+                <a href={phoneHref} className="lg-prof-btn lg-prof-btn--outline">
+                  {PHONE_ICON}
+                  <span>Call {clinic.phone}</span>
+                </a>
+              )}
+              {directionsUrl && (
+                <a
+                  href={directionsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="lg-prof-btn lg-prof-btn--outline"
+                >
+                  {PIN_ICON}
+                  <span>Get directions</span>
+                </a>
+              )}
+              {!clinic.is_claimed && (
+                <Link href={`/claim/${clinic.id}`} className="lg-prof-btn lg-prof-btn--ghost">
+                  Claim profile
+                </Link>
+              )}
+            </div>
+
+            {/* 3-Photo Bento Gallery Panel Below Text */}
+            <LgGallery images={images} name={clinic.name} />
+          </div>
         </div>
-        <div aria-hidden="true" className="lg-prof-frame" />
       </header>
 
       {/* ===== Sticky Jump Navigation Bar ===== */}
@@ -357,19 +416,31 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
         {(reviews.length > 0 || ratingCount > 0 || rating > 0) && (
           <Module id="reviews" title="Reviews and reputation">
             <div className="lg-prof-rating-bar">
-              <span className="src">
-                {reviewProfile?.source || 'Google'}
-                {EXT_ARROW}
-              </span>
-              {rating > 0 && (
-                <span className="score">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="#F59E0B" aria-hidden="true">
-                    <path d="M8.243 7.34l-6.38 .925l-.113 .023a1 1 0 0 0 -.44 1.684l4.622 4.499l-1.09 6.355l-.013 .11a1 1 0 0 0 1.464 .944l5.706 -3l5.693 3l.1 .046a1 1 0 0 0 1.352 -1.1l-1.091 -6.355l4.624 -4.5l.078 -.085a1 1 0 0 0 -.633 -1.62l-6.38 -.926l-2.852 -5.78a1 1 0 0 0 -1.794 0l-2.853 5.78z" />
-                  </svg>
-                  {rating.toFixed(1)}
+              {m.google_maps_uri ? (
+                <a
+                  href={m.google_maps_uri}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="src"
+                >
+                  <span>{reviewProfile?.source || 'Google'}</span>
+                  {EXT_ARROW}
+                </a>
+              ) : (
+                <span className="src">
+                  <span>{reviewProfile?.source || 'Google'}</span>
+                  {EXT_ARROW}
                 </span>
               )}
-              {ratingCount > 0 && <span>({ratingCount.toLocaleString('en-US')} reviews)</span>}
+              {rating > 0 && (
+                <span className="score">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="#F59E0B" aria-hidden="true">
+                    <path d="M8.243 7.34l-6.38 .925l-.113 .023a1 1 0 0 0 -.44 1.684l4.622 4.499l-1.09 6.355l-.013 .11a1 1 0 0 0 1.464 .944l5.706 -3l5.693 3l.1 .046a1 1 0 0 0 1.352 -1.1l-1.091 -6.355l4.624 -4.5l.078 -.085a1 1 0 0 0 -.633 -1.62l-6.38 -.926l-2.852 -5.78a1 1 0 0 0 -1.794 0l-2.853 5.78z" />
+                  </svg>
+                  <span>{rating.toFixed(1)}</span>
+                </span>
+              )}
+              {ratingCount > 0 && <span className="cnt">({ratingCount.toLocaleString('en-US')} reviews)</span>}
               <span className="chk">Checked {updated}</span>
             </div>
 
@@ -424,7 +495,10 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
                 <ul className="lg-prof-bullets">
                   {differentiators.map((h) => (
                     <li key={h.title}>
-                      <strong>{h.title}</strong> {h.detail}
+                      <span aria-hidden="true" className="b-dot">•</span>
+                      <span>
+                        <strong>{h.title.replace(/\.$/, '')}.</strong> {h.detail}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -437,7 +511,10 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
                 <ul className="lg-prof-bullets">
                   {beforeBook.map((h) => (
                     <li key={h.title}>
-                      <strong>{h.title}</strong> {h.detail}
+                      <span aria-hidden="true" className="b-dot">•</span>
+                      <span>
+                        <strong>{h.title.replace(/\.$/, '')}.</strong> {h.detail}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -478,11 +555,13 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
                   <span className="cnt">({count})</span>
                 </li>
               ))}
-              {services.map((s) => (
-                <li key={s.name}>
-                  <span className="name">{s.name}</span>
-                </li>
-              ))}
+              {services
+                .filter((s) => !categoryCounts[s.name])
+                .map((s) => (
+                  <li key={s.name}>
+                    <span className="name">{s.name}</span>
+                  </li>
+                ))}
             </ul>
 
             <details className="lg-prof-disclosure">
@@ -616,10 +695,22 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
             <div className="lg-prof-subblock">
               <h3>{pricing[0]?.name || services[0]?.name || 'Comprehensive Assessment & Consultation'}</h3>
               <ul className="lg-prof-inline-checks">
-                <li>A clinician orders your tests</li>
-                <li>Results reviewed by a clinician</li>
-                <li>Bilingual consultation available</li>
-                <li>Personalized action plan</li>
+                <li>
+                  {CHECK_ICON}
+                  <span>A clinician orders your tests</span>
+                </li>
+                <li>
+                  {CHECK_ICON}
+                  <span>Results reviewed by a clinician</span>
+                </li>
+                <li>
+                  {CHECK_ICON}
+                  <span>Bilingual consultation available</span>
+                </li>
+                <li>
+                  {CHECK_ICON}
+                  <span>Personalized action plan</span>
+                </li>
               </ul>
               <p className="lg-prof-text">
                 A physician or practitioner interprets results during a dedicated consultation and delivers a clear
@@ -666,12 +757,21 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
                 </div>
               ) : null}
               {hours && Object.keys(hours).length > 0 && (
-                <div>
+                <div className="lg-prof-dl-wide">
                   <dt>Hours</dt>
                   <dd>
-                    {DAYS.filter((d) => hours[d])
-                      .map((d) => `${d.slice(0, 3).toUpperCase()}: ${hours[d]}`)
-                      .join(' · ')}
+                    <div className="lg-prof-hours-grid">
+                      {DAYS.filter((d) => hours[d]).map((d) => {
+                        const val = hours[d] || '';
+                        const isClosed = /closed/i.test(val);
+                        return (
+                          <div key={d} className={`lg-prof-hour-item ${isClosed ? 'is-closed' : ''}`}>
+                            <span className="day">{d.slice(0, 3).toUpperCase()}</span>
+                            <span className="time">{val}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </dd>
                 </div>
               )}
@@ -712,12 +812,18 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
                 ))}
               </div>
             )}
-            <div className="lg-chips">
-              {insurance?.accepts_medicare && <span className="lg-chip">Medicare accepted</span>}
-              {insurance?.accepts_medicaid && <span className="lg-chip">Medicaid accepted</span>}
-              {insurance?.accepts_private_insurance && <span className="lg-chip">Private PPO / HMO</span>}
-            </div>
-            {insurance?.notes && <p className="lg-prof-text">{insurance.notes}</p>}
+            {(insurance?.accepts_medicare ||
+              insurance?.accepts_medicaid ||
+              insurance?.accepts_private_insurance) && (
+              <div className="lg-chips">
+                {insurance?.accepts_medicare && <span className="lg-chip">Medicare accepted</span>}
+                {insurance?.accepts_medicaid && <span className="lg-chip">Medicaid accepted</span>}
+                {insurance?.accepts_private_insurance && <span className="lg-chip">Private PPO / HMO</span>}
+              </div>
+            )}
+            {insurance?.notes && !/parked domain/i.test(insurance.notes) && (
+              <p className="lg-prof-text">{insurance.notes}</p>
+            )}
           </Module>
         )}
 

@@ -4,7 +4,6 @@ import { ArticleImage } from '@/components/insights/article-image';
 import { getPublishedArticles } from '@/services/article-service';
 import { SAMPLE_NEXT_HEALTH_CLINIC, searchClinics } from '@/services/clinic-service';
 import type { Article, Clinic } from '@/types/database';
-import { HomeQuiz } from '@/components/home/home-quiz';
 import { CountUp, ParallaxImage, Rail, Reveal, SplitTitle } from '@/components/lg/motion';
 
 const HERO_IMAGE = '/brand/lg/hero.jpg';
@@ -252,7 +251,7 @@ export default async function HomePage() {
 
   return (
     <div className="lg">
-      {/* ===== Hero: ambient photo (E) + live quiz (F) ===== */}
+      {/* ===== Hero: ambient photo and language-first introduction ===== */}
       <section className="lg-hero">
         <div className="lg-hero-media">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -274,7 +273,6 @@ export default async function HomePage() {
                 </div>
               )}
             </div>
-            <HomeQuiz counts={quizCounts} />
           </div>
         </div>
       </section>

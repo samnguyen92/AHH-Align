@@ -6,6 +6,7 @@
 import { createServerAnonClient } from './supabase-server';
 import type {
   Clinic,
+  ClinicMetadata,
   ClinicSearchParams,
   PaginatedResponse,
 } from '@/types/database';
@@ -15,11 +16,17 @@ import {
   specialtyRoute,
   stateToSlug,
 } from '@/lib/local-seo';
+import { resolveSearchIntent } from '@/lib/medical-taxonomy';
 
 const DEFAULT_PAGE_SIZE = 20;
 
+function sanitizePostgrestPattern(raw: string): string {
+  return raw.replace(/[,()]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /**
- * Tìm kiếm phòng khám với bộ lọc: city, state, specialty, language.
+ * Tìm kiếm phòng khám với bộ lọc: city, state, specialty, language, insurance,
+ * minRating, telehealth, openWeekend, acceptingNew, priceTier, sort, và deep query.
  * Sử dụng Anon client (respects RLS — public SELECT).
  */
 export async function searchClinics(
@@ -40,43 +47,160 @@ export async function searchClinics(
       .from('clinics')
       .select('*', { count: 'exact' });
 
-    // Áp dụng filters (hỗ trợ chọn nhiều cities cách nhau bởi dấu phẩy)
+    // 1. City filter (hỗ trợ chọn nhiều cities cách nhau bởi dấu phẩy)
     if (params.city) {
       const cities = params.city
         .split(',')
-        .map((c) => c.trim())
+        .map((c) => sanitizePostgrestPattern(c))
         .filter(Boolean);
       if (cities.length === 1) {
         query = query.ilike('city', `%${cities[0]}%`);
       } else if (cities.length > 1) {
-        if (params.query) {
-          query = query.in('city', cities);
-        } else {
-          query = query.or(cities.map((c) => `city.ilike.%${c}%`).join(','));
-        }
+        query = query.in('city', cities);
       }
     }
+
+    // 2. State filter
     if (params.state) {
       query = query.eq('state', params.state.toUpperCase());
     }
+
+    // 3. Specialty filter (hỗ trợ chọn 1 hoặc nhiều specialties)
     if (params.specialty) {
-      query = query.ilike('specialty', `%${params.specialty}%`);
-    }
-    if (params.language) {
-      query = query.contains('languages', [params.language]);
-    }
-    if (params.query) {
-      query = query.or(
-        `name.ilike.%${params.query}%,address.ilike.%${params.query}%`
-      );
+      const specs = params.specialty
+        .split(',')
+        .map((s) => sanitizePostgrestPattern(s))
+        .filter(Boolean);
+      if (specs.length === 1) {
+        query = query.ilike('specialty', `%${specs[0]}%`);
+      } else if (specs.length > 1) {
+        query = query.in('specialty', specs);
+      }
     }
 
-    // Pagination + Sắp xếp (Ưu tiên các cơ sở có rating/ranking cao lên trước)
-    const { data, error, count } = await query
-      .order('metadata->rating', { ascending: false, nullsFirst: false })
-      .order('metadata->rating_count', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+    // 4. Language filter (hỗ trợ chọn 1 hoặc nhiều languages)
+    if (params.language) {
+      const langs = params.language
+        .split(',')
+        .map((l) => l.trim())
+        .filter(Boolean);
+      if (langs.length === 1) {
+        query = query.contains('languages', [langs[0]]);
+      } else if (langs.length > 1) {
+        query = query.overlaps('languages', langs);
+      }
+    }
+
+    // 5. Insurance filter (hỗ trợ chọn 1 hoặc nhiều insurance buckets)
+    if (params.insurance) {
+      const insurances = params.insurance
+        .split(',')
+        .map((i) => sanitizePostgrestPattern(i))
+        .filter(Boolean);
+      if (insurances.length === 1) {
+        query = query.ilike('metadata->>search_text', `%${insurances[0].toLowerCase()}%`);
+      } else if (insurances.length > 1) {
+        for (const ins of insurances.slice(0, 1)) {
+          query = query.ilike('metadata->>search_text', `%${ins.toLowerCase()}%`);
+        }
+      }
+    }
+
+    // 6. Price tier filter ($, $$, $$$)
+    if (params.priceTier) {
+      const tiers = params.priceTier
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      if (tiers.length === 1) {
+        query = query.eq('metadata->>price_tier', tiers[0]);
+      }
+    }
+
+    // 7. Quick boolean & threshold filters
+    if (params.minRating && params.minRating > 0) {
+      query = query.gte('metadata->rating', params.minRating);
+    }
+    if (params.telehealth) {
+      query = query.eq('is_telehealth_available', true);
+    }
+    if (params.openWeekend) {
+      query = query.eq('metadata->>open_weekend', 'true');
+    }
+    if (params.acceptingNew) {
+      query = query.neq('metadata->>accepting_new_patients', 'false');
+    }
+
+    // 8. Deep Query & Multilingual Intent Resolution (Track A + Track D)
+    if (params.query && params.query.trim()) {
+      const rawQ = sanitizePostgrestPattern(params.query);
+      const intent = resolveSearchIntent(rawQ);
+      const orClauses = new Set<string>();
+
+      if (rawQ) {
+        orClauses.add(`name.ilike.%${rawQ}%`);
+        orClauses.add(`specialty.ilike.%${rawQ}%`);
+        orClauses.add(`description.ilike.%${rawQ}%`);
+        orClauses.add(`address.ilike.%${rawQ}%`);
+        orClauses.add(`city.ilike.%${rawQ}%`);
+        orClauses.add(`metadata->>search_text.ilike.%${rawQ.toLowerCase()}%`);
+      }
+
+      for (const spec of intent.matchedSpecialties) {
+        const cleanSpec = sanitizePostgrestPattern(spec);
+        if (cleanSpec) {
+          orClauses.add(`specialty.ilike.%${cleanSpec}%`);
+          orClauses.add(`metadata->>search_text.ilike.%${cleanSpec.toLowerCase()}%`);
+        }
+      }
+
+      if (intent.matchedLanguage) {
+        const cleanLang = sanitizePostgrestPattern(intent.matchedLanguage);
+        if (cleanLang) {
+          orClauses.add(`metadata->>search_text.ilike.%${cleanLang.toLowerCase()}%`);
+        }
+      }
+
+      if (intent.matchedInsurance) {
+        const cleanIns = sanitizePostgrestPattern(intent.matchedInsurance);
+        if (cleanIns) {
+          orClauses.add(`metadata->>search_text.ilike.%${cleanIns.toLowerCase()}%`);
+        }
+      }
+
+      for (const term of intent.searchTerms.slice(0, 6)) {
+        const cleanTerm = sanitizePostgrestPattern(term);
+        if (cleanTerm && cleanTerm.length >= 2) {
+          orClauses.add(`metadata->>search_text.ilike.%${cleanTerm.toLowerCase()}%`);
+          orClauses.add(`description.ilike.%${cleanTerm}%`);
+        }
+      }
+
+      if (orClauses.size > 0) {
+        query = query.or([...orClauses].join(','));
+      }
+    }
+
+    // 9. Sort options (Track B)
+    const sortMode = params.sort ?? 'rating';
+    if (sortMode === 'reviews') {
+      query = query
+        .order('metadata->rating_count', { ascending: false, nullsFirst: false })
+        .order('metadata->rating', { ascending: false, nullsFirst: false });
+    } else if (sortMode === 'quality') {
+      query = query
+        .order('metadata->quality_score', { ascending: false, nullsFirst: false })
+        .order('metadata->rating', { ascending: false, nullsFirst: false });
+    } else if (sortMode === 'newest') {
+      query = query.order('created_at', { ascending: false });
+    } else {
+      query = query
+        .order('metadata->rating', { ascending: false, nullsFirst: false })
+        .order('metadata->rating_count', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false });
+    }
+
+    const { data, error, count } = await query.range(offset, offset + limit - 1);
 
     if (error) {
       throw error;
@@ -740,6 +864,8 @@ export interface SearchFilterOptions {
   specialties: FilterOption[];
   languages: FilterOption[];
   cities: CityFilterOption[];
+  insurances: FilterOption[];
+  priceTiers: FilterOption[];
 }
 
 const ASIAN_LANGUAGES = new Set([
@@ -765,13 +891,13 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
   const supabase = createServerAnonClient();
 
   if (!supabase) {
-    return { specialties: [], languages: [], cities: [] };
+    return { specialties: [], languages: [], cities: [], insurances: [], priceTiers: [] };
   }
 
   try {
     const { data, error } = await supabase
       .from('clinics')
-      .select('specialty, languages, city, state');
+      .select('specialty, languages, city, state, metadata');
 
     if (error) {
       throw error;
@@ -780,6 +906,8 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
     const specialtyCounts: Record<string, number> = {};
     const languageCounts: Record<string, number> = {};
     const cityCounts: Record<string, { state: string; count: number }> = {};
+    const insuranceCounts: Record<string, number> = {};
+    const priceTierCounts: Record<string, number> = {};
 
     (data ?? []).forEach((clinic) => {
       // 1. Specialty
@@ -793,7 +921,6 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
         clinic.languages.forEach((lang: string) => {
           if (lang) {
             const l = lang.trim();
-            // Normalize case to title case just in case
             const normalizedLang = l.charAt(0).toUpperCase() + l.slice(1).toLowerCase();
             if (ASIAN_LANGUAGES.has(normalizedLang)) {
               languageCounts[normalizedLang] = (languageCounts[normalizedLang] || 0) + 1;
@@ -812,6 +939,27 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
         }
         cityCounts[key].count += 1;
       }
+
+      // 4. Insurance & Price Tier from metadata
+      const meta = (clinic.metadata ?? {}) as ClinicMetadata;
+      const acceptedIns = new Set<string>();
+      if (Array.isArray(meta.insurance_accepted)) {
+        meta.insurance_accepted.forEach((ins) => {
+          if (ins && typeof ins === 'string' && ins.length <= 40 && !ins.toLowerCase().includes('parked domain')) {
+            acceptedIns.add(ins.trim());
+          }
+        });
+      }
+      if (meta.insurance?.accepts_medicare) acceptedIns.add('Medicare');
+      if (meta.insurance?.accepts_medicaid) acceptedIns.add('Medicaid');
+      acceptedIns.forEach((ins) => {
+        insuranceCounts[ins] = (insuranceCounts[ins] || 0) + 1;
+      });
+
+      if (meta.price_tier && typeof meta.price_tier === 'string') {
+        const pt = meta.price_tier.trim();
+        priceTierCounts[pt] = (priceTierCounts[pt] || 0) + 1;
+      }
     });
 
     const specialties = Object.entries(specialtyCounts)
@@ -829,10 +977,20 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
       })
       .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 
-    return { specialties, languages, cities };
+    const insurances = Object.entries(insuranceCounts)
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+      .slice(0, 12);
+
+    const tierOrder: Record<string, number> = { '$': 1, '$$': 2, '$$$': 3, '$$$$': 4 };
+    const priceTiers = Object.entries(priceTierCounts)
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => (tierOrder[a.value] || 9) - (tierOrder[b.value] || 9));
+
+    return { specialties, languages, cities, insurances, priceTiers };
   } catch (err) {
     console.error('[clinic-service] getSearchFilterOptions error:', err);
-    return { specialties: [], languages: [], cities: [] };
+    return { specialties: [], languages: [], cities: [], insurances: [], priceTiers: [] };
   }
 }
 

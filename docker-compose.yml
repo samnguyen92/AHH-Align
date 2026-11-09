@@ -21,10 +21,11 @@ services:
     restart: unless-stopped
     env_file:
       - openclaw/.env
+    environment:
+      - OPENCLAW_PREVIEW_BASE_URL=http://web:3000
     working_dir: /app/openclaw
     volumes:
-      # Mount source for easy local iteration. Rebuild only when requirements/Dockerfile changes.
-      - ./openclaw:/app/openclaw
-      # Persist generated article images so the local Next app can serve them.
-      - ./public/generated-insights:/app/public/generated-insights
+      # Mount full workspace so the Web-Dev & SEO Agent can edit src/, run git push, and trigger live rebuilds on VPS.
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock
     command: ["python", "telegram_bot.py"]

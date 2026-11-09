@@ -27,6 +27,9 @@ from markdownify import markdownify as md
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 from urllib.parse import urldefrag, urljoin, urlparse
+from concurrent.futures import ThreadPoolExecutor
+
+from normalize import detect_dead_page, find_phones, normalize_phone
 
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
@@ -123,6 +126,49 @@ def _fetch_jina_markdown(url: str) -> str:
         return ""
 
 
+# Common high-value subpaths used when the homepage HTML could not be rendered (e.g. Playwright blocked).
+GUESSED_SUBPATHS = (
+    "/contact", "/contact-us", "/about", "/about-us", "/our-team", "/team", "/providers",
+    "/services", "/insurance", "/new-patients",
+)
+
+
+def _fetch_jina_subpages(base_url: str, candidate_urls: list[str], skip_urls: set[str], limit: int = 5) -> list[dict]:
+    """
+    Fetch several subpages through Jina Reader in parallel. Jina is resilient to Cloudflare and JS-heavy
+    sites, so subpage coverage no longer depends on Playwright succeeding.
+    """
+    if not USE_JINA or not candidate_urls:
+        return []
+
+    unique: list[str] = []
+    for candidate in candidate_urls:
+        key = candidate.rstrip("/")
+        if key in skip_urls or key in (u.rstrip("/") for u in unique):
+            continue
+        unique.append(candidate)
+    unique = unique[: limit * 2 if limit else 0]
+
+    def fetch(sub_url: str) -> dict:
+        return {"url": sub_url, "markdown": _fetch_jina_markdown(sub_url)}
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        fetched = list(pool.map(fetch, unique))
+
+    results: list[dict] = []
+    seen_text: set[str] = set()
+    for item in fetched:
+        text = item["markdown"]
+        fingerprint = text[:300]
+        if not text or fingerprint in seen_text:
+            continue
+        seen_text.add(fingerprint)
+        results.append(item)
+        if len(results) >= limit:
+            break
+    return results
+
+
 # ── Playwright Helpers ────────────────────────────────────────────────────────
 
 def _empty_scrape_result(url: str) -> dict:
@@ -137,6 +183,9 @@ def _empty_scrape_result(url: str) -> dict:
         "page_title": "",
         "meta_description": "",
         "website": url,
+        "phones": [],
+        "emails": [],
+        "dead_reason": None,
         # Backwards-compatible aliases for existing pipeline callers.
         "text": "",
         "links": [],
@@ -359,6 +408,21 @@ def _extract_metadata_from_soup(url: str, soup: BeautifulSoup) -> dict:
         if len(images) >= 20:
             break
 
+    # Contact links — tel:/mailto: are the most reliable phone/email source on clinic sites.
+    phones: list[str] = []
+    emails: list[str] = []
+    for anchor in soup.find_all("a", href=True):
+        href = anchor["href"].strip()
+        lowered_href = href.lower()
+        if lowered_href.startswith("tel:"):
+            phone = normalize_phone(urllib.parse.unquote(href[4:]))
+            if phone and phone not in phones:
+                phones.append(phone)
+        elif lowered_href.startswith("mailto:"):
+            email = urllib.parse.unquote(href[7:]).split("?")[0].strip()
+            if "@" in email and email.lower() not in [e.lower() for e in emails]:
+                emails.append(email)
+
     # Links — important links and appointment detection
     links = []
     important_links = []
@@ -409,6 +473,8 @@ def _extract_metadata_from_soup(url: str, soup: BeautifulSoup) -> dict:
         "links": links,
         "important_links": important_links[:80],
         "appointment_url": appointment_url,
+        "phones": phones[:5],
+        "emails": emails[:5],
     }
 
 
@@ -436,6 +502,7 @@ def scrape_content_from_url(url: str) -> dict:
     # ── Layer 2: Playwright (metadata + content fallback) ───────────────────
     html = ""
     subpage_results: list[dict] = []
+    spider_links: list[dict] = []
     playwright_timeout = METADATA_ONLY_TIMEOUT_MS if jina_markdown else HOMEPAGE_TIMEOUT_MS
     # Scroll steps — fewer when Jina already covered lazy content
     playwright_scroll = 12 if jina_markdown else 20
@@ -459,8 +526,9 @@ def scrape_content_from_url(url: str) -> dict:
             homepage_soup = BeautifulSoup(html, "html.parser")
             spider_links = _discover_high_value_internal_links(homepage_soup, url)
 
-            # Spider subpages to collect rich details (About, Team, Services, Hours, etc.)
-            if spider_links:
+            # Spider subpages via Playwright only when Jina is unavailable; otherwise _fetch_jina_subpages
+            # fetches the discovered spider_links in parallel via Jina Reader below.
+            if spider_links and not jina_markdown:
                 selected = ", ".join(link["url"] for link in spider_links)
                 print(f"[*] Spidering {len(spider_links)} sub-page(s): {selected}")
                 for spider_link in spider_links:
@@ -486,6 +554,29 @@ def scrape_content_from_url(url: str) -> dict:
     if not html and not jina_markdown:
         return _empty_scrape_result(url)
 
+    # ── Dead / parked domain gate ────────────────────────────────────────────
+    probe_text = jina_markdown or (BeautifulSoup(html, "html.parser").get_text(" ", strip=True) if html else "")
+    dead_reason = detect_dead_page(probe_text)
+    if dead_reason:
+        print(f"[!] Skipping {url}: {dead_reason}")
+        dead_result = _empty_scrape_result(url)
+        dead_result["dead_reason"] = dead_reason
+        return dead_result
+
+    # ── Jina subpages (parallel) — covers About/Team/Insurance/Contact even when Playwright fails ──
+    jina_subpages: list[dict] = []
+    if jina_markdown:
+        done_urls = {url.rstrip("/")} | {sub["url"].rstrip("/") for sub in subpage_results}
+        if spider_links:
+            candidates = [link["url"] for link in spider_links]
+        else:
+            parsed_base = urlparse(url)
+            origin = f"{parsed_base.scheme}://{parsed_base.netloc}"
+            candidates = [origin + path for path in GUESSED_SUBPATHS]
+        jina_subpages = _fetch_jina_subpages(url, candidates, done_urls)
+        if jina_subpages:
+            print(f"[+] Jina subpages added: {', '.join(item['url'] for item in jina_subpages)}")
+
     # ── Build result ─────────────────────────────────────────────────────────
     soup = BeautifulSoup(html, "html.parser") if html else BeautifulSoup("", "html.parser")
     metadata = _extract_metadata_from_soup(url, soup)
@@ -499,11 +590,24 @@ def scrape_content_from_url(url: str) -> dict:
 
     for subpage in subpage_results:
         markdown_sections.append(_soup_to_markdown(subpage["url"], subpage["html"]))
+    for jina_sub in jina_subpages:
+        markdown_sections.append(f"{PAGE_DELIMITER.format(url=jina_sub['url'])}{jina_sub['markdown']}")
     
     primary_text = "\n".join(markdown_sections)
 
+    # Deterministic contact evidence: tel:/mailto: links first, then phone-like strings in text.
+    verified_phones = list(metadata.get("phones") or [])
+    for phone in find_phones(primary_text, limit=3):
+        if phone not in verified_phones:
+            verified_phones.append(phone)
+    verified_emails = list(metadata.get("emails") or [])
+
     # Append link/iframe/image context (same as before)
     lines = [primary_text]
+    if verified_phones or verified_emails:
+        lines.extend(["", "## Verified Contact Details (from tel:/mailto: links and page text)"])
+        lines.extend(f"Phone: {phone}" for phone in verified_phones[:5])
+        lines.extend(f"Email: {email}" for email in verified_emails[:5])
     link_lines = [
         f"{link.get('text') or 'Link'}: {link.get('url')}"
         for link in metadata["important_links"][:60]
@@ -530,11 +634,14 @@ def scrape_content_from_url(url: str) -> dict:
         "images": metadata["images"],
         "important_links": metadata["important_links"],
         "iframe_sources": metadata["iframe_sources"],
-        "spidered_pages": [subpage["url"] for subpage in subpage_results],
+        "spidered_pages": [subpage["url"] for subpage in subpage_results] + [item["url"] for item in jina_subpages],
         "page_title": metadata["page_title"],
         "meta_description": metadata["meta_description"],
         "website": url,
         "appointment_url": metadata["appointment_url"],
+        "phones": verified_phones,
+        "emails": verified_emails,
+        "dead_reason": None,
         # Backwards-compatible aliases for existing pipeline callers.
         "text": markdown_content,
         "links": metadata["important_links"],

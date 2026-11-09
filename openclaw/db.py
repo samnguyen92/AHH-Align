@@ -4,7 +4,14 @@ import re
 import unicodedata
 from dotenv import load_dotenv
 from supabase import create_client, Client
-
+from normalize import (
+    clean_value,
+    compute_quality,
+    enrich_directory_buckets,
+    fill_location_fields,
+    normalize_phone,
+    normalize_specialty,
+)
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
 load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
@@ -110,6 +117,16 @@ def _merge_lists(existing, incoming, list_key=None):
     return merged
 
 
+def _attach_quality(db_payload: dict) -> None:
+    """Normalize directory filter/search buckets and store a 0-100 completeness score in metadata."""
+    enrich_directory_buckets(db_payload)
+    quality = compute_quality(db_payload)
+    metadata = dict(db_payload.get("metadata") or {})
+    metadata["quality_score"] = quality["score"]
+    metadata["quality_missing"] = quality["missing"]
+    db_payload["metadata"] = metadata
+
+
 def insert_clinic(clinic_data: dict):
     """
     Insert or update clinic data in Supabase.
@@ -162,6 +179,8 @@ def insert_clinic(clinic_data: dict):
         "gallery_images",
         "third_party_profiles",
         "external_sources",
+        "languages_verified",
+        "languages_evidence",
     ]
     for field in metadata_fields:
         value = clinic_data.get(field)
@@ -180,19 +199,39 @@ def insert_clinic(clinic_data: dict):
         "city": clinic_data.get("city"),
         "state": clinic_data.get("state"),
         "zip_code": clinic_data.get("zip_code"),
-        "phone": clinic_data.get("phone"),
-        "specialty": clinic_data.get("specialty"),
+        "phone": normalize_phone(clinic_data.get("phone")) or clean_value(clinic_data.get("phone")),
+        "specialty": normalize_specialty(
+            clinic_data.get("specialty"),
+            f"{(clinic_data.get('google_metadata') or {}).get('google_primary_type') or ''} {clinic_data.get('name') or ''}",
+        ),
         "languages": clinic_data.get("languages", ["English"]),
         "metadata": incoming_metadata,
         "is_telehealth_available": clinic_data.get("is_telehealth_available", False)
     }
-    
+    # Deterministic cleanup: fills city/state/zip from address, scrubs "null" strings.
+    fill_location_fields(clinic_data)
+    for field in ("address", "city", "state", "zip_code"):
+        db_payload[field] = clinic_data.get(field)
+
     try:
         # Check if clinic already exists by slug (safer than name)
-        existing = supabase.table("clinics").select("id, metadata").eq("slug", slug).execute()
-        
+        existing = (
+            supabase.table("clinics")
+            .select("id, metadata, description, address, city, state, zip_code, phone, specialty, languages")
+            .eq("slug", slug)
+            .execute()
+        )
+
         if existing.data and len(existing.data) > 0:
             existing_row = existing.data[0]
+            # Never overwrite a good stored value with an empty one from a weaker re-scrape.
+            for field in ("description", "address", "city", "state", "zip_code", "phone", "specialty"):
+                if clean_value(db_payload.get(field)) is None and clean_value(existing_row.get(field)):
+                    db_payload[field] = existing_row[field]
+            old_langs = existing_row.get("languages") or []
+            new_langs = db_payload.get("languages") or []
+            if new_langs == ["English"] and old_langs:
+                db_payload["languages"] = old_langs
             existing_metadata = existing_row.get("metadata") or {}
             merged_metadata = {**existing_metadata, **incoming_metadata}
             for list_key in ["images", "reviews", "services", "insurance_accepted", "conditions_treated", "faqs", "third_party_profiles", "external_sources", "team_members", "highlights"]:
@@ -203,11 +242,14 @@ def insert_clinic(clinic_data: dict):
 
             db_payload["id"] = existing_row["id"]
             db_payload["metadata"] = merged_metadata
+            _attach_quality(db_payload)
             response = supabase.table("clinics").upsert(db_payload).execute()
             print(f"[*] Updated existing clinic in DB: {db_payload['name']}")
         else:
+            _attach_quality(db_payload)
             response = supabase.table("clinics").insert(db_payload).execute()
             print(f"[*] Inserted new clinic into DB: {db_payload['name']}")
+        print(f"[*] Quality score: {db_payload['metadata'].get('quality_score')}/100; missing: {', '.join(db_payload['metadata'].get('quality_missing') or []) or 'none'}")
             
         return True
     except Exception as e:

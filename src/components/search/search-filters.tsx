@@ -9,7 +9,15 @@ interface SearchFiltersProps {
   specialties: FilterOption[];
   languages: FilterOption[];
   cities: CityFilterOption[];
+  insurances?: FilterOption[];
+  priceTiers?: FilterOption[];
 }
+
+const PRICE_TIER_LABELS: Record<string, string> = {
+  '$': '$ · Sliding Scale / Community',
+  '$$': '$$ · Standard / In-Network',
+  '$$$': '$$$ · Specialty / Concierge',
+};
 
 function parseCityParam(raw: string | null): string[] {
   if (!raw) return [];
@@ -23,22 +31,45 @@ export function SearchFilters({
   specialties,
   languages,
   cities,
+  insurances = [],
+  priceTiers = [],
 }: SearchFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [selectedSpecialty, setSelectedSpecialty] = useState(searchParams.get('specialty') ?? '');
   const [selectedLanguage, setSelectedLanguage] = useState(searchParams.get('language') ?? '');
+  const [selectedInsurance, setSelectedInsurance] = useState(searchParams.get('insurance') ?? '');
+  const [selectedPriceTier, setSelectedPriceTier] = useState(searchParams.get('priceTier') ?? '');
   const [selectedCities, setSelectedCities] = useState<string[]>(() =>
     parseCityParam(searchParams.get('city'))
   );
+  const [suggestedMetro, setSuggestedMetro] = useState<string | null>(null);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   useEffect(() => {
     setSelectedSpecialty(searchParams.get('specialty') ?? '');
     setSelectedLanguage(searchParams.get('language') ?? '');
+    setSelectedInsurance(searchParams.get('insurance') ?? '');
+    setSelectedPriceTier(searchParams.get('priceTier') ?? '');
     setSelectedCities(parseCityParam(searchParams.get('city')));
   }, [searchParams]);
+
+  // Track E: Cache-safe IP geo-location suggestion
+  useEffect(() => {
+    let active = true;
+    fetch('/api/geo')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data?.suggestedMetro) {
+          setSuggestedMetro(data.suggestedMetro);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const applyFilter = useCallback(
     (key: string, value: string) => {
@@ -215,6 +246,110 @@ export function SearchFilters({
           </div>
         )}
 
+        {/* Filter by Insurance & Coverage (Track B) */}
+        {insurances.length > 0 && (
+          <div className="lg-filter-group" id="insurance-filter">
+            <div className="lg-filter-head">
+              <h3>Insurance &amp; Coverage</h3>
+              {selectedInsurance && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedInsurance('');
+                    applyFilter('insurance', '');
+                  }}
+                  className="lg-filter-reset"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="lg-filter-list">
+              {insurances.map((ins) => {
+                const isSelected = selectedInsurance === ins.value;
+                return (
+                  <label
+                    key={ins.value}
+                    className={`lg-filter-item ${isSelected ? 'is-selected' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {
+                        const val = isSelected ? '' : ins.value;
+                        setSelectedInsurance(val);
+                        applyFilter('insurance', val);
+                      }}
+                      className="sr-only"
+                    />
+                    <span className="lg-filter-box">
+                      {isSelected && (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="truncate">{ins.value}</span>
+                    <span className="cnt">{ins.count}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Filter by Price Tier (Track B) */}
+        {priceTiers.length > 0 && (
+          <div className="lg-filter-group" id="price-filter">
+            <div className="lg-filter-head">
+              <h3>Cost &amp; Care Tier</h3>
+              {selectedPriceTier && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedPriceTier('');
+                    applyFilter('priceTier', '');
+                  }}
+                  className="lg-filter-reset"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="lg-filter-list">
+              {priceTiers.map((tier) => {
+                const isSelected = selectedPriceTier === tier.value;
+                return (
+                  <label
+                    key={tier.value}
+                    className={`lg-filter-item ${isSelected ? 'is-selected' : ''}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {
+                        const val = isSelected ? '' : tier.value;
+                        setSelectedPriceTier(val);
+                        applyFilter('priceTier', val);
+                      }}
+                      className="sr-only"
+                    />
+                    <span className="lg-filter-box">
+                      {isSelected && (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="truncate">{PRICE_TIER_LABELS[tier.value] ?? tier.value}</span>
+                    <span className="cnt">{tier.count}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Filter by City (Multi-select + Toggle Off) */}
         {cities.length > 0 && (
           <div className="lg-filter-group" id="city-filter">
@@ -230,6 +365,18 @@ export function SearchFilters({
                 </button>
               )}
             </div>
+
+            {suggestedMetro && selectedCities.length === 0 && (
+              <button
+                type="button"
+                onClick={() => toggleCity(suggestedMetro)}
+                className="mb-2 flex w-full items-center justify-between rounded-xl border border-[#024E44]/20 bg-[#024E44]/5 px-3 py-2 text-xs font-medium text-[#024E44] hover:bg-[#024E44]/10 cursor-pointer"
+              >
+                <span>📍 Near you: {suggestedMetro}</span>
+                <span className="font-semibold underline">Filter</span>
+              </button>
+            )}
+
             <div className="lg-filter-list">
               {/* All Cities Option */}
               <label

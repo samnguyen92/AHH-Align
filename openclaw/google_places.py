@@ -10,6 +10,7 @@ import certifi
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from normalize import parse_us_address
 from storage import safe_storage_name, upload_image_value
 
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,7 +21,7 @@ load_dotenv(".env.local")
 
 PLACES_BASE_URL = "https://places.googleapis.com/v1"
 SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
-REVIEW_SUMMARY_MODEL = os.environ.get("OPENCLAW_REVIEW_SUMMARY_MODEL", "deepseek/deepseek-chat")
+REVIEW_SUMMARY_MODEL = os.environ.get("OPENCLAW_REVIEW_SUMMARY_MODEL") or os.environ.get("OPENCLAW_TEXT_MODEL", "openai/gpt-6-luna")
 
 
 def get_google_places_key() -> Optional[str]:
@@ -445,11 +446,8 @@ def upload_place_photos(details: dict, clinic_data: dict, api_key: str) -> List[
 
 
 def split_city_state_zip(formatted_address: str) -> Dict[str, str]:
-    # Conservative fallback parser for US-style formatted addresses.
-    match = re.search(r",\s*([^,]+),\s*([A-Z]{2})\s+(\d{5})(?:-\d{4})?", formatted_address)
-    if not match:
-        return {}
-    return {"city": match.group(1), "state": match.group(2), "zip_code": match.group(3)}
+    # Delegates to the shared, unit-tested parser (handles ", USA", suites, zip+4, full state names).
+    return parse_us_address(formatted_address)
 
 
 def enrich_clinic_with_google_places(clinic_data: dict) -> dict:

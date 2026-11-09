@@ -35,7 +35,7 @@ export function LgHeader({ overHero }: { overHero: boolean }) {
     const onScroll = () => {
       const y = window.scrollY;
       setSolid(!overHero || y > 24);
-      setHidden(!open && y > last.current && y > 320);
+      setHidden(false);
       last.current = y;
     };
     onScroll();

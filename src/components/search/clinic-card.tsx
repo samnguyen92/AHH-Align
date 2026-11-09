@@ -15,7 +15,9 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
   const priceTier = m.price_tier || '$$';
   const locationsCount = m.locations?.length || 1;
   const deliveryLabel = clinic.is_telehealth_available ? 'In person & Telehealth' : 'In person';
-  const locationText = [clinic.city, clinic.state].filter(Boolean).join(', ');
+  const locationText = [clinic.city, clinic.state]
+    .filter((v): v is string => Boolean(v && !['null', 'none', 'undefined'].includes(v.trim().toLowerCase())))
+    .join(', ');
 
   const summaryText =
     m.short_description ||
