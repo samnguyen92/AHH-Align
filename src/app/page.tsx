@@ -6,7 +6,7 @@ import { SAMPLE_NEXT_HEALTH_CLINIC, searchClinics } from '@/services/clinic-serv
 import type { Article, Clinic } from '@/types/database';
 import { CountUp, ParallaxImage, Rail, Reveal, SplitTitle } from '@/components/lg/motion';
 
-const HERO_IMAGE = '/brand/lg/hero.jpg';
+const HERO_IMAGE = '/brand/home-hero-care-team.png';
 
 const ARROW = (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
