@@ -35,6 +35,7 @@ SAFE_STAGE_PATHS = [
     "docker-compose.yml",
     "Dockerfile",
     "package.json",
+    ".gitignore",
 ]
 
 

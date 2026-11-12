@@ -6,6 +6,7 @@ import { ClinicGrid } from '@/components/search/clinic-grid';
 import { SearchPagination } from '@/components/search/pagination';
 import { searchClinics, getSearchFilterOptions } from '@/services/clinic-service';
 import { DirectorySearchBar } from '@/components/search/directory-search-bar';
+import { SearchEventTracker } from '@/components/search/search-event-tracker';
 import { ParallaxImage, SplitTitle } from '@/components/lg/motion';
 
 interface SearchUrlParams {
@@ -179,6 +180,16 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
 
   return (
     <div className="lg">
+      <SearchEventTracker
+        query={params.query}
+        resultCount={result.total}
+        filters={{
+          language: params.language,
+          specialty: params.specialty,
+          city: params.city,
+          insurance: params.insurance,
+        }}
+      />
       {/* ===== Directory Hero ===== */}
       <header className="lg-dir-hero">
         <div className="lg-wrap">

@@ -43,8 +43,14 @@ openclaw/__pycache__/
 openclaw/*.pyc
 openclaw/openclaw.log
 openclaw/telegram_memory.json
+openclaw/reports/
+openclaw/secrets/
 public/generated-insights/
 public/generated-clinics/
+
+# temporary and large media
+*.zip
+convert-figma-to-xml/
 
 # vercel
 .vercel

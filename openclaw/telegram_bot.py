@@ -53,6 +53,11 @@ from jobs import (
     dev_diff_job,
     rollback_code_job,
     publish_code_job,
+    stats_question_job,
+    stats_report_job,
+    connect_gsc_job,
+    connect_ga4_job,
+    check_anomalies_job,
 )
 from dev_agent import capture_page_screenshot
 
@@ -88,6 +93,7 @@ class TelegramBot:
         self.chat_memory: dict[int, dict] = self.load_memory()
         self._memory_lock = threading.RLock()  # RLock: reentrant, safe for nested acquire
         self._pending_lock = threading.Lock()
+        self.start_anomaly_checker()
 
     def load_memory(self) -> dict[int, dict]:
         if not os.path.exists(MEMORY_PATH):
@@ -165,6 +171,41 @@ class TelegramBot:
                 )
         except Exception as exc:
             print(f"[!] Could not send Telegram photo: {exc}")
+
+    def send_document(self, chat_id: int, file_path: str, caption: str = "") -> None:
+        if not file_path or not os.path.exists(file_path):
+            return
+        try:
+            import requests
+
+            url = TELEGRAM_API.format(token=self.token, method="sendDocument")
+            with open(file_path, "rb") as fh:
+                requests.post(
+                    url,
+                    data={"chat_id": str(chat_id), "caption": (caption or "")[:950]},
+                    files={"document": fh},
+                    timeout=60,
+                )
+        except Exception as exc:
+            print(f"[!] Could not send Telegram document: {exc}")
+
+    def start_anomaly_checker(self) -> None:
+        def _loop():
+            # Initial wait 30 seconds before first check, then check every 6 hours
+            time.sleep(30)
+            while True:
+                try:
+                    from stats_agent import check_anomalies, format_anomalies_report
+                    data = check_anomalies()
+                    if data.get("has_anomalies") and self.allowed_user_ids:
+                        report = format_anomalies_report(data)
+                        for uid in self.allowed_user_ids:
+                            self.send_message(uid, f"🔔 **TỰ ĐỘNG CẢNH BÁO BẤT THƯỜNG WEBSITE**\n\n{report}")
+                except Exception as exc:
+                    print(f"[!] Anomaly checker error: {exc}")
+                time.sleep(6 * 3600)
+
+        threading.Thread(target=_loop, daemon=True, name="anomaly-checker").start()
 
     def download_telegram_photo(self, photos: list) -> Optional[str]:
         if not photos:
@@ -422,6 +463,11 @@ class TelegramBot:
             "/generate_pulse [topic] - generate one monthly AHH Pulse newsletter issue (spotlights clinics, drafts advice column, generates cover image)\n"
             "/research <topic> - run multi-agent research and return a sourced report\n"
             "/ask <message> - ask the OpenClaw AI agent\n"
+            "/stats [scope] [period] - hỏi đáp thống kê website (traffic, posts, clinics, seo)\n"
+            "/stats_report [scope] [period] - xuất báo cáo chi tiết kèm biểu đồ và file Markdown\n"
+            "/connect_gsc [site_url] - kết nối Google Search Console để đọc dữ liệu search thực\n"
+            "/connect_ga4 [property_id] - kết nối Google Analytics 4 Data API\n"
+            "/anomalies - kiểm tra cảnh báo bất thường (drop view, broken links, sitemap lỗi)\n"
             "/analytics - show traffic stats, top searches, and clicked clinics\n"
             "/prompt - show the current agent system prompt\n"
             "/tail - show recent OpenClaw log\n"
@@ -849,9 +895,13 @@ Allowed actions:
 - scrape_clinic_url
 - multi_agent_research
 - check_analytics
+- stats_question
+- stats_report
 
 Rules:
 - Decision priority:
+  00a. If the user asks for a detailed stats report, full report, or charts (e.g., "báo cáo chi tiết", "xuất báo cáo", "full stats report", "biểu đồ thống kê"), choose `stats_report`. Put any scope or period argument in `query`.
+  00b. If the user asks any question about website stats, traffic, views, sessions, number of articles/posts, number of clinics, zero-result searches, internal SEO score, or site metrics (e.g., "thống kê tuần này", "view hôm nay", "có bao nhiêu bài viết", "bao nhiêu phòng khám", "post nào hot nhất", "traffic ra sao", "seo thế nào", "stats website"), choose `stats_question`. Put the full user request in `question`.
   0a. If the user asks to edit, modify, redesign, fix, add, or remove any UI element, section, form, button, hero, navbar, footer, layout, CSS, or page on the website (e.g., "edit homepage, xóa form question ở hero", "sửa giao diện trang chủ", "đổi màu nút", "sửa trang search"), choose `web_edit`. Do NOT choose `delete_article`, `delete_clinic`, or `chat` when the user is talking about editing a webpage/UI component!
   0b. If the user asks to audit/check SEO, choose `seo_audit`. If the user asks to setup, add, or optimize SEO tags/schema/metadata/sitemap in code, choose `seo_setup`.
   0c. If the user asks to analyze the website's performance/UX/funnel ("analyze website", "phân tích trang web"), choose `site_analyze`.
@@ -1251,6 +1301,28 @@ Return JSON:
                 "summary": (
                     "Bạn muốn hoàn tác (`rollback`) toàn bộ các thay đổi chưa commit trong `src/` và `public/`, đúng không?\n\n"
                     "Trả lời `approve` để thực thi."
+                ),
+            }
+        if action == "stats_question":
+            q = str(data.get("question") or data.get("topic") or data.get("query") or original_text).strip()
+            return {
+                "type": "stats_question",
+                "name": f"stats: {q[:36]}",
+                "question": q,
+                "summary": (
+                    f"Bạn muốn tra cứu số liệu thống kê website cho câu hỏi: “{q}”, đúng không?\n\n"
+                    "Trả lời `approve` để xem số liệu phân tích."
+                ),
+            }
+        if action == "stats_report":
+            arg = str(data.get("query") or data.get("topic") or original_text).strip()
+            return {
+                "type": "stats_report",
+                "name": f"stats_report ({arg[:24] or 'week'})",
+                "arg": arg,
+                "summary": (
+                    "Bạn muốn xuất báo cáo thống kê chi tiết website (kèm biểu đồ và file Markdown), đúng không?\n\n"
+                    "Trả lời `approve` để OpenClaw xuất báo cáo."
                 ),
             }
 
@@ -1677,6 +1749,22 @@ Return JSON:
             target = self.extract_rewrite_target(text)
             if target:
                 return self.build_rewrite_article_action(target, text.strip())
+
+        stats_keywords = ("thống kê", "thong ke", "stats", "traffic", "lưu lượng", "luu luong", "lượt xem", "luot xem", "truy cập", "truy cap", "báo cáo website", "bao nhiêu bài viết", "bao nhiêu phòng khám")
+        if any(kw in normalized for kw in stats_keywords) and not wants_rewrite and not ("edit" in normalized or "xóa" in normalized or "xoa" in normalized or "sửa" in normalized or "sua" in normalized):
+            if "chi tiết" in normalized or "detail" in normalized or "biểu đồ" in normalized or "bieu do" in normalized or "report" in normalized:
+                return {
+                    "type": "stats_report",
+                    "name": "Báo cáo thống kê chi tiết website",
+                    "summary": "Tôi sẽ xuất báo cáo thống kê chi tiết (kèm biểu đồ và file Markdown). Gõ `approve` để tiến hành.",
+                    "arg": text,
+                }
+            return {
+                "type": "stats_question",
+                "name": f"Thống kê: {text[:36]}",
+                "summary": f"Tôi sẽ tra cứu số liệu website cho câu hỏi: “{text}”. Gõ `approve` để tiến hành.",
+                "question": text,
+            }
 
         if self.wants_memory_reference(normalized) and memory:
             mode = "guide" if wants_guide else "insight"
@@ -2175,6 +2263,29 @@ Return JSON:
             )
         elif action_type == "rollback_code":
             self.send_message(chat_id, rollback_code_job())
+        elif action_type == "stats_question":
+            question = action.get("question") or action.get("name", "thống kê website")
+            period = action.get("period")
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: stats_question_job(question, period=period),
+                action_type=action_type,
+            )
+        elif action_type == "stats_report":
+            arg = action.get("arg", "")
+            def _run_report_pending():
+                rep = stats_report_job(arg)
+                md_path = rep.get("markdown_path")
+                charts = rep.get("chart_paths") or []
+                summary = rep.get("summary") or "Đã tạo xong báo cáo."
+                self.send_message(chat_id, f"✅ **Báo cáo chi tiết đã hoàn tất:**\n\n{summary}")
+                for chart in charts:
+                    self.send_photo(chat_id, chart, caption="Biểu đồ thống kê website")
+                if md_path and os.path.exists(md_path):
+                    self.send_document(chat_id, md_path, caption="Báo cáo đầy đủ (Markdown)")
+                return "Báo cáo chi tiết đã được gửi kèm biểu đồ và file tài liệu."
+            self.run_job(chat_id, action["name"], _run_report_pending, action_type=action_type)
         else:
             self.send_message(chat_id, "I do not know how to run this action yet. Please send a clearer request.")
 
@@ -2213,6 +2324,43 @@ Return JSON:
                 lambda: check_analytics_job(timeframe, filter_type),
                 action_type="check_analytics"
             )
+        elif command == "/stats":
+            arg = re.sub(r"^/stats(?:@\w+)?", "", text, count=1).strip()
+            self.send_message(chat_id, "🔍 Đang tra cứu thống kê website...")
+            self.run_job(
+                chat_id,
+                f"stats: {arg or 'overview'}",
+                lambda: stats_question_job(arg or "tổng quan tình hình website"),
+                action_type="stats_question",
+            )
+        elif command == "/stats_report":
+            arg = re.sub(r"^/stats_report(?:@\w+)?", "", text, count=1).strip()
+            self.send_message(chat_id, "📊 Đang xuất báo cáo chi tiết và biểu đồ...")
+            def _run_report_cmd():
+                rep = stats_report_job(arg)
+                md_path = rep.get("markdown_path")
+                charts = rep.get("chart_paths") or []
+                summary = rep.get("summary") or "Đã tạo xong báo cáo."
+                self.send_message(chat_id, f"✅ **Báo cáo chi tiết đã hoàn tất:**\n\n{summary}")
+                for chart in charts:
+                    self.send_photo(chat_id, chart, caption="Biểu đồ thống kê website")
+                if md_path and os.path.exists(md_path):
+                    self.send_document(chat_id, md_path, caption="Báo cáo đầy đủ (Markdown)")
+                return "Báo cáo chi tiết đã được gửi kèm biểu đồ và file tài liệu."
+            self.run_job(
+                chat_id,
+                f"stats_report: {arg or 'week'}",
+                _run_report_cmd,
+                action_type="stats_report",
+            )
+        elif command == "/connect_gsc":
+            arg = re.sub(r"^/connect_gsc(?:@\w+)?", "", text, count=1).strip()
+            self.send_message(chat_id, connect_gsc_job(arg))
+        elif command == "/connect_ga4":
+            arg = re.sub(r"^/connect_ga4(?:@\w+)?", "", text, count=1).strip()
+            self.send_message(chat_id, connect_ga4_job(arg))
+        elif command in {"/anomalies", "/check_anomalies"}:
+            self.send_message(chat_id, check_anomalies_job())
         elif command == "/tail":
             self.send_message(chat_id, tail_log())
         elif command in {"/clinic_quality", "/quality"}:

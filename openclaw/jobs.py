@@ -494,6 +494,75 @@ def publish_code_job(commit_message: str | None = None, telegram_updater_callbac
     )
 
 
+def stats_question_job(question: str, period: str | None = None) -> str:
+    from stats_agent import answer_stats_question, plan_question
+
+    plan = None
+    if period:
+        plan = plan_question(question)
+        plan["period"] = period
+    res = answer_stats_question(question, plan=plan)
+    return res["text"]
+
+
+def stats_report_job(arg_text: str = "") -> dict:
+    from stats_agent import build_detailed_report, parse_stats_args
+
+    scopes, period = parse_stats_args(arg_text)
+    report = build_detailed_report(scopes=scopes, period=period)
+    return report
+
+
+def connect_gsc_job(arg: str = "") -> str:
+    import gsc_client
+
+    clean_arg = (arg or "").strip()
+    if not clean_arg:
+        return gsc_client.gsc_instructions()
+    try:
+        saved = gsc_client.save_gsc_site_url(clean_arg)
+        status = gsc_client.get_status(verify=True)
+        gsc_st = status.get("gsc", {})
+        if gsc_st.get("ok"):
+            return f"✅ Đã kết nối thành công GSC site: `{saved}`!\nDữ liệu tìm kiếm Google giờ sẽ xuất hiện trong `/stats` và `/stats_report`."
+        elif gsc_st.get("ok") is False:
+            err = gsc_st.get("error", "Lỗi xác thực")
+            return f"⚠️ Đã lưu GSC site: `{saved}`, nhưng API test thất bại: {err}\n\nHãy đảm bảo đã thêm service account email `{status.get('service_account_email')}` làm Full/Restricted user trong Google Search Console."
+        else:
+            return f"ℹ️ Đã lưu GSC site: `{saved}` vào cấu hình.\nChưa phát hiện file key service account tại `openclaw/secrets/google_service_account.json`."
+    except Exception as exc:
+        return f"❌ Lỗi: {exc}"
+
+
+def connect_ga4_job(arg: str = "") -> str:
+    import gsc_client
+
+    clean_arg = (arg or "").strip()
+    if not clean_arg:
+        return gsc_client.ga4_instructions()
+    try:
+        saved = gsc_client.save_ga4_property_id(clean_arg)
+        status = gsc_client.get_status(verify=True)
+        ga4_st = status.get("ga4", {})
+        if ga4_st.get("ok"):
+            return f"✅ Đã kết nối thành công GA4 Property ID: `{saved}`!\nDữ liệu GA4 giờ sẽ xuất hiện trong `/stats` và `/stats_report`."
+        elif ga4_st.get("ok") is False:
+            err = ga4_st.get("error", "Lỗi xác thực")
+            return f"⚠️ Đã lưu GA4 Property ID: `{saved}`, nhưng API test thất bại: {err}\n\nHãy đảm bảo đã thêm service account email `{status.get('service_account_email')}` làm Viewer trong GA4 Property."
+        else:
+            return f"ℹ️ Đã lưu GA4 Property ID: `{saved}` vào cấu hình.\nChưa phát hiện file key service account tại `openclaw/secrets/google_service_account.json`."
+    except Exception as exc:
+        return f"❌ Lỗi: {exc}"
+
+
+def check_anomalies_job() -> str:
+    from stats_agent import check_anomalies, format_anomalies_report
+
+    data = check_anomalies()
+    return format_anomalies_report(data)
+
+
+
 
 
 
