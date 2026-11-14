@@ -494,18 +494,18 @@ def publish_code_job(commit_message: str | None = None, telegram_updater_callbac
     )
 
 
-def stats_question_job(question: str, period: str | None = None) -> str:
+def stats_question_job(question: str, period: str | None = None, lang: str = "en") -> str:
     from stats_agent import answer_stats_question, plan_question
 
     plan = None
     if period:
         plan = plan_question(question)
         plan["period"] = period
-    res = answer_stats_question(question, plan=plan)
+    res = answer_stats_question(question, plan=plan, lang=lang)
     return res["text"]
 
 
-def stats_report_job(arg_text: str = "") -> dict:
+def stats_report_job(arg_text: str = "", lang: str = "en") -> dict:
     from stats_agent import build_detailed_report, parse_stats_args
 
     scopes, period = parse_stats_args(arg_text)
@@ -555,11 +555,11 @@ def connect_ga4_job(arg: str = "") -> str:
         return f"❌ Lỗi: {exc}"
 
 
-def check_anomalies_job() -> str:
+def check_anomalies_job(lang: str = "en") -> str:
     from stats_agent import check_anomalies, format_anomalies_report
 
     data = check_anomalies()
-    return format_anomalies_report(data)
+    return format_anomalies_report(data, lang=lang)
 
 
 

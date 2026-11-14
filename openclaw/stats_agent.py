@@ -35,7 +35,10 @@ VALID_SCOPES = ("overview", "traffic", "posts", "clinics", "seo")
 PLANNER_MODEL = os.environ.get("OPENCLAW_INTENT_MODEL", "deepseek/deepseek-v4-flash")
 NARRATOR_MODEL = os.environ.get("OPENCLAW_STATS_MODEL", os.environ.get("OPENCLAW_TEXT_MODEL", "openai/gpt-6-luna"))
 
-ISSUE_LABELS = {
+PERIOD_LABELS_EN = {"today": "Today", "week": "Past 7 days", "month": "Past 28 days", "quarter": "Past 90 days"}
+PERIOD_LABELS_VI = sm.PERIOD_LABELS
+
+ISSUE_LABELS_VI = {
     "missing_title": "thiếu title",
     "title_length": "title sai độ dài (20–70)",
     "missing_description": "thiếu meta description",
@@ -45,6 +48,18 @@ ISSUE_LABELS = {
     "missing_jsonld": "thiếu JSON-LD",
     "noindex": "đang noindex",
     "images_missing_alt": "ảnh thiếu alt",
+}
+
+ISSUE_LABELS_EN = {
+    "missing_title": "missing title",
+    "title_length": "invalid title length (20–70)",
+    "missing_description": "missing meta description",
+    "description_length": "invalid description length (70–175)",
+    "h1_count": "H1 count not 1",
+    "missing_canonical": "missing canonical",
+    "missing_jsonld": "missing JSON-LD",
+    "noindex": "noindex enabled",
+    "images_missing_alt": "images missing alt text",
 }
 
 
@@ -205,125 +220,194 @@ def collect_google(period: str) -> Dict[str, Any]:
 # Deterministic summaries (SHORT)
 # ----------------------------------------------------------------------------
 
-def short_traffic(t: Dict[str, Any]) -> List[str]:
+def short_traffic(t: Dict[str, Any], lang: str = "en") -> List[str]:
     c, p = t["counts"], t["prev_counts"]
-    lines = [f"👁 Views: {_n(c['page_view'])} {_delta(c['page_view'], p['page_view'])}"
-             + (f" · Sessions: {_n(t['sessions'])} {_delta(t['sessions'], t['prev_sessions'])}" if t["sessions"] else " · Sessions: chưa đủ dữ liệu (tracking mới bật)")]
-    s_line = f"🔎 Tìm kiếm: {_n(c['search_query'])} {_delta(c['search_query'], p['search_query'])}"
+    is_vi = lang == "vi"
+    sess_msg = (
+        f" · Sessions: {_n(t['sessions'])} {_delta(t['sessions'], t['prev_sessions'])}"
+        if t["sessions"]
+        else (" · Sessions: chưa đủ dữ liệu (tracking mới bật)" if is_vi else " · Sessions: collecting initial data")
+    )
+    lines = [f"👁 Views: {_n(c['page_view'])} {_delta(c['page_view'], p['page_view'])}{sess_msg}"]
+
+    s_title = "🔎 Tìm kiếm: " if is_vi else "🔎 Searches: "
+    s_line = f"{s_title}{_n(c['search_query'])} {_delta(c['search_query'], p['search_query'])}"
     if t["zero_result_rate"] is not None:
-        s_line += f" · không có kết quả: {t['zero_result_searches']}/{t['searches_with_result_count']} ({t['zero_result_rate']}%)"
+        zero_msg = " · không có kết quả: " if is_vi else " · zero-results: "
+        s_line += f"{zero_msg}{t['zero_result_searches']}/{t['searches_with_result_count']} ({t['zero_result_rate']}%)"
     lines.append(s_line)
+
     if t["top_queries"]:
-        lines.append(f"   Từ khóa top: {_top(t['top_queries'])}")
+        q_label = "   Từ khóa top: " if is_vi else "   Top searches: "
+        lines.append(f"{q_label}{_top(t['top_queries'])}")
     if t["zero_result_queries"]:
-        lines.append(f"   ⚠️ Tìm không ra: {_top(t['zero_result_queries'])}")
+        z_label = "   ⚠️ Tìm không ra: " if is_vi else "   ⚠️ Zero-result queries: "
+        lines.append(f"{z_label}{_top(t['zero_result_queries'])}")
+
     actions = t["click_actions"]
+    c_label = "📞 Liên hệ clinic: " if is_vi else "📞 Clinic contacts: "
+    card_label = " · mở hồ sơ từ danh sách: " if is_vi else " · profile opens: "
     lines.append(
-        f"📞 Liên hệ clinic: {_n(t['contact_clicks'])} "
+        f"{c_label}{_n(t['contact_clicks'])} "
         f"(call {actions.get('call', 0)} · website {actions.get('website', 0)} · directions {actions.get('directions', 0)} · booking {actions.get('booking', 0)})"
-        f" · mở hồ sơ từ danh sách: {actions.get('card', 0)}"
+        f"{card_label}{actions.get('card', 0)}"
     )
     if t["top_pages"]:
-        lines.append(f"🏆 Top trang: {_top(t['top_pages'])}")
+        p_label = "🏆 Top trang: " if is_vi else "🏆 Top pages: "
+        lines.append(f"{p_label}{_top(t['top_pages'])}")
     if t["referrers"] and not (len(t["referrers"]) == 1 and t["referrers"][0][0] == "(direct)"):
-        lines.append(f"🌐 Nguồn: {_top(t['referrers'])}")
+        r_label = "🌐 Nguồn: " if is_vi else "🌐 Referrers: "
+        lines.append(f"{r_label}{_top(t['referrers'])}")
     if t["small_sample"]:
-        lines.append(f"ℹ️ Mẫu nhỏ ({_n(c['page_view'])} views) — xu hướng chỉ mang tính tham khảo.")
+        sm_label = (
+            f"ℹ️ Mẫu nhỏ ({_n(c['page_view'])} views) — xu hướng chỉ mang tính tham khảo."
+            if is_vi
+            else f"ℹ️ Small sample ({_n(c['page_view'])} views) — trends are directional."
+        )
+        lines.append(sm_label)
     return lines
 
 
-def short_posts(p: Dict[str, Any]) -> List[str]:
-    lines = [f"📝 Bài viết: {p['published']} published ({p['by_status'].get('draft', 0)} draft) · +{p['new_7d']} trong 7 ngày, +{p['new_30d']} trong 30 ngày · TB {p['avg_words']} từ"]
+def short_posts(p: Dict[str, Any], lang: str = "en") -> List[str]:
+    is_vi = lang == "vi"
+    post_label = "📝 Bài viết: " if is_vi else "📝 Articles: "
+    days_label = (
+        f" · +{p['new_7d']} trong 7 ngày, +{p['new_30d']} trong 30 ngày · TB {p['avg_words']} từ"
+        if is_vi
+        else f" · +{p['new_7d']} in 7d, +{p['new_30d']} in 30d · Avg {p['avg_words']} words"
+    )
+    lines = [f"{post_label}{p['published']} published ({p['by_status'].get('draft', 0)} draft){days_label}"]
     if p["top_posts"]:
-        lines.append("🔥 Bài nhiều view: " + "; ".join(f"{x['title'][:48]} ({x['views']})" for x in p["top_posts"][:3]))
+        top_l = "🔥 Bài nhiều view: " if is_vi else "🔥 Top articles: "
+        lines.append(top_l + "; ".join(f"{x['title'][:48]} ({x['views']})" for x in p["top_posts"][:3]))
     elif p["views_known"]:
-        lines.append("🔥 Chưa ghi nhận view nào cho bài viết trong kỳ này.")
-    lines.append(
+        noview_l = "🔥 Chưa ghi nhận view nào cho bài viết trong kỳ này." if is_vi else "🔥 No article views recorded in this period."
+        lines.append(noview_l)
+    seo_l = (
         f"⚠️ SEO bài: thiếu description {len(p['missing_description'])} · thiếu og_image {len(p['missing_og_image'])} · "
         f"chưa có keyword {len(p['missing_primary_keyword'])} · >14 ngày không view {p['published_without_views_count']}"
+        if is_vi
+        else
+        f"⚠️ Article SEO: missing description {len(p['missing_description'])} · missing og_image {len(p['missing_og_image'])} · "
+        f"missing keyword {len(p['missing_primary_keyword'])} · zero views >14d: {p['published_without_views_count']}"
     )
+    lines.append(seo_l)
     return lines
 
 
-def short_clinics(c: Dict[str, Any]) -> List[str]:
+def short_clinics(c: Dict[str, Any], lang: str = "en") -> List[str]:
+    is_vi = lang == "vi"
     m = c["missing_pct"]
+    c_time = f" (+{c['new_7d']} trong 7 ngày, +{c['new_30d']} trong 30 ngày)" if is_vi else f" (+{c['new_7d']} in 7d, +{c['new_30d']} in 30d)"
     lines = [
-        f"🏥 Clinics: {c['total']} (+{c['new_7d']} trong 7 ngày, +{c['new_30d']} trong 30 ngày) · claimed {c['claimed']} · telehealth {c['telehealth']}",
-        f"✅ Chất lượng dữ liệu: TB {_n(c['avg_quality'])}/100 · {c['below_70_count']} clinic <70 · thiếu ảnh {m['images']}% · bảo hiểm {m['insurance']}% · giờ {m['hours']}% · bác sĩ {m['doctors']}%",
-        f"📍 Top city: {_top(c['cities'], 3)} · Ngôn ngữ: {_top(c['languages'], 3)}",
+        f"🏥 Clinics: {c['total']}{c_time} · claimed {c['claimed']} · telehealth {c['telehealth']}",
     ]
+    if is_vi:
+        lines.append(f"✅ Chất lượng dữ liệu: TB {_n(c['avg_quality'])}/100 · {c['below_70_count']} clinic <70 · thiếu ảnh {m['images']}% · bảo hiểm {m['insurance']}% · giờ {m['hours']}% · bác sĩ {m['doctors']}%")
+        lines.append(f"📍 Top city: {_top(c['cities'], 3)} · Ngôn ngữ: {_top(c['languages'], 3)}")
+    else:
+        lines.append(f"✅ Data Quality: Avg {_n(c['avg_quality'])}/100 · {c['below_70_count']} <70 · missing images {m['images']}% · insurance {m['insurance']}% · hours {m['hours']}% · doctors {m['doctors']}%")
+        lines.append(f"📍 Top cities: {_top(c['cities'], 3)} · Languages: {_top(c['languages'], 3)}")
+
     queue = []
     if c.get("pending_claims") is not None:
-        queue.append(f"claims chờ duyệt {c['pending_claims']}")
+        queue.append(f"claims chờ duyệt {c['pending_claims']}" if is_vi else f"pending claims {c['pending_claims']}")
     if c.get("pending_submissions") is not None:
-        queue.append(f"submissions chờ duyệt {c['pending_submissions']}")
+        queue.append(f"submissions chờ duyệt {c['pending_submissions']}" if is_vi else f"pending submissions {c['pending_submissions']}")
     if c.get("newsletter_subscribers") is not None:
-        queue.append(f"newsletter {c['newsletter_subscribers']} (+{c.get('newsletter_new_in_period') or 0} trong kỳ)")
+        news_time = f" (+{c.get('newsletter_new_in_period') or 0} trong kỳ)" if is_vi else f" (+{c.get('newsletter_new_in_period') or 0} in period)"
+        queue.append(f"newsletter {c['newsletter_subscribers']}{news_time}")
     if queue:
         lines.append("📥 " + " · ".join(queue))
     if c["supply_gaps"]:
         g = c["supply_gaps"][0]
-        lines.append(f"🎯 Thiếu nguồn cung nhất: {g['language']} · {g['specialty']} tại {g['city']}, {g['state']} (hiện {g['count']})")
+        if is_vi:
+            lines.append(f"🎯 Thiếu nguồn cung nhất: {g['language']} · {g['specialty']} tại {g['city']}, {g['state']} (hiện {g['count']})")
+        else:
+            lines.append(f"🎯 Top supply gap: {g['language']} · {g['specialty']} in {g['city']}, {g['state']} (currently {g['count']})")
     return lines
 
 
-def short_seo(s: Dict[str, Any], g: Optional[Dict[str, Any]]) -> List[str]:
+def short_seo(s: Dict[str, Any], g: Optional[Dict[str, Any]], lang: str = "en") -> List[str]:
+    is_vi = lang == "vi"
+    issues_dict = ISSUE_LABELS_VI if is_vi else ISSUE_LABELS_EN
     lines: List[str] = []
     if not s.get("ok"):
-        lines.append(f"🔧 Audit nội bộ: không chạy được — {s.get('error')}")
+        lines.append(f"🔧 Audit nội bộ: không chạy được — {s.get('error')}" if is_vi else f"🔧 Internal Audit: failed — {s.get('error')}")
     else:
         broken = len(s["pages_broken"])
-        lines.append(f"🔧 Audit nội bộ: {s['pages_checked']} trang mẫu · điểm sức khỏe {s['health_score']}/100 · {broken} trang lỗi HTTP")
+        if is_vi:
+            lines.append(f"🔧 Audit nội bộ: {s['pages_checked']} trang mẫu · điểm sức khỏe {s['health_score']}/100 · {broken} trang lỗi HTTP")
+        else:
+            lines.append(f"🔧 Internal Audit: {s['pages_checked']} sampled pages · health score {s['health_score']}/100 · {broken} HTTP errors")
         issues = sorted(s["issue_counts"].items(), key=lambda kv: kv[1], reverse=True)[:3]
         if issues:
-            lines.append("   Lỗi phổ biến: " + ", ".join(f"{ISSUE_LABELS.get(k, k)} ({v})" for k, v in issues))
+            iss_title = "   Lỗi phổ biến: " if is_vi else "   Top issues: "
+            lines.append(iss_title + ", ".join(f"{issues_dict.get(k, k)} ({v})" for k, v in issues))
         cov = s.get("coverage")
         if cov:
-            lines.append(
-                f"🗺 Sitemap: {s['sitemap_urls']} URL · clinics {cov['clinics_in_sitemap']}/{cov['clinics_in_db']} · bài {cov['posts_in_sitemap']}/{cov['published_posts_in_db']}"
-                + (" · ⚠️ sitemap chưa phủ hết" if cov["clinics_in_sitemap"] < cov["clinics_in_db"] or cov["posts_in_sitemap"] < cov["published_posts_in_db"] else "")
-            )
+            if is_vi:
+                lines.append(
+                    f"🗺 Sitemap: {s['sitemap_urls']} URL · clinics {cov['clinics_in_sitemap']}/{cov['clinics_in_db']} · bài {cov['posts_in_sitemap']}/{cov['published_posts_in_db']}"
+                    + (" · ⚠️ sitemap chưa phủ hết" if cov["clinics_in_sitemap"] < cov["clinics_in_db"] or cov["posts_in_sitemap"] < cov["published_posts_in_db"] else "")
+                )
+            else:
+                lines.append(
+                    f"🗺 Sitemap: {s['sitemap_urls']} URLs · clinics {cov['clinics_in_sitemap']}/{cov['clinics_in_db']} · posts {cov['posts_in_sitemap']}/{cov['published_posts_in_db']}"
+                    + (" · ⚠️ sitemap incomplete" if cov["clinics_in_sitemap"] < cov["clinics_in_db"] or cov["posts_in_sitemap"] < cov["published_posts_in_db"] else "")
+                )
         if s.get("avg_ms") is not None:
-            lines.append(f"⚡ Phản hồi TB {s['avg_ms']}ms · robots.txt {'OK' if s.get('robots_ok') else 'LỖI'}")
-    lines += short_google(g)
+            if is_vi:
+                lines.append(f"⚡ Phản hồi TB {s['avg_ms']}ms · robots.txt {'OK' if s.get('robots_ok') else 'LỖI'}")
+            else:
+                lines.append(f"⚡ Avg response {s['avg_ms']}ms · robots.txt {'OK' if s.get('robots_ok') else 'ERROR'}")
+    lines += short_google(g, lang=lang)
     return lines
 
 
-def short_google(g: Optional[Dict[str, Any]]) -> List[str]:
+def short_google(g: Optional[Dict[str, Any]], lang: str = "en") -> List[str]:
     if not g:
         return []
+    is_vi = lang == "vi"
     lines: List[str] = []
     if not g.get("gsc_connected"):
-        lines.append("ℹ️ Chưa kết nối Google Search Console → chưa có impressions/vị trí từ khóa thật. Gõ `/connect_gsc` để thêm.")
+        lines.append(
+            "ℹ️ Chưa kết nối Google Search Console → chưa có impressions/vị trí từ khóa thật. Gõ `/connect_gsc` để thêm."
+            if is_vi else
+            "ℹ️ Google Search Console not connected → real impressions/positions unavailable. Type `/connect_gsc` to link."
+        )
     elif g.get("gsc_error"):
-        lines.append(f"⚠️ GSC lỗi: {g['gsc_error']} (thử `/connect_gsc verify`)")
+        lines.append(f"⚠️ GSC error: {g['gsc_error']}")
     elif g.get("gsc"):
         t, pt = g["gsc"]["totals"], g["gsc"]["prev_totals"]
+        pos_label = "vị trí TB" if is_vi else "avg position"
         lines.append(
-            f"📊 Google (GSC): {_n(t['clicks'])} clicks {_delta(t['clicks'], pt['clicks'])} · {_n(t['impressions'])} impressions {_delta(t['impressions'], pt['impressions'])} · CTR {t['ctr']}% · vị trí TB {t['position']}"
+            f"📊 Google (GSC): {_n(t['clicks'])} clicks {_delta(t['clicks'], pt['clicks'])} · {_n(t['impressions'])} impressions {_delta(t['impressions'], pt['impressions'])} · CTR {t['ctr']}% · {pos_label} {t['position']}"
         )
         if g["gsc"]["near_top10_queries"]:
             q = g["gsc"]["near_top10_queries"][0]
-            lines.append(f"   🎯 Cơ hội: “{q['key']}” đang ở vị trí {q['position']} ({q['impressions']} impressions)")
+            opp_l = "   🎯 Cơ hội: " if is_vi else "   🎯 Opportunity: "
+            lines.append(f"{opp_l}“{q['key']}” #{q['position']} ({q['impressions']} impressions)")
     if g.get("ga4_connected") and g.get("ga4"):
         t = g["ga4"]["totals"]
         lines.append(f"📈 GA4: {_n(t.get('sessions'))} sessions · {_n(t.get('users'))} users · {_n(t.get('views'))} views")
     elif g.get("ga4_error"):
-        lines.append(f"⚠️ GA4 lỗi: {g['ga4_error']}")
+        lines.append(f"⚠️ GA4 error: {g['ga4_error']}")
     return lines
 
 
-def build_short_lines(data: Dict[str, Any], scopes: List[str]) -> List[str]:
+def build_short_lines(data: Dict[str, Any], scopes: List[str], lang: str = "en") -> List[str]:
     lines: List[str] = []
     for key, fn in (("traffic", short_traffic), ("posts", short_posts), ("clinics", short_clinics)):
         if key in data:
-            lines += fn(data[key])
+            lines += fn(data[key], lang=lang)
     if "seo" in data:
-        lines += short_seo(data["seo"], data.get("google"))
+        lines += short_seo(data["seo"], data.get("google"), lang=lang)
     elif data.get("google") and "overview" in scopes:
-        lines += short_google(data["google"])
+        lines += short_google(data["google"], lang=lang)
     for key, err in (data.get("errors") or {}).items():
-        lines.append(f"⚠️ Không lấy được dữ liệu `{key}`: {err}")
+        err_prefix = "⚠️ Không lấy được dữ liệu" if lang == "vi" else "⚠️ Could not fetch"
+        lines.append(f"{err_prefix} `{key}`: {err}")
     return lines
 
 
@@ -331,60 +415,44 @@ def build_short_lines(data: Dict[str, Any], scopes: List[str]) -> List[str]:
 # Insights + suggested actions
 # ----------------------------------------------------------------------------
 
-def rule_based_insights(data: Dict[str, Any]) -> List[str]:
+def rule_based_insights(data: Dict[str, Any], lang: str = "en") -> List[str]:
+    is_vi = lang == "vi"
     out: List[str] = []
     t = data.get("traffic")
     if t:
         if t["small_sample"]:
-            out.append("Lượng truy cập còn thấp nên các % thay đổi dễ dao động — ưu tiên tăng nguồn truy cập (SEO/bài viết) trước khi tối ưu chuyển đổi.")
+            out.append(
+                "Lượng truy cập còn thấp nên các % thay đổi dễ dao động — ưu tiên tăng nguồn truy cập trước khi tối ưu chuyển đổi."
+                if is_vi else
+                "Traffic volume is still low, so % changes can fluctuate — prioritize acquiring visitors before funnel optimization."
+            )
         if t["zero_result_rate"] and t["zero_result_rate"] >= 20:
-            out.append(f"{t['zero_result_rate']}% lượt tìm kiếm không ra kết quả — đây là nhu cầu thật mà danh bạ chưa đáp ứng.")
+            out.append(
+                f"{t['zero_result_rate']}% lượt tìm kiếm không ra kết quả — đây là nhu cầu thực tế cần bổ sung phòng khám."
+                if is_vi else
+                f"{t['zero_result_rate']}% of searches had zero results — represents real patient demand to add clinics for."
+            )
         if t["counts"]["page_view"] and not t["contact_clicks"]:
-            out.append("Có lượt xem nhưng chưa ghi nhận lượt liên hệ clinic nào — kiểm tra vị trí nút Call/Website trên hồ sơ clinic.")
+            out.append(
+                "Có lượt xem nhưng chưa ghi nhận lượt liên hệ clinic nào — kiểm tra nút Call/Website trên hồ sơ clinic."
+                if is_vi else
+                "Pageviews recorded but zero clinic contact clicks — verify Call/Website CTA buttons on clinic profiles."
+            )
     p = data.get("posts")
     if p and p["published_without_views_count"]:
-        out.append(f"{p['published_without_views_count']} bài đã đăng >14 ngày chưa có view — cân nhắc cải thiện tiêu đề/internal link hoặc viết lại.")
+        out.append(
+            f"{p['published_without_views_count']} bài đã đăng >14 ngày chưa có view — cân nhắc cải thiện tiêu đề hoặc chia sẻ."
+            if is_vi else
+            f"{p['published_without_views_count']} articles published >14d with 0 views — consider updating titles or internal links."
+        )
     c = data.get("clinics")
     if c and c["below_70_count"]:
-        out.append(f"{c['below_70_count']} clinic có điểm chất lượng dưới 70, dễ làm hồ sơ kém hấp dẫn.")
-    s = data.get("seo")
-    if s and s.get("ok") and s["issue_counts"].get("missing_jsonld"):
-        out.append("Nhiều trang chưa có dữ liệu cấu trúc (JSON-LD) nên khó xuất hiện rich result.")
-    return out[:3]
-
-
-def llm_insights(data: Dict[str, Any], question: str) -> List[str]:
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        return rule_based_insights(data)
-    try:
-        from openai import OpenAI
-
-        compact = json.dumps(_compact_for_llm(data), ensure_ascii=False)[:6000]
-        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key, timeout=40)
-        resp = client.chat.completions.create(
-            model=NARRATOR_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Bạn là chuyên viên phân tích website. Chỉ dựa vào JSON số liệu được cung cấp, viết 2-3 gạch đầu dòng "
-                        "nhận xét ngắn (tối đa 25 từ mỗi dòng) bằng tiếng Việt: điều đáng chú ý nhất và việc nên làm. "
-                        "TUYỆT ĐỐI không bịa số; chỉ trích số có trong JSON. Nếu mẫu nhỏ (small_sample=true) phải nói rõ "
-                        "chưa đủ kết luận. Không lặp lại toàn bộ số liệu. Mỗi dòng bắt đầu bằng '- '."
-                    ),
-                },
-                {"role": "user", "content": f"Câu hỏi: {question}\n\nSố liệu:\n{compact}"},
-            ],
-            temperature=0.2,
-            max_tokens=260,
+        out.append(
+            f"{c['below_70_count']} clinic có điểm chất lượng dưới 70, cần bổ sung thông tin."
+            if is_vi else
+            f"{c['below_70_count']} clinics scored below 70 data quality, needing more details."
         )
-        text = (resp.choices[0].message.content or "").strip()
-        bullets = [ln.lstrip("-• ").strip() for ln in text.splitlines() if ln.strip().startswith(("-", "•"))]
-        return bullets[:3] or rule_based_insights(data)
-    except Exception as exc:
-        print(f"[!] Stats narrator fell back to rules: {exc}")
-        return rule_based_insights(data)
+    return out[:3]
 
 
 def _compact_for_llm(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -421,28 +489,76 @@ def _compact_for_llm(data: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def suggest_actions(data: Dict[str, Any]) -> List[str]:
+def llm_insights(data: Dict[str, Any], question: str, lang: str = "en") -> List[str]:
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        return rule_based_insights(data, lang=lang)
+    try:
+        from openai import OpenAI
+
+        compact = json.dumps(_compact_for_llm(data), ensure_ascii=False)[:6000]
+        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key, timeout=40)
+        is_vi = lang == "vi"
+        sys_prompt = (
+            "You are a senior data analyst for Asian Health Hub. Based ONLY on the provided JSON metrics, "
+            "write 2-3 concise bullet points (max 25 words each) in fluent ENGLISH: key observation and recommended next steps. "
+            "STRICT RULE: NEVER invent numbers; only quote numbers from the JSON. If sample is small (small_sample=true), explicitly note it. "
+            "Start each bullet with '- '."
+            if not is_vi else
+            "Bạn là chuyên viên phân tích website. Chỉ dựa vào JSON số liệu được cung cấp, viết 2-3 gạch đầu dòng "
+            "nhận xét ngắn (tối đa 25 từ mỗi dòng) bằng TIẾNG VIỆT: điều đáng chú ý nhất và việc nên làm. "
+            "TUYỆT ĐỐI không bịa số; chỉ trích số có trong JSON. Nếu mẫu nhỏ (small_sample=true) phải nói rõ "
+            "chưa đủ kết luận. Không lặp lại toàn bộ số liệu. Mỗi dòng bắt đầu bằng '- '."
+        )
+        resp = client.chat.completions.create(
+            model=NARRATOR_MODEL,
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": f"Question: {question}\n\nMetrics:\n{compact}"},
+            ],
+            temperature=0.2,
+            max_tokens=260,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        bullets = [ln.lstrip("-• ").strip() for ln in text.splitlines() if ln.strip().startswith(("-", "•"))]
+        return bullets[:3] or rule_based_insights(data, lang=lang)
+    except Exception as exc:
+        print(f"[!] Stats narrator fell back to rules: {exc}")
+        return rule_based_insights(data, lang=lang)
+
+
+def suggest_actions(data: Dict[str, Any], lang: str = "en") -> List[str]:
+    is_vi = lang == "vi"
     actions: List[str] = []
     t = data.get("traffic")
     if t and t["zero_result_queries"]:
-        actions.append(f"Lấp nhu cầu tìm không ra: `/scout_gaps` hoặc `/find_clinics {t['zero_result_queries'][0][0]} | 3`")
+        q = t["zero_result_queries"][0][0]
+        actions.append(
+            f"Lấp nhu cầu tìm không ra: `/find_clinics {q} | 3`"
+            if is_vi else
+            f"Fill zero-result demand: `/find_clinics {q} | 3`"
+        )
     p = data.get("posts")
     if p and p["missing_description"]:
-        actions.append(f"Bổ sung meta description cho bài: `/rewrite_article {p['missing_description'][0]} | thêm meta description 140-160 ký tự`")
+        actions.append(
+            f"Bổ sung meta description: `/rewrite_article {p['missing_description'][0]} | thêm meta description`"
+            if is_vi else
+            f"Add meta description: `/rewrite_article {p['missing_description'][0]} | add meta description`"
+        )
     c = data.get("clinics")
     if c and c["below_70_count"]:
-        actions.append("Xem clinic điểm thấp: `/clinic_quality 70`")
+        actions.append("Xem clinic điểm thấp: `/clinic_quality 70`" if is_vi else "Inspect low quality clinics: `/clinic_quality 70`")
     if c and c.get("pending_claims"):
-        actions.append("Duyệt claims đang chờ: `/check_claims`")
+        actions.append("Duyệt claims đang chờ: `/check_claims`" if is_vi else "Review pending claims: `/check_claims`")
     s = data.get("seo")
     if s and s.get("ok"):
         if s["issue_counts"].get("missing_jsonld"):
-            actions.append("Thêm JSON-LD: `/seo_setup Thêm JSON-LD cho các trang đang thiếu`")
+            actions.append("Thêm JSON-LD: `/seo_setup Thêm JSON-LD cho các trang đang thiếu`" if is_vi else "Add JSON-LD: `/seo_setup Add structured JSON-LD schema to pages`")
         if s["issue_counts"].get("h1_count"):
-            actions.append("Sửa H1: `/seo_setup Mỗi trang chỉ có đúng 1 thẻ H1`")
+            actions.append("Sửa H1: `/seo_setup Mỗi trang chỉ có đúng 1 thẻ H1`" if is_vi else "Fix H1: `/seo_setup Ensure exactly 1 H1 per page`")
     g = data.get("google")
     if g and not g.get("gsc_connected") and "seo" in data:
-        actions.append("Kết nối dữ liệu Google thật: `/connect_gsc`")
+        actions.append("Kết nối Google Search Console: `/connect_gsc`" if is_vi else "Connect Google Search Console: `/connect_gsc`")
     return actions[:4]
 
 
@@ -450,19 +566,37 @@ def suggest_actions(data: Dict[str, Any]) -> List[str]:
 # Public API: short answer
 # ----------------------------------------------------------------------------
 
-def answer_stats_question(question: str, plan: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def answer_stats_question(
+    question: str,
+    plan: Optional[Dict[str, Any]] = None,
+    lang: str = "en",
+) -> Dict[str, Any]:
     plan = plan or plan_question(question)
     data = collect_data(plan["scopes"], plan["period"])
-    label = sm.PERIOD_LABELS.get(plan["period"], plan["period"])
+    is_vi = lang == "vi"
+    period_labels = PERIOD_LABELS_VI if is_vi else PERIOD_LABELS_EN
+    label = period_labels.get(plan["period"], plan["period"])
 
-    header = f"📊 **Thống kê website — {label}** (UTC)"
-    body = build_short_lines(data, plan["scopes"])
-    insights = llm_insights(data, question) if body else []
-    actions = suggest_actions(data)
+    header = f"📊 **Thống kê website — {label}** (UTC)" if is_vi else f"📊 **Website Analytics — {label}** (UTC)"
+    body = build_short_lines(data, plan["scopes"], lang=lang)
+    insights = llm_insights(data, question, lang=lang) if body else []
+    actions = suggest_actions(data, lang=lang)
 
     parts = [header, ""] + body
     if insights:
-        parts += ["", "💡 Nhận xét:"] + [f"• {i}" for i in insights]
+        ins_header = "💡 Nhận xét:" if is_vi else "💡 Key Insights:"
+        parts += ["", ins_header] + [f"• {i}" for i in insights]
+    if actions:
+        act_header = "👉 Nên làm tiếp:" if is_vi else "👉 Recommended Actions:"
+        parts += ["", act_header] + [f"• {a}" for a in actions]
+    scope_arg = "" if "overview" in plan["scopes"] else f" {plan['scopes'][0]}"
+    cta = (
+        f"📄 Cần báo cáo chi tiết (bảng đầy đủ + biểu đồ + file .md)? Gõ `/stats_report{scope_arg} {plan['period']}`"
+        if is_vi else
+        f"📄 Need a detailed report (full tables + charts + .md file)? Type `/stats_report{scope_arg} {plan['period']}`"
+    )
+    parts += ["", cta]
+    return {"text": "\n".join(parts), "plan": plan, "data": data, "lang": lang}
     if actions:
         parts += ["", "👉 Nên làm tiếp:"] + [f"• {a}" for a in actions]
     scope_arg = "" if "overview" in plan["scopes"] else f" {plan['scopes'][0]}"
@@ -835,19 +969,34 @@ def check_anomalies() -> Dict[str, Any]:
     }
 
 
-def format_anomalies_report(anomalies_data: Dict[str, Any]) -> str:
+def format_anomalies_report(anomalies_data: Dict[str, Any], lang: str = "en") -> str:
     anomalies = anomalies_data.get("anomalies", [])
+    is_vi = lang == "vi"
     if not anomalies:
-        return "✅ **Hệ thống hoạt động bình thường**: Không phát hiện bất thường nào về traffic, sitemap, HTTP status hay hàng đợi xử lý."
+        return (
+            "✅ **All systems normal**: No anomalies detected in traffic, sitemaps, HTTP responses, or queues."
+            if not is_vi else
+            "✅ **Hệ thống hoạt động bình thường**: Không phát hiện bất thường nào về traffic, sitemap, HTTP status hay hàng đợi xử lý."
+        )
 
-    lines = [f"🚨 **Phát hiện {len(anomalies)} cảnh báo bất thường trên website:**", ""]
+    title = (
+        f"🚨 **Detected {len(anomalies)} anomalies on the website:**"
+        if not is_vi else
+        f"🚨 **Phát hiện {len(anomalies)} cảnh báo bất thường trên website:**"
+    )
+    lines = [title, ""]
     for item in anomalies:
         lvl = item.get("level", "WARNING")
         icon = "🔴" if lvl == "CRITICAL" else ("🟡" if lvl == "WARNING" else "ℹ️")
         lines.append(f"{icon} [{lvl}] **{item.get('scope', '').upper()}**: {item.get('message')}")
 
     lines.append("")
-    lines.append("💡 Gõ `/stats` để xem thống kê chi tiết hoặc `/stats_report` để xuất toàn bộ báo cáo.")
+    cta = (
+        "💡 Type `/stats` for details or `/stats_report` for full report."
+        if not is_vi else
+        "💡 Gõ `/stats` để xem thống kê chi tiết hoặc `/stats_report` để xuất toàn bộ báo cáo."
+    )
+    lines.append(cta)
     return "\n".join(lines)
 
 

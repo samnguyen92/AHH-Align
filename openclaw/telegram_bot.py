@@ -12,6 +12,7 @@ from openai import OpenAI
 
 from ai_agent import ask_openclaw_agent
 from agent_prompt import OPENCLAW_AGENT_SYSTEM_PROMPT
+from intent_agent import run_intent_agent, IntentResult
 from jobs import (
     check_status,
     delete_article_job,
@@ -91,6 +92,7 @@ class TelegramBot:
         self.running_jobs: dict[str, threading.Thread] = {}
         self.pending_actions: dict[int, dict] = {}
         self.chat_memory: dict[int, dict] = self.load_memory()
+        self.chat_lang: dict[int, str] = {}
         self._memory_lock = threading.RLock()  # RLock: reentrant, safe for nested acquire
         self._pending_lock = threading.Lock()
         self.start_anomaly_checker()
@@ -198,9 +200,9 @@ class TelegramBot:
                     from stats_agent import check_anomalies, format_anomalies_report
                     data = check_anomalies()
                     if data.get("has_anomalies") and self.allowed_user_ids:
-                        report = format_anomalies_report(data)
+                        report = format_anomalies_report(data, lang="en")
                         for uid in self.allowed_user_ids:
-                            self.send_message(uid, f"🔔 **TỰ ĐỘNG CẢNH BÁO BẤT THƯỜNG WEBSITE**\n\n{report}")
+                            self.send_message(uid, f"🔔 **WEBSITE ANOMALY ALERT**\n\n{report}")
                 except Exception as exc:
                     print(f"[!] Anomaly checker error: {exc}")
                 time.sleep(6 * 3600)
@@ -2264,27 +2266,30 @@ Return JSON:
         elif action_type == "rollback_code":
             self.send_message(chat_id, rollback_code_job())
         elif action_type == "stats_question":
-            question = action.get("question") or action.get("name", "thống kê website")
+            question = action.get("question") or action.get("name", "website analytics")
             period = action.get("period")
+            lang = action.get("lang") or self.chat_lang.get(chat_id, "en")
             self.run_job(
                 chat_id,
                 action["name"],
-                lambda: stats_question_job(question, period=period),
+                lambda: stats_question_job(question, period=period, lang=lang),
                 action_type=action_type,
             )
         elif action_type == "stats_report":
             arg = action.get("arg", "")
+            lang = action.get("lang") or self.chat_lang.get(chat_id, "en")
             def _run_report_pending():
-                rep = stats_report_job(arg)
+                rep = stats_report_job(arg, lang=lang)
                 md_path = rep.get("markdown_path")
                 charts = rep.get("chart_paths") or []
-                summary = rep.get("summary") or "Đã tạo xong báo cáo."
-                self.send_message(chat_id, f"✅ **Báo cáo chi tiết đã hoàn tất:**\n\n{summary}")
+                summary = rep.get("summary") or "Report generation complete."
+                hdr = "✅ **Detailed Report Complete:**\n\n" if lang != "vi" else "✅ **Báo cáo chi tiết đã hoàn tất:**\n\n"
+                self.send_message(chat_id, f"{hdr}{summary}")
                 for chart in charts:
-                    self.send_photo(chat_id, chart, caption="Biểu đồ thống kê website")
+                    self.send_photo(chat_id, chart, caption="Website Analytics Chart")
                 if md_path and os.path.exists(md_path):
-                    self.send_document(chat_id, md_path, caption="Báo cáo đầy đủ (Markdown)")
-                return "Báo cáo chi tiết đã được gửi kèm biểu đồ và file tài liệu."
+                    self.send_document(chat_id, md_path, caption="Full Analytics Report (Markdown)")
+                return "Detailed report delivered with charts and markdown file." if lang != "vi" else "Báo cáo chi tiết đã được gửi kèm biểu đồ và file tài liệu."
             self.run_job(chat_id, action["name"], _run_report_pending, action_type=action_type)
         else:
             self.send_message(chat_id, "I do not know how to run this action yet. Please send a clearer request.")
@@ -2326,27 +2331,34 @@ Return JSON:
             )
         elif command == "/stats":
             arg = re.sub(r"^/stats(?:@\w+)?", "", text, count=1).strip()
-            self.send_message(chat_id, "🔍 Đang tra cứu thống kê website...")
+            lang = self.chat_lang.get(chat_id, "en")
+            wait_msg = "🔍 Đang tra cứu thống kê website..." if lang == "vi" else "🔍 Fetching website analytics..."
+            self.send_message(chat_id, wait_msg)
             self.run_job(
                 chat_id,
                 f"stats: {arg or 'overview'}",
-                lambda: stats_question_job(arg or "tổng quan tình hình website"),
+                lambda: stats_question_job(arg or ("tổng quan tình hình website" if lang == "vi" else "overview of the website"), lang=lang),
                 action_type="stats_question",
             )
         elif command == "/stats_report":
             arg = re.sub(r"^/stats_report(?:@\w+)?", "", text, count=1).strip()
-            self.send_message(chat_id, "📊 Đang xuất báo cáo chi tiết và biểu đồ...")
+            lang = self.chat_lang.get(chat_id, "en")
+            wait_msg = "📊 Đang xuất báo cáo chi tiết và biểu đồ..." if lang == "vi" else "📊 Generating detailed analytics report & charts..."
+            self.send_message(chat_id, wait_msg)
             def _run_report_cmd():
-                rep = stats_report_job(arg)
+                rep = stats_report_job(arg, lang=lang)
                 md_path = rep.get("markdown_path")
                 charts = rep.get("chart_paths") or []
-                summary = rep.get("summary") or "Đã tạo xong báo cáo."
-                self.send_message(chat_id, f"✅ **Báo cáo chi tiết đã hoàn tất:**\n\n{summary}")
+                summary = rep.get("summary") or ("Đã tạo xong báo cáo." if lang == "vi" else "Report generation complete.")
+                hdr = "✅ **Báo cáo chi tiết đã hoàn tất:**\n\n" if lang == "vi" else "✅ **Detailed Report Complete:**\n\n"
+                self.send_message(chat_id, f"{hdr}{summary}")
                 for chart in charts:
-                    self.send_photo(chat_id, chart, caption="Biểu đồ thống kê website")
+                    caption = "Biểu đồ thống kê website" if lang == "vi" else "Website Analytics Chart"
+                    self.send_photo(chat_id, chart, caption=caption)
                 if md_path and os.path.exists(md_path):
-                    self.send_document(chat_id, md_path, caption="Báo cáo đầy đủ (Markdown)")
-                return "Báo cáo chi tiết đã được gửi kèm biểu đồ và file tài liệu."
+                    doc_cap = "Báo cáo đầy đủ (Markdown)" if lang == "vi" else "Full Analytics Report (Markdown)"
+                    self.send_document(chat_id, md_path, caption=doc_cap)
+                return "Báo cáo chi tiết đã được gửi kèm biểu đồ và file tài liệu." if lang == "vi" else "Detailed report delivered with charts and markdown file."
             self.run_job(
                 chat_id,
                 f"stats_report: {arg or 'week'}",
@@ -2360,7 +2372,7 @@ Return JSON:
             arg = re.sub(r"^/connect_ga4(?:@\w+)?", "", text, count=1).strip()
             self.send_message(chat_id, connect_ga4_job(arg))
         elif command in {"/anomalies", "/check_anomalies"}:
-            self.send_message(chat_id, check_anomalies_job())
+            self.send_message(chat_id, check_anomalies_job(lang=self.chat_lang.get(chat_id, "en")))
         elif command == "/tail":
             self.send_message(chat_id, tail_log())
         elif command in {"/clinic_quality", "/quality"}:
@@ -2642,38 +2654,63 @@ Return JSON:
             self.send_message(chat_id, "Unknown command.\n\n" + self.help_text())
 
     def handle_chat(self, chat_id: int, text: str) -> None:
-        if self.is_approval(text):
-            with self._pending_lock:
-                action = self.pending_actions.pop(chat_id, None)
-            if not action:
-                self.send_message(chat_id, "There is no pending action waiting for approval.")
-                return
-
-            self.send_message(chat_id, f"Approval received. Starting: {action['name']}")
-            self.run_pending_action(chat_id, action)
-            return
-
-        if self.is_rejection(text):
-            with self._pending_lock:
-                action = self.pending_actions.pop(chat_id, None)
-            if action:
-                self.send_message(chat_id, f"Pending action canceled: {action['name']}")
-            else:
-                self.send_message(chat_id, "There is no pending action to cancel.")
-            return
-
         with self._pending_lock:
             current_pending = self.pending_actions.get(chat_id)
         with self._memory_lock:
             current_memory = self.chat_memory.get(chat_id)
 
-        action = self.analyze_request(text, current_pending, current_memory)
-        if action:
+        intent_res = run_intent_agent(
+            text,
+            memory=current_memory,
+            pending_action=current_pending,
+            preferred_lang=self.chat_lang.get(chat_id, "en"),
+        )
+        self.chat_lang[chat_id] = intent_res.lang
+
+        # 1. Approval
+        if intent_res.is_approval:
             with self._pending_lock:
-                self.pending_actions[chat_id] = action
-            self.send_message(chat_id, action["summary"])
+                action = self.pending_actions.pop(chat_id, None)
+            if not action:
+                msg = "There is no pending action waiting for approval." if intent_res.lang != "vi" else "Không có thao tác nào đang chờ duyệt."
+                self.send_message(chat_id, msg)
+                return
+
+            action_name = action.get("name") or action.get("type", "job")
+            start_msg = f"Approval received. Starting: {action_name}" if intent_res.lang != "vi" else f"Đã xác nhận. Bắt đầu thực thi: {action_name}"
+            self.send_message(chat_id, start_msg)
+            self.run_pending_action(chat_id, action)
             return
 
+        # 2. Rejection / Cancel
+        if intent_res.is_rejection:
+            with self._pending_lock:
+                action = self.pending_actions.pop(chat_id, None)
+            if action:
+                action_name = action.get("name") or action.get("type", "job")
+                cancel_msg = f"Pending action canceled: {action_name}" if intent_res.lang != "vi" else f"Đã hủy thao tác: {action_name}"
+                self.send_message(chat_id, cancel_msg)
+            else:
+                msg = "There is no pending action to cancel." if intent_res.lang != "vi" else "Không có thao tác nào đang chờ để hủy."
+                self.send_message(chat_id, msg)
+            return
+
+        # 3. Requires Approval (New Action detected by IntentAgent)
+        if intent_res.requires_approval and intent_res.confirmation_message:
+            pending_dict = intent_res.to_pending_dict()
+            with self._pending_lock:
+                self.pending_actions[chat_id] = pending_dict
+            self.send_message(chat_id, intent_res.confirmation_message)
+            return
+
+        # 4. Direct chat (IntentAgent answered directly)
+        if intent_res.is_direct_chat and intent_res.direct_reply:
+            with self._pending_lock:
+                self.pending_actions.pop(chat_id, None)
+            self.send_message(chat_id, intent_res.direct_reply)
+            return
+
+        # 5. Fallback to OpenClaw Agent
         with self._pending_lock:
             self.pending_actions.pop(chat_id, None)
         self.send_message(chat_id, ask_openclaw_agent(text))
@@ -2701,10 +2738,13 @@ Return JSON:
                     if photos and text:
                         local_img = self.download_telegram_photo(photos)
                         clean_instr = re.sub(r"^/(?:web_edit|edit_web|code)(?:@\w+)?", "", text, count=1).strip() or text
-                        self.send_message(
-                            chat_id,
-                            f"📸 Đã nhận ảnh chụp màn hình kèm yêu cầu: “{clean_instr}”. Đang chuyển vào Web-Dev Agent...",
+                        lang = self.chat_lang.get(chat_id, "en")
+                        notice = (
+                            f"📸 Đã nhận ảnh chụp màn hình kèm yêu cầu: “{clean_instr}”. Đang chuyển vào Web-Dev Agent..."
+                            if lang == "vi" else
+                            f"📸 Received screenshot with instruction: “{clean_instr}”. Forwarding to Web-Dev Agent..."
                         )
+                        self.send_message(chat_id, notice)
                         self.run_job(
                             chat_id,
                             f"web_edit (vision): {clean_instr[:36]}",
