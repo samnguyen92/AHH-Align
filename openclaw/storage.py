@@ -1,17 +1,14 @@
 import base64
-import mimetypes
 import os
 import re
 import ssl
 import unicodedata
 from io import BytesIO
 from typing import Optional, Tuple
-from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 import certifi
 from dotenv import load_dotenv
-from supabase import Client, create_client
 
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
@@ -19,7 +16,6 @@ load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
 load_dotenv(".env")
 load_dotenv(".env.local")
 
-DEFAULT_BUCKET = "generated-images"
 SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 
@@ -34,18 +30,21 @@ def safe_storage_name(value: str) -> str:
     return text.strip(".-") or "image"
 
 
-def get_storage_bucket() -> str:
-    return os.environ.get("SUPABASE_STORAGE_BUCKET") or DEFAULT_BUCKET
-
-
-def create_supabase_client() -> Optional[Client]:
-    url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-
-    if not url or not key:
-        return None
-
-    return create_client(url, key)
+def get_uploads_dir() -> str:
+    """Find the active public/uploads directory either in local dev or Docker."""
+    candidates = [
+        os.path.join(_OPENCLAW_DIR, "..", "public", "uploads"),
+        os.path.join("/app", "public", "uploads"),
+        os.path.join(os.getcwd(), "public", "uploads"),
+    ]
+    for cand in candidates:
+        cand_abs = os.path.abspath(cand)
+        if os.path.exists(os.path.dirname(cand_abs)):
+            os.makedirs(cand_abs, exist_ok=True)
+            return cand_abs
+    fallback = os.path.abspath(os.path.join(_OPENCLAW_DIR, "..", "public", "uploads"))
+    os.makedirs(fallback, exist_ok=True)
+    return fallback
 
 
 def parse_data_image(image_value: str) -> Optional[Tuple[bytes, str, str]]:
@@ -68,42 +67,29 @@ def download_image(image_url: str) -> Optional[Tuple[bytes, str, str]]:
         content_type = response.headers.get("content-type", "").split(";")[0]
 
     if not content_type.startswith("image/"):
-        parsed_path = urlparse(image_url).path
-        guessed_type, _ = mimetypes.guess_type(parsed_path)
-        content_type = guessed_type or "image/png"
+        return None
 
-    extension = mimetypes.guess_extension(content_type) or ".png"
-    return body, content_type, extension.lstrip(".")
+    extension = content_type.split("/")[-1].replace("jpeg", "jpg") or "jpg"
+    return body, content_type, extension
 
 
 def convert_image_to_webp(image_bytes: bytes) -> Optional[Tuple[bytes, str, str]]:
     try:
-        from PIL import Image, ImageOps
-    except ImportError:
-        print("[!] Pillow is not installed; cannot convert image to WebP before upload.")
-        return None
+        from PIL import Image
 
-    try:
         with Image.open(BytesIO(image_bytes)) as image:
-            image = ImageOps.exif_transpose(image)
-            if image.mode not in {"RGB", "RGBA"}:
+            if image.format == "WEBP":
+                return image_bytes, "image/webp", "webp"
+
+            if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
 
             output = BytesIO()
             image.save(output, format="WEBP", quality=84, method=6)
             return output.getvalue(), "image/webp", "webp"
     except Exception as exc:
-        print(f"[!] WebP conversion failed; uploading original image instead: {exc}")
+        print(f"[!] WebP conversion failed; saving original image instead: {exc}")
         return None
-
-
-def get_public_url(supabase: Client, bucket: str, path: str) -> str:
-    response = supabase.storage.from_(bucket).get_public_url(path)
-    if isinstance(response, str):
-        return response
-    if isinstance(response, dict):
-        return response.get("publicUrl") or response.get("public_url") or response.get("signedURL") or ""
-    return getattr(response, "public_url", "") or getattr(response, "publicUrl", "") or str(response)
 
 
 def upload_image_bytes(
@@ -114,54 +100,20 @@ def upload_image_bytes(
 ) -> Optional[str]:
     """
     Save image to local Docker Volume (public/uploads/) and return '/uploads/...'.
-    Fallback to Supabase Storage only if explicitly requested.
     """
     normalized_path = storage_path.lstrip("/")
 
-    # 1. Primary: Save directly to public/uploads/
     try:
-        # Check both local dev path and Docker container /app path
-        candidates = [
-            os.path.join(_OPENCLAW_DIR, "..", "public", "uploads"),
-            os.path.join("/app", "public", "uploads"),
-            os.path.join("public", "uploads"),
-        ]
-        target_dir = None
-        for cand in candidates:
-            cand_abs = os.path.abspath(cand)
-            if os.path.exists(os.path.dirname(cand_abs)):
-                target_dir = cand_abs
-                break
-
-        if target_dir:
-            dest_file = os.path.join(target_dir, normalized_path)
-            os.makedirs(os.path.dirname(dest_file), exist_ok=True)
-            with open(dest_file, "wb") as f:
-                f.write(image_bytes)
-            local_url = f"/uploads/{normalized_path}"
-            print(f"[+] Saved image to local storage: {local_url} ({dest_file})")
-            return local_url
+        target_dir = get_uploads_dir()
+        dest_file = os.path.join(target_dir, normalized_path)
+        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+        with open(dest_file, "wb") as f:
+            f.write(image_bytes)
+        local_url = f"/uploads/{normalized_path}"
+        print(f"[+] Saved image to local storage: {local_url}")
+        return local_url
     except Exception as exc:
         print(f"[!] Local image save error: {exc}")
-
-    # 2. Fallback: Supabase Storage
-    supabase = create_supabase_client()
-    if not supabase:
-        return f"/uploads/{normalized_path}"
-
-    bucket_name = bucket or get_storage_bucket()
-    try:
-        supabase.storage.from_(bucket_name).upload(
-            path=normalized_path,
-            file=image_bytes,
-            file_options={
-                "cache-control": "31536000",
-                "content-type": content_type,
-                "upsert": "true",
-            },
-        )
-        return get_public_url(supabase, bucket_name, normalized_path)
-    except Exception:
         return f"/uploads/{normalized_path}"
 
 
@@ -174,7 +126,7 @@ def upload_image_value(image_value: Optional[str], folder: str, filename_base: s
         try:
             parsed = download_image(image_value)
         except Exception as exc:
-            print(f"[!] Could not download generated image URL for cloud upload: {exc}")
+            print(f"[!] Could not download generated image URL: {exc}")
             return image_value
 
     if not parsed:

@@ -59,31 +59,21 @@ def _check_env() -> None:
     missing = []
     if not os.environ.get("OPENROUTER_API_KEY"):
         missing.append("OPENROUTER_API_KEY")
-    if not os.environ.get("NEXT_PUBLIC_SUPABASE_URL"):
-        missing.append("NEXT_PUBLIC_SUPABASE_URL")
-    if not (os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")):
-        missing.append("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY")
 
     if missing:
         print(f"[!] Missing environment variables: {', '.join(missing)}")
-        print("    Copy them from Next.js .env.local to openclaw/.env")
         sys.exit(1)
 
 
 def _clinic_already_exists(name: str) -> bool:
     """
-    Check if a clinic with the same slug already exists in Supabase.
+    Check if a clinic with the same slug already exists in PostgreSQL.
     This prevents re-scraping clinics that were already processed successfully.
     """
     try:
-        from supabase import create_client
+        from pg_client import create_client
 
-        supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-        supabase_key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-        if not supabase_url or not supabase_key:
-            return False
-
-        supabase = create_client(supabase_url, supabase_key)
+        supabase = create_client()
         slug = generate_slug(name)
         result = supabase.table("clinics").select("id, name").eq("slug", slug).limit(1).execute()
         if result.data:

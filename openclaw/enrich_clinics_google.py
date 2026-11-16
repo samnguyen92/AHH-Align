@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from supabase import Client, create_client
+from pg_client import create_client
 
 from google_places import enrich_clinic_with_google_places
 
@@ -10,12 +10,7 @@ load_dotenv("../.env.local")
 
 
 def main():
-    url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("Missing NEXT_PUBLIC_SUPABASE_URL or Supabase secret key")
-
-    supabase: Client = create_client(url, key)
+    supabase = create_client()
     clinics = supabase.table("clinics").select(
         "id, name, slug, description, address, city, state, zip_code, phone, specialty, languages, metadata"
     ).execute().data or []

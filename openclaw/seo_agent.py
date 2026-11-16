@@ -20,10 +20,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-try:
-    from pg_client import create_client
-except Exception:
-    from supabase import create_client
+from pg_client import create_client
 
 from dev_agent import PROJECT_ROOT, run_web_dev_agent
 
@@ -127,12 +124,8 @@ def _inspect_live_route(route_path: str = "/") -> Dict[str, Any]:
 
 
 def _audit_db_seo() -> Dict[str, Any]:
-    url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        return {}
     try:
-        sb = create_client(url, key)
+        sb = create_client()
         clinics = sb.table("clinics").select("slug,description,metadata").execute().data or []
         articles = sb.table("articles").select("slug,title,excerpt,seo_meta,status").execute().data or []
 

@@ -1,9 +1,43 @@
-import { createClient } from '@supabase/supabase-js';
+import { getAuthToken, clearAuthToken } from '@/lib/auth/session-cookie';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:3000';
-const supabaseAnonKey =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  'local-anon-key';
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = {
+  auth: {
+    async getSession() {
+      const token = getAuthToken();
+      if (!token) {
+        return { data: { session: null }, error: null };
+      }
+      return {
+        data: {
+          session: {
+            access_token: token,
+          },
+        },
+        error: null,
+      };
+    },
+    async getUser() {
+      const token = getAuthToken();
+      if (!token) return { data: { user: null }, error: null };
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return { data: { user: null }, error: null };
+        const data = await res.json();
+        return { data: { user: data.user }, error: null };
+      } catch {
+        return { data: { user: null }, error: null };
+      }
+    },
+    async signOut() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+      } catch {
+        // ignore
+      }
+      clearAuthToken();
+      return { error: null };
+    },
+  },
+};

@@ -17,10 +17,7 @@ from collections import Counter
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
-try:
-    from pg_client import create_client
-except Exception:
-    from supabase import create_client
+from pg_client import create_client
 
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
@@ -57,11 +54,7 @@ CORE_LANGUAGES = ["Vietnamese", "Korean", "Mandarin"]
 
 
 def _get_supabase():
-    url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
-    return create_client(url, key)
+    return create_client()
 
 
 def _has_lang(langs: List[str], target: str) -> bool:

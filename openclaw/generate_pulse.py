@@ -4,7 +4,8 @@ import re
 from datetime import datetime
 from typing import Optional, List
 from openai import OpenAI
-from supabase import Client
+from pg_client import create_client
+Client = object
 from dotenv import load_dotenv
 
 # Import helpers from generate_insights to reuse core clients, storage and image pipelines

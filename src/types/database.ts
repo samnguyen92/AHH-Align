@@ -1,6 +1,6 @@
 /**
  * Core database types for Asian Health Hub
- * Mirrors the PostgreSQL schema in supabase/schema.sql
+ * Mirrors the PostgreSQL schema in postgres/init/01_schema.sql
  */
 
 // ---- Organizations ----

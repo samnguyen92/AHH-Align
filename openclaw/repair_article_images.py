@@ -5,7 +5,8 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
-from supabase import Client, create_client
+from pg_client import create_client
+Client = object
 from storage import upload_image_value
 
 load_dotenv(".env")

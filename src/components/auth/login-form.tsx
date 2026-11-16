@@ -4,7 +4,6 @@ import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Mail, Lock, Loader2 } from 'lucide-react';
-import { supabase } from '@/services/supabase-client';
 import { persistAuthToken } from '@/lib/auth/session-cookie';
 
 function getNextPath() {
@@ -40,13 +39,28 @@ export function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (data.session?.access_token) {
-        persistAuthToken(data.session.access_token);
-        router.replace(await getRoleDestination(data.session.access_token));
-        router.refresh();
+    // Check if URL contains error (e.g. from Google OAuth)
+    if (typeof window !== 'undefined') {
+      const err = new URLSearchParams(window.location.search).get('error');
+      if (err) {
+        setMessage(err);
       }
-    });
+    }
+
+    // Check existing session
+    fetch('/api/auth/me')
+      .then((res) => {
+        if (res.ok) return res.json();
+        return null;
+      })
+      .then(async (data) => {
+        if (data?.user?.id) {
+          const dest = data.destination || (data.user.role === 'admin' || data.user.role === 'superadmin' ? '/admin' : '/dashboard');
+          router.replace(dest);
+          router.refresh();
+        }
+      })
+      .catch(() => {});
   }, [router]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -54,36 +68,34 @@ export function LoginForm() {
     setIsLoading(true);
     setMessage(null);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
 
-    if (error || !data.session?.access_token) {
-      setMessage(error?.message ?? 'Unable to sign in. Please try again.');
+      const data = await res.json();
+
+      if (!res.ok || !data.session?.access_token) {
+        setMessage(data?.error ?? 'Unable to sign in. Please check your credentials.');
+        setIsLoading(false);
+        return;
+      }
+
+      persistAuthToken(data.session.access_token);
+      router.push(await getRoleDestination(data.session.access_token));
+      router.refresh();
+    } catch {
+      setMessage('Network error. Please try again.');
       setIsLoading(false);
-      return;
     }
-
-    persistAuthToken(data.session.access_token);
-    router.push(await getRoleDestination(data.session.access_token));
-    router.refresh();
   }
 
-  async function handleGoogleLogin() {
+  function handleGoogleLogin() {
     setIsLoading(true);
-    setMessage(null);
-
-    const redirectTo = `${window.location.origin}/auth/login`;
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo },
-    });
-
-    if (error) {
-      setMessage(error.message);
-      setIsLoading(false);
-    }
+    const next = getNextPath() || '/dashboard';
+    window.location.href = `/api/auth/google?next=${encodeURIComponent(next)}`;
   }
 
   return (

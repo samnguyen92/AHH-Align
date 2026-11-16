@@ -2,7 +2,7 @@ import os
 import json
 import time
 from openai import OpenAI
-from supabase import create_client
+from pg_client import create_client
 from dotenv import load_dotenv
 
 from generate_insights import (

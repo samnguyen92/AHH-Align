@@ -365,13 +365,32 @@ export function createPostgresClient() {
     },
     async rpc(fnName: string, args?: Record<string, any>) {
       const client = getPool();
-      const argVals = Object.values(args || {});
-      const placeholders = argVals.map((_, i) => `$${i + 1}`).join(', ');
+      if (!args || Object.keys(args).length === 0) {
+        try {
+          const res = await client.query(`SELECT * FROM ${fnName}()`);
+          return { data: res.rows, error: null };
+        } catch (err: any) {
+          return { data: null, error: err };
+        }
+      }
+
+      const entries = Object.entries(args);
+      const params = entries.map(([, val]) =>
+        Array.isArray(val) && typeof val[0] === 'number' ? `[${val.join(',')}]` : val
+      );
+      const namedArgs = entries.map(([key], i) => `"${key}" := $${i + 1}`).join(', ');
+
       try {
-        const res = await client.query(`SELECT * FROM ${fnName}(${placeholders})`, argVals);
+        const res = await client.query(`SELECT * FROM ${fnName}(${namedArgs})`, params);
         return { data: res.rows, error: null };
-      } catch (err: any) {
-        return { data: null, error: err };
+      } catch {
+        try {
+          const placeholders = params.map((_, i) => `$${i + 1}`).join(', ');
+          const res = await client.query(`SELECT * FROM ${fnName}(${placeholders})`, params);
+          return { data: res.rows, error: null };
+        } catch (err: any) {
+          return { data: null, error: err };
+        }
       }
     },
     auth: {

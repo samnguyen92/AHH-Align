@@ -5,6 +5,14 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  async rewrites() {
+    return [
+      {
+        source: '/generated-clinics/:path*',
+        destination: '/uploads/generated-clinics/:path*',
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {

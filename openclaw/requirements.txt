@@ -4,7 +4,6 @@ playwright
 playwright-stealth
 openai
 instructor
-supabase
 pydantic
 beautifulsoup4
 markdownify

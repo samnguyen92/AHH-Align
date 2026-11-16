@@ -5,19 +5,15 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from dotenv import load_dotenv
-from supabase import Client, create_client
+from pg_client import create_client
+Client = object
 
 load_dotenv(".env")
 load_dotenv("../.env.local")
 
 
-def create_admin_client() -> Client:
-    url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("Missing NEXT_PUBLIC_SUPABASE_URL or service role key.")
-
-    return create_client(url, key)
+def create_admin_client():
+    return create_client()
 
 
 def generate_slug(text: str, fallback: str) -> str:

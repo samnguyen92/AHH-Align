@@ -3,11 +3,7 @@ import uuid
 import re
 import unicodedata
 from dotenv import load_dotenv
-try:
-    from pg_client import create_client
-    Client = object
-except Exception:
-    from supabase import create_client, Client
+from pg_client import create_client
 from normalize import (
     clean_value,
     compute_quality,
@@ -133,16 +129,9 @@ def _attach_quality(db_payload: dict) -> None:
 
 def insert_clinic(clinic_data: dict):
     """
-    Insert or update clinic data in Supabase.
+    Insert or update clinic data in PostgreSQL.
     """
-    url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    
-    if not url or not key:
-        print("[!] Missing Supabase credentials in .env")
-        return False
-        
-    supabase: Client = create_client(url, key)
+    supabase = create_client()
     
     # Construct DB payload
     slug = generate_slug(clinic_data.get("name", ""))

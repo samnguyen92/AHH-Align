@@ -41,32 +41,8 @@ EXCLUDED_PATH_PREFIXES = ("/admin", "/api", "/dashboard")
 # ----------------------------------------------------------------------------
 
 def _sb():
-    try:
-        from pg_client import create_client
-        return create_client()
-    except Exception:
-        pass
-
-    try:
-        from supabase import create_client
-    except (ImportError, AttributeError):
-        import sys
-        if "supabase" in sys.modules and getattr(sys.modules["supabase"], "__file__", None) is None:
-            del sys.modules["supabase"]
-            orig_path = list(sys.path)
-            sys.path = [p for p in sys.path if not os.path.isdir(os.path.join(p or ".", "supabase")) or os.path.isfile(os.path.join(p or ".", "supabase", "__init__.py"))]
-            try:
-                from supabase import create_client
-            finally:
-                sys.path = orig_path
-        else:
-            raise
-
-    url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
-        raise RuntimeError("Thiếu NEXT_PUBLIC_SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY.")
-    return create_client(url, key)
+    from pg_client import create_client
+    return create_client()
 
 
 def _fetch_all(

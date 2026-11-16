@@ -4,7 +4,7 @@ import re
 import time
 from datetime import datetime
 from openai import OpenAI
-from supabase import create_client
+from pg_client import create_client
 from dotenv import load_dotenv
 
 from generate_insights import (

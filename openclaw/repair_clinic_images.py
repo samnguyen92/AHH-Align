@@ -1,7 +1,8 @@
 import os
 
 from dotenv import load_dotenv
-from supabase import Client, create_client
+from pg_client import create_client
+Client = object
 
 from image_generator import generate_clinic_image
 

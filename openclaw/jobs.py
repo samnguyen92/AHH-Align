@@ -242,10 +242,9 @@ def research_job(user_request: str) -> str:
 
 def check_status() -> str:
     missing = []
-    if not os.environ.get("NEXT_PUBLIC_SUPABASE_URL"):
-        missing.append("NEXT_PUBLIC_SUPABASE_URL")
-    if not (os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")):
-        missing.append("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY")
+    if not (os.environ.get("DATABASE_URL") or os.path.exists("/app") or os.environ.get("POSTGRES_DB")):
+        # Default connection string exists in pg_client
+        pass
     if not os.environ.get("OPENROUTER_API_KEY"):
         missing.append("OPENROUTER_API_KEY")
     if not os.environ.get("TELEGRAM_BOT_TOKEN"):
@@ -255,12 +254,9 @@ def check_status() -> str:
     lines.append(f"Environment: {'OK' if not missing else 'Missing ' + ', '.join(missing)}")
 
     try:
-        from supabase import create_client
+        from pg_client import create_client
 
-        supabase = create_client(
-            os.environ["NEXT_PUBLIC_SUPABASE_URL"],
-            os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
-        )
+        supabase = create_client()
         clinics = supabase.table("clinics").select("id", count="exact").limit(1).execute()
         articles = supabase.table("articles").select("id", count="exact").limit(1).execute()
         lines.append(f"Clinics: {clinics.count}")
@@ -351,14 +347,11 @@ def check_analytics_job(timeframe: str = "week", filter_type: str = "all") -> st
 
 
 def check_clinic_quality(threshold: int = 85, limit: int = 15) -> str:
-    from supabase import create_client
+    from pg_client import create_client
     from normalize import compute_quality
 
     try:
-        supabase = create_client(
-            os.environ["NEXT_PUBLIC_SUPABASE_URL"],
-            os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
-        )
+        supabase = create_client()
         rows = (
             supabase.table("clinics")
             .select("name,slug,city,state,specialty,phone,address,zip_code,languages,metadata")

@@ -1,67 +1,38 @@
-import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { getPool } from '@/lib/db/postgres';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const publicKey =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const serverKey =
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseKey = publicKey || serverKey;
+  try {
+    const pool = getPool();
+    const [clinicsRes, articlesRes] = await Promise.all([
+      pool.query('SELECT COUNT(*) AS total FROM clinics'),
+      pool.query('SELECT COUNT(*) AS total FROM articles'),
+    ]);
 
-  const base = {
-    env: {
-      hasUrl: Boolean(supabaseUrl),
-      hasPublicKey: Boolean(publicKey),
-      hasServerKey: Boolean(serverKey),
-      usingKey: publicKey ? 'public' : serverKey ? 'server' : 'none',
-    },
-  };
+    const clinicsCount = parseInt(clinicsRes.rows[0]?.total || '0', 10);
+    const articlesCount = parseInt(articlesRes.rows[0]?.total || '0', 10);
 
-  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.json({
+      status: 'healthy',
+      database: {
+        engine: 'PostgreSQL 16 + pgvector (self-hosted)',
+        ok: true,
+        clinicsCount,
+        articlesCount,
+      },
+    });
+  } catch (err: any) {
     return NextResponse.json(
       {
-        ...base,
+        status: 'unhealthy',
         database: {
           ok: false,
-          message: 'Missing Supabase URL or API key in Vercel environment variables.',
+          error: err.message || 'Could not connect to PostgreSQL database',
         },
       },
-      { status: 200 }
+      { status: 500 }
     );
   }
-
-  const supabase = createClient(supabaseUrl, supabaseKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-
-  const [clinics, articles] = await Promise.all([
-    supabase.from('clinics').select('id', { count: 'exact', head: true }),
-    supabase.from('articles').select('id', { count: 'exact', head: true }),
-  ]);
-
-  return NextResponse.json(
-    {
-      ...base,
-      database: {
-        ok: !clinics.error && !articles.error,
-        clinicsCount: clinics.count ?? 0,
-        articlesCount: articles.count ?? 0,
-        clinicsError: clinics.error
-          ? { code: clinics.error.code, message: clinics.error.message }
-          : null,
-        articlesError: articles.error
-          ? { code: articles.error.code, message: articles.error.message }
-          : null,
-      },
-    },
-    { status: 200 }
-  );
 }

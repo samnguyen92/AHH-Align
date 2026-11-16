@@ -11,7 +11,7 @@ from typing import Callable, List, Optional
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from openai import OpenAI
-from supabase import create_client as create_supabase_client
+from pg_client import create_client as create_supabase_client
 
 from scraper import scrape_content_from_url
 
@@ -615,14 +615,8 @@ def build_clinic_database_fact_sheets(user_request: str) -> List[dict]:
     if not looks_like_clinic_research(user_request):
         return []
 
-    supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not supabase_url or not supabase_key:
-        print("[!] Clinic database fallback skipped: missing Supabase env.")
-        return []
-
     try:
-        supabase = create_supabase_client(supabase_url, supabase_key)
+        supabase = create_supabase_client()
         rows = (
             supabase.table("clinics")
             .select("name,slug,description,address,city,state,phone,languages,specialty,metadata")

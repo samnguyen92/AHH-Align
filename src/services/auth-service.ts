@@ -1,7 +1,8 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { createServerAnonClient, createServerSupabaseClient } from './supabase-server';
+import { getPool } from '@/lib/db/postgres';
 import { AUTH_COOKIE_NAME } from '@/lib/auth/session-cookie';
+import { verifySessionToken } from '@/lib/auth/token';
 
 export interface CurrentUser {
   id: string;
@@ -46,19 +47,9 @@ export async function getCurrentUserWithRole(): Promise<CurrentUser | null> {
 
 export async function getUserRole(userId: string): Promise<AppRole | null> {
   try {
-    const supabase = createServerSupabaseClient();
-    const { data, error } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (error) {
-      console.error('[auth-service] getUserRole error:', error);
-      return null;
-    }
-
-    return normalizeRole(data?.role);
+    const pool = getPool();
+    const res = await pool.query('SELECT role FROM public.user_roles WHERE user_id = $1', [userId]);
+    return normalizeRole(res.rows[0]?.role);
   } catch (err) {
     console.error('[auth-service] getUserRole failed:', err);
     return null;
@@ -155,29 +146,37 @@ export async function getUserFromAccessToken(
     return null;
   }
 
-  const supabase = createServerAnonClient();
-  if (!supabase) {
+  const session = verifySessionToken(token);
+  if (!session || !session.userId) {
     return null;
   }
 
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) {
+  try {
+    const pool = getPool();
+    const res = await pool.query('SELECT * FROM auth.users WHERE id = $1', [session.userId]);
+    const row = res.rows[0];
+    if (!row) {
+      return null;
+    }
+
+    const metadata = row.raw_user_meta_data || {};
+    const role = (await getUserRole(row.id)) || normalizeRole(metadata.role) || 'provider';
+
+    return {
+      id: row.id,
+      email: row.email || null,
+      name:
+        typeof metadata.name === 'string'
+          ? metadata.name
+          : typeof metadata.full_name === 'string'
+            ? metadata.full_name
+            : null,
+      role,
+    };
+  } catch (err) {
+    console.error('[auth-service] getUserFromAccessToken DB error:', err);
     return null;
   }
-
-  const metadata = data.user.user_metadata ?? {};
-
-  return {
-    id: data.user.id,
-    email: data.user.email ?? null,
-    name:
-      typeof metadata.name === 'string'
-        ? metadata.name
-        : typeof metadata.full_name === 'string'
-          ? metadata.full_name
-          : null,
-    role: normalizeRole(metadata.role),
-  };
 }
 
 export async function getPostLoginPath(user: CurrentUser | null, fallback = '/dashboard') {

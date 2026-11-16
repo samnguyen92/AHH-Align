@@ -3,7 +3,6 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Lock, Loader2, CheckCircle } from 'lucide-react';
-import { supabase } from '@/services/supabase-client';
 
 export function ResetPasswordForm() {
   const router = useRouter();
@@ -30,23 +29,30 @@ export function ResetPasswordForm() {
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({
-      password: password,
-    });
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
 
-    if (error) {
-      setMessage(error.message);
+      if (!res.ok) {
+        setMessage(data?.error ?? 'Failed to update password');
+        setIsLoading(false);
+        return;
+      }
+
+      setIsSuccess(true);
       setIsLoading(false);
-      return;
+
+      setTimeout(() => {
+        router.push('/auth/login');
+      }, 3000);
+    } catch {
+      setMessage('Network error. Please try again.');
+      setIsLoading(false);
     }
-
-    setIsSuccess(true);
-    setIsLoading(false);
-
-    // Redirect to login after 3 seconds
-    setTimeout(() => {
-      router.push('/auth/login');
-    }, 3000);
   }
 
   if (isSuccess) {

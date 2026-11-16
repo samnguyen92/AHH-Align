@@ -4,7 +4,6 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
-import { supabase } from '@/services/supabase-client';
 import { persistAuthToken } from '@/lib/auth/session-cookie';
 
 export function SignupForm() {
@@ -20,35 +19,28 @@ export function SignupForm() {
     setIsLoading(true);
     setMessage(null);
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { name, role: 'provider' },
-      },
-    });
-
-    if (error) {
-      setMessage(error.message);
-      setIsLoading(false);
-      return;
-    }
-
-    if (data.session?.access_token) {
-      persistAuthToken(data.session.access_token);
-      await fetch('/api/auth/me', {
+    try {
+      const res = await fetch('/api/auth/signup', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${data.session.access_token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name, role: 'provider' }),
       });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.session?.access_token) {
+        setMessage(data?.error ?? 'Unable to create account. Please try again.');
+        setIsLoading(false);
+        return;
+      }
+
+      persistAuthToken(data.session.access_token);
       router.push('/dashboard');
       router.refresh();
-      return;
+    } catch {
+      setMessage('Network error. Please try again.');
+      setIsLoading(false);
     }
-
-    setMessage('Please check your email to confirm your account, then sign in.');
-    setIsLoading(false);
   }
 
   return (

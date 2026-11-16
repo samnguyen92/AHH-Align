@@ -145,13 +145,8 @@ def _is_valid_website(url: str) -> bool:
 
 
 def _get_supabase_client():
-    from supabase import create_client
-
-    supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not supabase_url or not supabase_key:
-        raise RuntimeError("Missing Supabase credentials: NEXT_PUBLIC_SUPABASE_URL and service role key are required.")
-    return create_client(supabase_url, supabase_key)
+    from pg_client import create_client
+    return create_client()
 
 
 def _load_existing_clinic_keys() -> tuple[set[str], set[str]]:
