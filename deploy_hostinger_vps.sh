@@ -35,7 +35,8 @@ DATABASE_URL=postgresql://postgres:ahh_secure_pass_2026@db:5432/asian_health_hub
 POSTGRES_DB=asian_health_hub
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=ahh_secure_pass_2026
-NEXT_PUBLIC_BASE_URL=http://localhost:3000
+NEXT_PUBLIC_BASE_URL=http://localhost:4000
+WEB_PORT=4000
 NEXT_TELEMETRY_DISABLED=1
 EOT
 fi
@@ -60,7 +61,7 @@ docker compose ps
 
 echo "=================================================="
 echo "✅ Deployment complete!"
-echo "   - Web App: http://localhost:3000"
+echo "   - Web App: http://localhost:4000"
 echo "   - PostgreSQL: db:5432 (internal)"
 echo "   - Storage: public/uploads/ (Docker Volume)"
 echo "=================================================="
