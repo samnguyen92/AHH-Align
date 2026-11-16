@@ -47,6 +47,8 @@ openclaw/reports/
 openclaw/secrets/
 public/generated-insights/
 public/generated-clinics/
+postgres/backup/
+scripts/__pycache__/
 
 # temporary and large media
 *.zip

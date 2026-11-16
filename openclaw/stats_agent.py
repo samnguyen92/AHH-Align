@@ -75,18 +75,23 @@ def _n(value: Any) -> str:
     return f"{int(value):,}"
 
 
-def _delta(cur: Optional[float], prev: Optional[float]) -> str:
+def _delta(cur: Optional[float], prev: Optional[float], lang: str = "en") -> str:
     if cur is None or prev is None:
         return ""
+    is_vi = lang == "vi"
     change = sm.pct_change(cur, prev)
     if change is None:
-        return "(kỳ trước: 0)" if cur else ""
+        if not cur:
+            return ""
+        return "(kỳ trước: 0)" if is_vi else "(prev: 0)"
     arrow = "▲" if change > 0 else "▼" if change < 0 else "•"
-    return f"({arrow} {change:+.0f}% vs kỳ trước)"
+    return f"({arrow} {change:+.0f}% vs kỳ trước)" if is_vi else f"({arrow} {change:+.0f}% vs prev)"
 
 
-def _top(items: List[Tuple[str, int]], limit: int = 3) -> str:
-    return ", ".join(f"{k} ({v})" for k, v in items[:limit]) if items else "chưa có"
+def _top(items: List[Tuple[str, int]], limit: int = 3, lang: str = "en") -> str:
+    if items:
+        return ", ".join(f"{k} ({v})" for k, v in items[:limit])
+    return "chưa có" if lang == "vi" else "none"
 
 
 # ----------------------------------------------------------------------------
@@ -224,14 +229,14 @@ def short_traffic(t: Dict[str, Any], lang: str = "en") -> List[str]:
     c, p = t["counts"], t["prev_counts"]
     is_vi = lang == "vi"
     sess_msg = (
-        f" · Sessions: {_n(t['sessions'])} {_delta(t['sessions'], t['prev_sessions'])}"
+        f" · Sessions: {_n(t['sessions'])} {_delta(t['sessions'], t['prev_sessions'], lang=lang)}"
         if t["sessions"]
         else (" · Sessions: chưa đủ dữ liệu (tracking mới bật)" if is_vi else " · Sessions: collecting initial data")
     )
-    lines = [f"👁 Views: {_n(c['page_view'])} {_delta(c['page_view'], p['page_view'])}{sess_msg}"]
+    lines = [f"👁 Views: {_n(c['page_view'])} {_delta(c['page_view'], p['page_view'], lang=lang)}{sess_msg}"]
 
     s_title = "🔎 Tìm kiếm: " if is_vi else "🔎 Searches: "
-    s_line = f"{s_title}{_n(c['search_query'])} {_delta(c['search_query'], p['search_query'])}"
+    s_line = f"{s_title}{_n(c['search_query'])} {_delta(c['search_query'], p['search_query'], lang=lang)}"
     if t["zero_result_rate"] is not None:
         zero_msg = " · không có kết quả: " if is_vi else " · zero-results: "
         s_line += f"{zero_msg}{t['zero_result_searches']}/{t['searches_with_result_count']} ({t['zero_result_rate']}%)"
@@ -239,10 +244,10 @@ def short_traffic(t: Dict[str, Any], lang: str = "en") -> List[str]:
 
     if t["top_queries"]:
         q_label = "   Từ khóa top: " if is_vi else "   Top searches: "
-        lines.append(f"{q_label}{_top(t['top_queries'])}")
+        lines.append(f"{q_label}{_top(t['top_queries'], lang=lang)}")
     if t["zero_result_queries"]:
         z_label = "   ⚠️ Tìm không ra: " if is_vi else "   ⚠️ Zero-result queries: "
-        lines.append(f"{z_label}{_top(t['zero_result_queries'])}")
+        lines.append(f"{z_label}{_top(t['zero_result_queries'], lang=lang)}")
 
     actions = t["click_actions"]
     c_label = "📞 Liên hệ clinic: " if is_vi else "📞 Clinic contacts: "
@@ -254,10 +259,10 @@ def short_traffic(t: Dict[str, Any], lang: str = "en") -> List[str]:
     )
     if t["top_pages"]:
         p_label = "🏆 Top trang: " if is_vi else "🏆 Top pages: "
-        lines.append(f"{p_label}{_top(t['top_pages'])}")
+        lines.append(f"{p_label}{_top(t['top_pages'], lang=lang)}")
     if t["referrers"] and not (len(t["referrers"]) == 1 and t["referrers"][0][0] == "(direct)"):
         r_label = "🌐 Nguồn: " if is_vi else "🌐 Referrers: "
-        lines.append(f"{r_label}{_top(t['referrers'])}")
+        lines.append(f"{r_label}{_top(t['referrers'], lang=lang)}")
     if t["small_sample"]:
         sm_label = (
             f"ℹ️ Mẫu nhỏ ({_n(c['page_view'])} views) — xu hướng chỉ mang tính tham khảo."
@@ -304,10 +309,10 @@ def short_clinics(c: Dict[str, Any], lang: str = "en") -> List[str]:
     ]
     if is_vi:
         lines.append(f"✅ Chất lượng dữ liệu: TB {_n(c['avg_quality'])}/100 · {c['below_70_count']} clinic <70 · thiếu ảnh {m['images']}% · bảo hiểm {m['insurance']}% · giờ {m['hours']}% · bác sĩ {m['doctors']}%")
-        lines.append(f"📍 Top city: {_top(c['cities'], 3)} · Ngôn ngữ: {_top(c['languages'], 3)}")
+        lines.append(f"📍 Top city: {_top(c['cities'], 3, lang=lang)} · Ngôn ngữ: {_top(c['languages'], 3, lang=lang)}")
     else:
         lines.append(f"✅ Data Quality: Avg {_n(c['avg_quality'])}/100 · {c['below_70_count']} <70 · missing images {m['images']}% · insurance {m['insurance']}% · hours {m['hours']}% · doctors {m['doctors']}%")
-        lines.append(f"📍 Top cities: {_top(c['cities'], 3)} · Languages: {_top(c['languages'], 3)}")
+        lines.append(f"📍 Top cities: {_top(c['cities'], 3, lang=lang)} · Languages: {_top(c['languages'], 3, lang=lang)}")
 
     queue = []
     if c.get("pending_claims") is not None:
@@ -382,7 +387,7 @@ def short_google(g: Optional[Dict[str, Any]], lang: str = "en") -> List[str]:
         t, pt = g["gsc"]["totals"], g["gsc"]["prev_totals"]
         pos_label = "vị trí TB" if is_vi else "avg position"
         lines.append(
-            f"📊 Google (GSC): {_n(t['clicks'])} clicks {_delta(t['clicks'], pt['clicks'])} · {_n(t['impressions'])} impressions {_delta(t['impressions'], pt['impressions'])} · CTR {t['ctr']}% · {pos_label} {t['position']}"
+            f"📊 Google (GSC): {_n(t['clicks'])} clicks {_delta(t['clicks'], pt['clicks'], lang=lang)} · {_n(t['impressions'])} impressions {_delta(t['impressions'], pt['impressions'], lang=lang)} · CTR {t['ctr']}% · {pos_label} {t['position']}"
         )
         if g["gsc"]["near_top10_queries"]:
             q = g["gsc"]["near_top10_queries"][0]
@@ -597,183 +602,205 @@ def answer_stats_question(
     )
     parts += ["", cta]
     return {"text": "\n".join(parts), "plan": plan, "data": data, "lang": lang}
-    if actions:
-        parts += ["", "👉 Nên làm tiếp:"] + [f"• {a}" for a in actions]
-    scope_arg = "" if "overview" in plan["scopes"] else f" {plan['scopes'][0]}"
-    parts += [
-        "",
-        f"📄 Cần báo cáo chi tiết (bảng đầy đủ + biểu đồ + file .md)? Gõ `/stats_report{scope_arg} {plan['period']}`",
-    ]
-    return {"text": "\n".join(parts), "plan": plan, "data": data}
 
 
 # ----------------------------------------------------------------------------
 # Detailed report (Markdown + optional charts)
 # ----------------------------------------------------------------------------
 
-def _table(headers: List[str], rows: List[List[Any]]) -> List[str]:
+def _table(headers: List[str], rows: List[List[Any]], lang: str = "en") -> List[str]:
     if not rows:
-        return ["_Không có dữ liệu._", ""]
+        return ["_Không có dữ liệu._" if lang == "vi" else "_No data._", ""]
     out = ["| " + " | ".join(headers) + " |", "| " + " | ".join("---" for _ in headers) + " |"]
     for r in rows:
         out.append("| " + " | ".join(str(x).replace("|", "/") for x in r) + " |")
     return out + [""]
 
 
-def _md_traffic(t: Dict[str, Any]) -> List[str]:
+def _md_traffic(t: Dict[str, Any], lang: str = "en") -> List[str]:
+    is_vi = lang == "vi"
     c, p = t["counts"], t["prev_counts"]
-    md = ["## Traffic & hành vi", f"_Khoảng thời gian: {t['window']['start']} → {t['window']['end']} (UTC)_", ""]
+    md = [
+        "## Traffic & hành vi" if is_vi else "## Traffic & Behavior",
+        f"_Khoảng thời gian: {t['window']['start']} → {t['window']['end']} (UTC)_" if is_vi else f"_Window: {t['window']['start']} → {t['window']['end']} (UTC)_",
+        "",
+    ]
     md += _table(
-        ["Chỉ số", "Kỳ này", "Kỳ trước", "Thay đổi"],
+        ["Chỉ số", "Kỳ này", "Kỳ trước", "Thay đổi"] if is_vi else ["Metric", "Current", "Previous", "Change"],
         [
-            ["Page views", _n(c["page_view"]), _n(p["page_view"]), _delta(c["page_view"], p["page_view"]) or "—"],
-            ["Sessions", _n(t["sessions"]), _n(t["prev_sessions"]), _delta(t["sessions"], t["prev_sessions"]) or "—"],
-            ["Tìm kiếm", _n(c["search_query"]), _n(p["search_query"]), _delta(c["search_query"], p["search_query"]) or "—"],
-            ["Click clinic (mọi loại)", _n(c["clinic_click"]), _n(p["clinic_click"]), _delta(c["clinic_click"], p["clinic_click"]) or "—"],
-            ["Bắt đầu claim", _n(c["claim_start"]), _n(p["claim_start"]), _delta(c["claim_start"], p["claim_start"]) or "—"],
+            ["Page views", _n(c["page_view"]), _n(p["page_view"]), _delta(c["page_view"], p["page_view"], lang=lang) or "—"],
+            ["Sessions", _n(t["sessions"]), _n(t["prev_sessions"]), _delta(t["sessions"], t["prev_sessions"], lang=lang) or "—"],
+            ["Tìm kiếm" if is_vi else "Searches", _n(c["search_query"]), _n(p["search_query"]), _delta(c["search_query"], p["search_query"], lang=lang) or "—"],
+            ["Click clinic (mọi loại)" if is_vi else "Clinic clicks (all)", _n(c["clinic_click"]), _n(p["clinic_click"]), _delta(c["clinic_click"], p["clinic_click"], lang=lang) or "—"],
+            ["Bắt đầu claim" if is_vi else "Claim starts", _n(c["claim_start"]), _n(p["claim_start"]), _delta(c["claim_start"], p["claim_start"], lang=lang) or "—"],
         ],
+        lang=lang,
     )
     if t["views_per_session"]:
-        md.append(f"Trang/phiên: **{t['views_per_session']}** · độ phủ session_id: {t['session_coverage']}% số page view.")
+        md.append(
+            f"Trang/phiên: **{t['views_per_session']}** · độ phủ session_id: {t['session_coverage']}% số page view."
+            if is_vi else
+            f"Pages/session: **{t['views_per_session']}** · session_id coverage: {t['session_coverage']}% of page views."
+        )
         md.append("")
     f = t["funnel"]
-    md += ["### Phễu", ""] + _table(
-        ["Bước", "Số lượng"],
+    md += ["### Phễu" if is_vi else "### Funnel", ""] + _table(
+        ["Bước", "Số lượng"] if is_vi else ["Step", "Count"],
         [
-            ["Xem trang /search", _n(f["search_page_views"])],
-            ["Lượt tìm kiếm", _n(f["searches"])],
-            ["Xem hồ sơ clinic", _n(f["clinic_page_views"])],
-            ["Liên hệ clinic (call/website/directions/booking/email)", _n(f["contact_clicks"])],
-            ["Bắt đầu claim", _n(f["claim_start"])],
+            ["Xem trang /search" if is_vi else "View /search", _n(f["search_page_views"])],
+            ["Lượt tìm kiếm" if is_vi else "Searches", _n(f["searches"])],
+            ["Xem hồ sơ clinic" if is_vi else "Clinic profile views", _n(f["clinic_page_views"])],
+            ["Liên hệ clinic (call/website/directions/booking/email)" if is_vi else "Clinic contacts (call/website/directions/booking/email)", _n(f["contact_clicks"])],
+            ["Bắt đầu claim" if is_vi else "Claim starts", _n(f["claim_start"])],
         ],
+        lang=lang,
     )
-    md += ["### Top trang", ""] + _table(["Trang", "Views"], [[a, b] for a, b in t["top_pages"]])
-    md += ["### Từ khóa tìm kiếm", ""] + _table(["Từ khóa", "Lượt"], [[a, b] for a, b in t["top_queries"]])
+    md += ["### Top trang" if is_vi else "### Top Pages", ""] + _table(["Trang" if is_vi else "Page", "Views"], [[a, b] for a, b in t["top_pages"]], lang=lang)
+    md += ["### Từ khóa tìm kiếm" if is_vi else "### Search Queries", ""] + _table(["Từ khóa" if is_vi else "Query", "Lượt" if is_vi else "Count"], [[a, b] for a, b in t["top_queries"]], lang=lang)
     if t["zero_result_queries"]:
-        md += [f"### Tìm không ra kết quả ({t['zero_result_rate']}%)", ""] + _table(["Từ khóa", "Lượt"], [[a, b] for a, b in t["zero_result_queries"]])
-    md += ["### Clinic được liên hệ nhiều nhất", ""] + _table(["Clinic", "Lượt liên hệ"], [[a, b] for a, b in t["top_clicked_clinics"]])
-    md += ["### Hành động liên hệ", ""] + _table(["Loại", "Lượt"], [[k, v] for k, v in sorted(t["click_actions"].items(), key=lambda kv: -kv[1])])
-    md += ["### Nguồn, thiết bị, vị trí", ""]
-    md += _table(["Nguồn giới thiệu", "Views"], [[a, b] for a, b in t["referrers"]])
-    md += _table(["Thiết bị", "Views"], [[k, v] for k, v in t["devices"].items()])
-    md += _table(["Quốc gia", "Views"], [[a, b] for a, b in t["countries"]])
-    md += _table(["Thành phố", "Views"], [[a, b] for a, b in t["cities"]])
+        md += [f"### Tìm không ra kết quả ({t['zero_result_rate']}%)" if is_vi else f"### Zero-Result Queries ({t['zero_result_rate']}%)", ""] + _table(["Từ khóa" if is_vi else "Query", "Lượt" if is_vi else "Count"], [[a, b] for a, b in t["zero_result_queries"]], lang=lang)
+    md += ["### Clinic được liên hệ nhiều nhất" if is_vi else "### Most Contacted Clinics", ""] + _table(["Clinic", "Lượt liên hệ" if is_vi else "Contacts"], [[a, b] for a, b in t["top_clicked_clinics"]], lang=lang)
+    md += ["### Hành động liên hệ" if is_vi else "### Contact Actions", ""] + _table(["Loại" if is_vi else "Action", "Lượt" if is_vi else "Count"], [[k, v] for k, v in sorted(t["click_actions"].items(), key=lambda kv: -kv[1])], lang=lang)
+    md += ["### Nguồn, thiết bị, vị trí" if is_vi else "### Referrers, Devices & Locations", ""]
+    md += _table(["Nguồn giới thiệu" if is_vi else "Referrer", "Views"], [[a, b] for a, b in t["referrers"]], lang=lang)
+    md += _table(["Thiết bị" if is_vi else "Device", "Views"], [[k, v] for k, v in t["devices"].items()], lang=lang)
+    md += _table(["Quốc gia" if is_vi else "Country", "Views"], [[a, b] for a, b in t["countries"]], lang=lang)
+    md += _table(["Thành phố" if is_vi else "City", "Views"], [[a, b] for a, b in t["cities"]], lang=lang)
     if t["small_sample"]:
-        md += [f"> ⚠️ Mẫu nhỏ ({_n(c['page_view'])} views): chưa đủ để kết luận xu hướng.", ""]
+        md += [f"> ⚠️ Mẫu nhỏ ({_n(c['page_view'])} views): chưa đủ để kết luận xu hướng." if is_vi else f"> ⚠️ Small sample ({_n(c['page_view'])} views): trends are directional only.", ""]
     return md
 
 
-def _md_posts(p: Dict[str, Any]) -> List[str]:
-    md = ["## Bài viết (Insights/Guides)", ""]
+def _md_posts(p: Dict[str, Any], lang: str = "en") -> List[str]:
+    is_vi = lang == "vi"
+    md = ["## Bài viết (Insights/Guides)" if is_vi else "## Articles (Insights/Guides)", ""]
     md += _table(
-        ["Chỉ số", "Giá trị"],
+        ["Chỉ số", "Giá trị"] if is_vi else ["Metric", "Value"],
         [
-            ["Tổng", p["total"]], ["Published", p["published"]], ["Theo trạng thái", p["by_status"]],
-            ["Mới 7 ngày", p["new_7d"]], ["Mới 30 ngày", p["new_30d"]], ["Số từ trung bình", p["avg_words"]],
-            ["Loại nội dung", p["content_modes"]],
+            ["Tổng" if is_vi else "Total", p["total"]], ["Published", p["published"]], ["Theo trạng thái" if is_vi else "By status", p["by_status"]],
+            ["Mới 7 ngày" if is_vi else "New 7d", p["new_7d"]], ["Mới 30 ngày" if is_vi else "New 30d", p["new_30d"]], ["Số từ trung bình" if is_vi else "Avg word count", p["avg_words"]],
+            ["Loại nội dung" if is_vi else "Content modes", p["content_modes"]],
         ],
+        lang=lang,
     )
-    md += ["### Danh mục", ""] + _table(["Danh mục", "Bài"], [[a, b] for a, b in p["categories"]])
-    md += ["### Top bài theo views", ""] + _table(["Bài", "Views"], [[x["title"], x["views"]] for x in p["top_posts"]])
-    md += ["### Vấn đề SEO của bài", ""] + _table(
-        ["Vấn đề", "Số bài", "Ví dụ"],
+    md += ["### Danh mục" if is_vi else "### Categories", ""] + _table(["Danh mục" if is_vi else "Category", "Bài" if is_vi else "Articles"], [[a, b] for a, b in p["categories"]], lang=lang)
+    md += ["### Top bài theo views" if is_vi else "### Top Articles by Views", ""] + _table(["Bài" if is_vi else "Article", "Views"], [[x["title"], x["views"]] for x in p["top_posts"]], lang=lang)
+    md += ["### Vấn đề SEO của bài" if is_vi else "### Article SEO Issues", ""] + _table(
+        ["Vấn đề", "Số bài", "Ví dụ"] if is_vi else ["Issue", "Count", "Examples"],
         [
-            ["Thiếu description", len(p["missing_description"]), ", ".join(map(str, p["missing_description"][:3]))],
-            ["Thiếu og_image", len(p["missing_og_image"]), ", ".join(map(str, p["missing_og_image"][:3]))],
-            ["Chưa có primary keyword", len(p["missing_primary_keyword"]), ", ".join(map(str, p["missing_primary_keyword"][:3]))],
-            ["Ít hơn 3 ảnh", len(p["fewer_than_3_images"]), ", ".join(map(str, p["fewer_than_3_images"][:3]))],
+            ["Thiếu description" if is_vi else "Missing description", len(p["missing_description"]), ", ".join(map(str, p["missing_description"][:3]))],
+            ["Thiếu og_image" if is_vi else "Missing og_image", len(p["missing_og_image"]), ", ".join(map(str, p["missing_og_image"][:3]))],
+            ["Chưa có primary keyword" if is_vi else "Missing primary keyword", len(p["missing_primary_keyword"]), ", ".join(map(str, p["missing_primary_keyword"][:3]))],
+            ["Ít hơn 3 ảnh" if is_vi else "Fewer than 3 images", len(p["fewer_than_3_images"]), ", ".join(map(str, p["fewer_than_3_images"][:3]))],
         ],
+        lang=lang,
     )
     if p["published_without_views"]:
-        md += ["### Bài >14 ngày chưa có view", ""] + _table(["Bài", "Tuổi (ngày)"], [[x["title"], x["age_days"]] for x in p["published_without_views"]])
+        md += ["### Bài >14 ngày chưa có view" if is_vi else "### Articles >14d Without Views", ""] + _table(["Bài" if is_vi else "Article", "Tuổi (ngày)" if is_vi else "Age (days)"], [[x["title"], x["age_days"]] for x in p["published_without_views"]], lang=lang)
     return md
 
 
-def _md_clinics(c: Dict[str, Any]) -> List[str]:
+def _md_clinics(c: Dict[str, Any], lang: str = "en") -> List[str]:
+    is_vi = lang == "vi"
     m = c["missing_pct"]
-    md = ["## Danh bạ clinic", ""]
+    md = ["## Danh bạ clinic" if is_vi else "## Clinic Directory", ""]
     md += _table(
-        ["Chỉ số", "Giá trị"],
+        ["Chỉ số", "Giá trị"] if is_vi else ["Metric", "Value"],
         [
-            ["Tổng clinic", c["total"]], ["Mới 7 / 30 ngày", f"{c['new_7d']} / {c['new_30d']}"],
-            ["Đã claim", c["claimed"]], ["Có telehealth", c["telehealth"]],
-            ["Điểm chất lượng TB", _n(c["avg_quality"])], ["Clinic dưới 70 điểm", c["below_70_count"]],
-            ["Thiếu ảnh / bảo hiểm / giờ / bác sĩ", f"{m['images']}% / {m['insurance']}% / {m['hours']}% / {m['doctors']}%"],
-            ["Claims chờ duyệt", _n(c.get("pending_claims"))], ["Submissions chờ duyệt", _n(c.get("pending_submissions"))],
-            ["Newsletter (mới trong kỳ)", f"{_n(c.get('newsletter_subscribers'))} (+{c.get('newsletter_new_in_period') or 0})"],
+            ["Tổng clinic" if is_vi else "Total clinics", c["total"]], ["Mới 7 / 30 ngày" if is_vi else "New 7d / 30d", f"{c['new_7d']} / {c['new_30d']}"],
+            ["Đã claim" if is_vi else "Claimed", c["claimed"]], ["Có telehealth" if is_vi else "Telehealth", c["telehealth"]],
+            ["Điểm chất lượng TB" if is_vi else "Avg quality score", _n(c["avg_quality"])], ["Clinic dưới 70 điểm" if is_vi else "Clinics <70 score", c["below_70_count"]],
+            ["Thiếu ảnh / bảo hiểm / giờ / bác sĩ" if is_vi else "Missing images / insurance / hours / doctors", f"{m['images']}% / {m['insurance']}% / {m['hours']}% / {m['doctors']}%"],
+            ["Claims chờ duyệt" if is_vi else "Pending claims", _n(c.get("pending_claims"))], ["Submissions chờ duyệt" if is_vi else "Pending submissions", _n(c.get("pending_submissions"))],
+            ["Newsletter (mới trong kỳ)" if is_vi else "Newsletter (new in period)", f"{_n(c.get('newsletter_subscribers'))} (+{c.get('newsletter_new_in_period') or 0})"],
         ],
+        lang=lang,
     )
-    md += ["### Chuyên khoa", ""] + _table(["Chuyên khoa", "Clinic"], [[a, b] for a, b in c["specialties"]])
-    md += ["### Thành phố", ""] + _table(["Thành phố", "Clinic"], [[a, b] for a, b in c["cities"]])
-    md += ["### Ngôn ngữ", ""] + _table(["Ngôn ngữ", "Clinic"], [[a, b] for a, b in c["languages"]])
-    md += ["### Clinic điểm thấp nhất", ""] + _table(["Clinic", "Slug", "Điểm"], [[x["name"], x["slug"], x["score"]] for x in c["lowest_quality"]])
-    md += ["### Khoảng trống nguồn cung", ""] + _table(
-        ["Thành phố", "Ngôn ngữ", "Chuyên khoa", "Hiện có"],
+    md += ["### Chuyên khoa" if is_vi else "### Specialties", ""] + _table(["Chuyên khoa" if is_vi else "Specialty", "Clinic"], [[a, b] for a, b in c["specialties"]], lang=lang)
+    md += ["### Thành phố" if is_vi else "### Cities", ""] + _table(["Thành phố" if is_vi else "City", "Clinic"], [[a, b] for a, b in c["cities"]], lang=lang)
+    md += ["### Ngôn ngữ" if is_vi else "### Languages", ""] + _table(["Ngôn ngữ" if is_vi else "Language", "Clinic"], [[a, b] for a, b in c["languages"]], lang=lang)
+    md += ["### Clinic điểm thấp nhất" if is_vi else "### Lowest Quality Clinics", ""] + _table(["Clinic", "Slug", "Điểm" if is_vi else "Score"], [[x["name"], x["slug"], x["score"]] for x in c["lowest_quality"]], lang=lang)
+    md += ["### Khoảng trống nguồn cung" if is_vi else "### Supply Gaps", ""] + _table(
+        ["Thành phố", "Ngôn ngữ", "Chuyên khoa", "Hiện có"] if is_vi else ["City", "Language", "Specialty", "Current Count"],
         [[f"{g['city']}, {g['state']}", g["language"], g["specialty"], g["count"]] for g in c["supply_gaps"]],
+        lang=lang,
     )
     return md
 
 
-def _md_seo(s: Dict[str, Any], g: Optional[Dict[str, Any]]) -> List[str]:
-    md = ["## SEO & trang", ""]
+def _md_seo(s: Dict[str, Any], g: Optional[Dict[str, Any]], lang: str = "en") -> List[str]:
+    is_vi = lang == "vi"
+    issue_labels = ISSUE_LABELS_VI if is_vi else ISSUE_LABELS_EN
+    md = ["## SEO & trang" if is_vi else "## SEO & Pages", ""]
     if not s.get("ok"):
-        md += [f"Audit nội bộ không chạy được: {s.get('error')}", ""]
+        md += [f"Audit nội bộ không chạy được: {s.get('error')}" if is_vi else f"Internal audit failed: {s.get('error')}", ""]
     else:
         md += _table(
-            ["Chỉ số", "Giá trị"],
+            ["Chỉ số", "Giá trị"] if is_vi else ["Metric", "Value"],
             [
-                ["Trang đã audit (mẫu)", s["pages_checked"]], ["Điểm sức khỏe", f"{s['health_score']}/100"],
-                ["Trang sạch (không lỗi)", s["pages_clean"]], ["Trang lỗi HTTP", len(s["pages_broken"])],
-                ["Title trùng / Description trùng", f"{s['duplicate_titles']} / {s['duplicate_descriptions']}"],
-                ["Phản hồi TB", f"{s.get('avg_ms')} ms"], ["robots.txt", "OK" if s.get("robots_ok") else "Lỗi"],
-                ["robots.txt có sitemap", "Có" if s.get("robots_has_sitemap") else "Không"],
-                ["URL trong sitemap", s["sitemap_urls"]],
+                ["Trang đã audit (mẫu)" if is_vi else "Sampled pages audited", s["pages_checked"]], ["Điểm sức khỏe" if is_vi else "Health score", f"{s['health_score']}/100"],
+                ["Trang sạch (không lỗi)" if is_vi else "Clean pages (no issues)", s["pages_clean"]], ["Trang lỗi HTTP" if is_vi else "Broken HTTP pages", len(s["pages_broken"])],
+                ["Title trùng / Description trùng" if is_vi else "Duplicate titles / descriptions", f"{s['duplicate_titles']} / {s['duplicate_descriptions']}"],
+                ["Phản hồi TB" if is_vi else "Avg response time", f"{s.get('avg_ms')} ms"], ["robots.txt", "OK" if s.get("robots_ok") else ("Lỗi" if is_vi else "Error")],
+                ["robots.txt có sitemap" if is_vi else "robots.txt has sitemap", ("Có" if is_vi else "Yes") if s.get("robots_has_sitemap") else ("Không" if is_vi else "No")],
+                ["URL trong sitemap" if is_vi else "Sitemap URLs", s["sitemap_urls"]],
             ],
+            lang=lang,
         )
-        md += ["### Phân loại lỗi", ""] + _table(
-            ["Lỗi", "Số trang"],
-            [[ISSUE_LABELS.get(k, k), v] for k, v in sorted(s["issue_counts"].items(), key=lambda kv: -kv[1])],
+        md += ["### Phân loại lỗi" if is_vi else "### Issue Breakdown", ""] + _table(
+            ["Lỗi", "Số trang"] if is_vi else ["Issue", "Pages"],
+            [[issue_labels.get(k, k), v] for k, v in sorted(s["issue_counts"].items(), key=lambda kv: -kv[1])],
+            lang=lang,
         )
-        md += ["### Trang có nhiều lỗi nhất", ""] + _table(
-            ["Trang", "Lỗi"], [[w["path"], ", ".join(ISSUE_LABELS.get(i, i) for i in w["issues"])] for w in s["worst_pages"]]
+        md += ["### Trang có nhiều lỗi nhất" if is_vi else "### Pages with Most Issues", ""] + _table(
+            ["Trang", "Lỗi"] if is_vi else ["Page", "Issues"],
+            [[w["path"], ", ".join(issue_labels.get(i, i) for i in w["issues"])] for w in s["worst_pages"]],
+            lang=lang,
         )
         if s["pages_broken"]:
-            md += ["### Trang lỗi HTTP", ""] + [f"- `{p}`" for p in s["pages_broken"]] + [""]
-        md += ["### Trang chậm nhất", ""] + _table(["Trang", "ms"], [[x["path"], x["ms"]] for x in s["slowest"]])
+            md += ["### Trang lỗi HTTP" if is_vi else "### Broken HTTP Pages", ""] + [f"- `{p}`" for p in s["pages_broken"]] + [""]
+        md += ["### Trang chậm nhất" if is_vi else "### Slowest Pages", ""] + _table(["Trang" if is_vi else "Page", "ms"], [[x["path"], x["ms"]] for x in s["slowest"]], lang=lang)
         if s.get("coverage"):
             cov = s["coverage"]
-            md += ["### Độ phủ sitemap", ""] + _table(
-                ["Loại", "Trong DB", "Trong sitemap"],
-                [["Clinics", cov["clinics_in_db"], cov["clinics_in_sitemap"]], ["Bài viết", cov["published_posts_in_db"], cov["posts_in_sitemap"]]],
+            md += ["### Độ phủ sitemap" if is_vi else "### Sitemap Coverage", ""] + _table(
+                ["Loại", "Trong DB", "Trong sitemap"] if is_vi else ["Type", "In DB", "In Sitemap"],
+                [["Clinics", cov["clinics_in_db"], cov["clinics_in_sitemap"]], ["Bài viết" if is_vi else "Articles", cov["published_posts_in_db"], cov["posts_in_sitemap"]]],
+                lang=lang,
             )
-    md += ["### Dữ liệu từ Google", ""]
+    md += ["### Dữ liệu từ Google" if is_vi else "### Google Search Console & GA4 Data", ""]
     if not g or not g.get("gsc_connected"):
-        md += ["Chưa kết nối **Google Search Console** → chưa có impressions, CTR, vị trí từ khóa và trạng thái index thật. Gõ `/connect_gsc` để thêm.", ""]
+        md += [
+            "Chưa kết nối **Google Search Console** → chưa có impressions, CTR, vị trí từ khóa và trạng thái index thật. Gõ `/connect_gsc` để thêm."
+            if is_vi else
+            "**Google Search Console** is not connected → real impressions, CTR, keyword positions, and index status are unavailable. Type `/connect_gsc` to link.",
+            "",
+        ]
     elif g.get("gsc_error"):
-        md += [f"GSC lỗi: {g['gsc_error']}", ""]
+        md += [f"GSC error: {g['gsc_error']}", ""]
     elif g.get("gsc"):
         gs = g["gsc"]
         t, pt = gs["totals"], gs["prev_totals"]
-        md += [f"_Khoảng: {gs['range']}_", ""]
+        md += [f"_Range: {gs['range']}_", ""]
         md += _table(
-            ["Chỉ số", "Kỳ này", "Kỳ trước", "Thay đổi"],
+            ["Chỉ số", "Kỳ này", "Kỳ trước", "Thay đổi"] if is_vi else ["Metric", "Current", "Previous", "Change"],
             [
-                ["Clicks", _n(t["clicks"]), _n(pt["clicks"]), _delta(t["clicks"], pt["clicks"]) or "—"],
-                ["Impressions", _n(t["impressions"]), _n(pt["impressions"]), _delta(t["impressions"], pt["impressions"]) or "—"],
+                ["Clicks", _n(t["clicks"]), _n(pt["clicks"]), _delta(t["clicks"], pt["clicks"], lang=lang) or "—"],
+                ["Impressions", _n(t["impressions"]), _n(pt["impressions"]), _delta(t["impressions"], pt["impressions"], lang=lang) or "—"],
                 ["CTR", f"{t['ctr']}%", f"{pt['ctr']}%", "—"],
-                ["Vị trí TB", t["position"], pt["position"], "—"],
+                ["Vị trí TB" if is_vi else "Avg Position", t["position"], pt["position"], "—"],
             ],
+            lang=lang,
         )
-        md += ["#### Top từ khóa", ""] + _table(["Từ khóa", "Clicks", "Impr.", "CTR %", "Vị trí"], [[q["key"], q["clicks"], q["impressions"], q["ctr"], q["position"]] for q in gs["top_queries"][:10]])
-        md += ["#### Cơ hội: gần top 10", ""] + _table(["Từ khóa", "Vị trí", "Impr."], [[q["key"], q["position"], q["impressions"]] for q in gs["near_top10_queries"]])
-        md += ["#### Trang nhiều impression nhưng CTR thấp", ""] + _table(["Trang", "Impr.", "CTR %", "Vị trí"], [[p["key"], p["impressions"], p["ctr"], p["position"]] for p in gs["low_ctr_pages"]])
+        md += ["#### Top từ khóa" if is_vi else "#### Top Queries", ""] + _table(["Từ khóa" if is_vi else "Query", "Clicks", "Impr.", "CTR %", "Vị trí" if is_vi else "Position"], [[q["key"], q["clicks"], q["impressions"], q["ctr"], q["position"]] for q in gs["top_queries"][:10]], lang=lang)
+        md += ["#### Cơ hội: gần top 10" if is_vi else "#### Opportunities: Near Top 10", ""] + _table(["Từ khóa" if is_vi else "Query", "Vị trí" if is_vi else "Position", "Impr."], [[q["key"], q["position"], q["impressions"]] for q in gs["near_top10_queries"]], lang=lang)
+        md += ["#### Trang nhiều impression nhưng CTR thấp" if is_vi else "#### High-Impression Low-CTR Pages", ""] + _table(["Trang" if is_vi else "Page", "Impr.", "CTR %", "Vị trí" if is_vi else "Position"], [[p["key"], p["impressions"], p["ctr"], p["position"]] for p in gs["low_ctr_pages"]], lang=lang)
     if g and g.get("ga4"):
         ga = g["ga4"]
-        md += ["#### GA4", ""] + _table(["Kênh", "Sessions"], [[c["channel"], c["sessions"]] for c in ga["channels"]])
+        md += ["#### GA4", ""] + _table(["Kênh" if is_vi else "Channel", "Sessions"], [[c["channel"], c["sessions"]] for c in ga["channels"]], lang=lang)
     return md
 
 
-def _make_charts(data: Dict[str, Any], stamp: str) -> List[str]:
+def _make_charts(data: Dict[str, Any], stamp: str, lang: str = "en") -> List[str]:
     try:
         import matplotlib
 
@@ -782,6 +809,7 @@ def _make_charts(data: Dict[str, Any], stamp: str) -> List[str]:
     except Exception:
         return []
 
+    is_vi = lang == "vi"
     paths: List[str] = []
     t = data.get("traffic")
     if t and t["daily_views"]:
@@ -789,7 +817,7 @@ def _make_charts(data: Dict[str, Any], stamp: str) -> List[str]:
         days, vals = list(t["daily_views"].keys()), list(t["daily_views"].values())
         ax.plot(days, vals, marker="o", color="#024E44")
         ax.fill_between(range(len(days)), vals, alpha=0.12, color="#024E44")
-        ax.set_title("Page views theo ngày (UTC)")
+        ax.set_title("Page views theo ngày (UTC)" if is_vi else "Daily Page Views (UTC)")
         ax.set_xticks(range(len(days)))
         ax.set_xticklabels([d[5:] for d in days], rotation=45, ha="right", fontsize=8)
         ax.grid(alpha=0.25)
@@ -801,10 +829,10 @@ def _make_charts(data: Dict[str, Any], stamp: str) -> List[str]:
 
         f = t["funnel"]
         fig, ax = plt.subplots(figsize=(7, 3.4))
-        labels = ["Xem /search", "Tìm kiếm", "Xem hồ sơ", "Liên hệ", "Claim"]
+        labels = ["Xem /search", "Tìm kiếm", "Xem hồ sơ", "Liên hệ", "Claim"] if is_vi else ["View /search", "Searches", "Profile Views", "Contacts", "Claims"]
         values = [f["search_page_views"], f["searches"], f["clinic_page_views"], f["contact_clicks"], f["claim_start"]]
         ax.barh(labels[::-1], values[::-1], color="#7BA05B")
-        ax.set_title("Phễu hành vi")
+        ax.set_title("Phễu hành vi" if is_vi else "User Conversion Funnel")
         for i, v in enumerate(values[::-1]):
             ax.text(v, i, f" {v}", va="center", fontsize=8)
         fig.tight_layout()
@@ -815,45 +843,51 @@ def _make_charts(data: Dict[str, Any], stamp: str) -> List[str]:
     return paths
 
 
-def build_detailed_report(scopes: Optional[List[str]] = None, period: str = "week") -> Dict[str, Any]:
+def build_detailed_report(scopes: Optional[List[str]] = None, period: str = "week", lang: str = "en") -> Dict[str, Any]:
+    is_vi = lang == "vi"
     scopes = [s for s in (scopes or ["overview", "seo"]) if s in VALID_SCOPES] or ["overview", "seo"]
     if "overview" in scopes and "seo" not in scopes:
         scopes = scopes + ["seo"]
     data = collect_data(scopes, period)
     os.makedirs(REPORTS_DIR, exist_ok=True)
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M")
+    period_labels = PERIOD_LABELS_VI if is_vi else PERIOD_LABELS_EN
 
     md: List[str] = [
-        "# Báo cáo thống kê Asian Health Hub",
-        f"_Tạo lúc {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC · Kỳ: {sm.PERIOD_LABELS.get(period, period)}_",
+        "# Báo cáo thống kê Asian Health Hub" if is_vi else "# Asian Health Hub Analytics Report",
+        (
+            f"_Tạo lúc {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC · Kỳ: {period_labels.get(period, period)}_"
+            if is_vi else
+            f"_Generated at {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC · Period: {period_labels.get(period, period)}_"
+        ),
         "",
     ]
-    insights = llm_insights(data, "Tóm tắt báo cáo chi tiết")
+    insights = llm_insights(data, "Tóm tắt báo cáo chi tiết" if is_vi else "Executive summary of detailed analytics report", lang=lang)
     if insights:
-        md += ["## Tóm tắt nhanh", ""] + [f"- {i}" for i in insights] + [""]
+        md += ["## Tóm tắt nhanh" if is_vi else "## Executive Summary", ""] + [f"- {i}" for i in insights] + [""]
     if "traffic" in data:
-        md += _md_traffic(data["traffic"])
+        md += _md_traffic(data["traffic"], lang=lang)
     if "posts" in data:
-        md += _md_posts(data["posts"])
+        md += _md_posts(data["posts"], lang=lang)
     if "clinics" in data:
-        md += _md_clinics(data["clinics"])
+        md += _md_clinics(data["clinics"], lang=lang)
     if "seo" in data:
-        md += _md_seo(data["seo"], data.get("google"))
-    actions = suggest_actions(data)
+        md += _md_seo(data["seo"], data.get("google"), lang=lang)
+    actions = suggest_actions(data, lang=lang)
     if actions:
-        md += ["## Việc nên làm tiếp", ""] + [f"1. {a}" for a in actions] + [""]
+        md += ["## Việc nên làm tiếp" if is_vi else "## Recommended Next Actions", ""] + [f"1. {a}" for a in actions] + [""]
     for key, err in (data.get("errors") or {}).items():
-        md += [f"> ⚠️ Không lấy được `{key}`: {err}"]
+        md += [f"> ⚠️ Không lấy được `{key}`: {err}" if is_vi else f"> ⚠️ Could not fetch `{key}`: {err}"]
 
     path = os.path.join(REPORTS_DIR, f"stats_{stamp}.md")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(md))
-    charts = _make_charts(data, stamp)
+    charts = _make_charts(data, stamp, lang=lang)
     return {
         "markdown_path": path,
         "chart_paths": charts,
         "charts_available": bool(charts),
-        "summary": "\n".join(build_short_lines(data, scopes)[:10]),
+        "summary": "\n".join(build_short_lines(data, scopes, lang=lang)[:10]),
     }
 
 
@@ -887,16 +921,18 @@ def parse_stats_args(arg_text: str) -> Tuple[List[str], str]:
 # Anomaly detection
 # ----------------------------------------------------------------------------
 
-def check_anomalies() -> Dict[str, Any]:
+def check_anomalies(lang: str = "en") -> Dict[str, Any]:
     """Detect anomalies across traffic, content, SEO, and operations."""
+    is_vi = lang == "vi"
     anomalies: List[Dict[str, str]] = []
 
     # 1. Traffic check
     try:
         t_week = sm.metric_traffic("week")
         t_today = sm.metric_traffic("today")
-        daily_avg = (t_week.get("views") or 0) / 7.0
-        today_views = t_today.get("views") or 0
+        week_views = (t_week.get("counts") or {}).get("page_view", 0)
+        today_views = (t_today.get("counts") or {}).get("page_view", 0)
+        daily_avg = week_views / 7.0
 
         # If we have daily traffic history and today is unusually quiet after midday UTC
         current_hour = datetime.utcnow().hour
@@ -904,17 +940,25 @@ def check_anomalies() -> Dict[str, Any]:
             anomalies.append({
                 "level": "WARNING",
                 "scope": "traffic",
-                "message": f"Lưu lượng hôm nay sụt giảm bất thường: mới có {today_views} views (trung bình 7 ngày qua là {daily_avg:.1f} views/ngày).",
+                "message": (
+                    f"Lưu lượng hôm nay sụt giảm bất thường: mới có {today_views} views (trung bình 7 ngày qua là {daily_avg:.1f} views/ngày)."
+                    if is_vi else
+                    f"Unusual traffic drop today: only {today_views} views so far (7-day average is {daily_avg:.1f} views/day)."
+                ),
             })
 
         # Zero-result searches
         zero_pct = t_week.get("zero_result_rate") or 0.0
-        total_searches = t_week.get("search_queries") or 0
+        total_searches = (t_week.get("counts") or {}).get("search_query", 0)
         if total_searches >= 5 and zero_pct >= 40.0:
             anomalies.append({
                 "level": "WARNING",
                 "scope": "search",
-                "message": f"Tỷ lệ tìm kiếm không có kết quả cao ({zero_pct:.1f}% trên tổng {total_searches} lượt tìm kiếm tuần qua). Cần bổ sung phòng khám hoặc từ khóa đồng nghĩa.",
+                "message": (
+                    f"Tỷ lệ tìm kiếm không có kết quả cao ({zero_pct:.1f}% trên tổng {total_searches} lượt tìm kiếm tuần qua). Cần bổ sung phòng khám hoặc từ khóa đồng nghĩa."
+                    if is_vi else
+                    f"High zero-result search rate ({zero_pct:.1f}% across {total_searches} searches in the past 7 days). Consider adding clinics or search synonyms."
+                ),
             })
     except Exception:
         pass
@@ -922,41 +966,58 @@ def check_anomalies() -> Dict[str, Any]:
     # 2. SEO / Broken pages check
     try:
         seo_res = sm.metric_seo_internal(sample=15)
-        bad_routes = [r for r in seo_res.get("sample_results", []) if r.get("status") not in (200, 301, 308)]
-        if bad_routes:
-            samples = ", ".join([f"`{r['url']}` ({r.get('status')})" for r in bad_routes[:3]])
-            anomalies.append({
-                "level": "CRITICAL",
-                "scope": "seo",
-                "message": f"Phát hiện {len(bad_routes)} trang bị lỗi HTTP: {samples}",
-            })
-        if not seo_res.get("sitemap_found"):
-            anomalies.append({
-                "level": "WARNING",
-                "scope": "seo",
-                "message": "Không tìm thấy file sitemap.xml tại URL chuẩn của website.",
-            })
+        if seo_res.get("ok"):
+            bad_routes = seo_res.get("pages_broken") or []
+            if bad_routes:
+                samples = ", ".join([f"`{r}`" for r in bad_routes[:3]])
+                anomalies.append({
+                    "level": "CRITICAL",
+                    "scope": "seo",
+                    "message": (
+                        f"Phát hiện {len(bad_routes)} trang bị lỗi HTTP: {samples}"
+                        if is_vi else
+                        f"Detected {len(bad_routes)} pages returning HTTP errors: {samples}"
+                    ),
+                })
+            if not seo_res.get("sitemap_ok"):
+                anomalies.append({
+                    "level": "WARNING",
+                    "scope": "seo",
+                    "message": (
+                        "Không tìm thấy file sitemap.xml tại URL chuẩn của website."
+                        if is_vi else
+                        "Could not reach sitemap.xml at the standard website URL."
+                    ),
+                })
     except Exception:
         pass
 
     # 3. Operations & Clinics
     try:
         c_res = sm.metric_clinics("week")
-        pending_claims = c_res.get("pending_claims", 0)
+        pending_claims = c_res.get("pending_claims") or 0
         if pending_claims > 0:
             anomalies.append({
                 "level": "INFO",
                 "scope": "claims",
-                "message": f"Có {pending_claims} yêu cầu claim phòng khám đang chờ duyệt (`/check_claims`).",
+                "message": (
+                    f"Có {pending_claims} yêu cầu claim phòng khám đang chờ duyệt (`/check_claims`)."
+                    if is_vi else
+                    f"{pending_claims} clinic claim request(s) pending review (`/check_claims`)."
+                ),
             })
 
-        missing_hours = c_res.get("missing_hours", 0)
-        total_clinics = c_res.get("total_clinics", 0)
-        if total_clinics > 0 and (missing_hours / total_clinics) > 0.6:
+        missing_hours_pct = (c_res.get("missing_pct") or {}).get("hours") or 0
+        total_clinics = c_res.get("total") or 0
+        if total_clinics > 0 and missing_hours_pct > 60:
             anomalies.append({
                 "level": "INFO",
                 "scope": "clinics",
-                "message": f"{missing_hours}/{total_clinics} phòng khám ({missing_hours/total_clinics*100:.0f}%) còn thiếu giờ làm việc. Cần enrich thêm từ Google Places.",
+                "message": (
+                    f"{missing_hours_pct}% phòng khám (trên tổng {total_clinics}) còn thiếu giờ làm việc. Cần enrich thêm từ Google Places."
+                    if is_vi else
+                    f"{missing_hours_pct}% of clinics (out of {total_clinics}) are missing opening hours. Consider enriching via Google Places."
+                ),
             })
     except Exception:
         pass

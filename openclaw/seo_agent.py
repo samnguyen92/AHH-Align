@@ -20,7 +20,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from supabase import create_client
+try:
+    from pg_client import create_client
+except Exception:
+    from supabase import create_client
 
 from dev_agent import PROJECT_ROOT, run_web_dev_agent
 

@@ -42,6 +42,12 @@ EXCLUDED_PATH_PREFIXES = ("/admin", "/api", "/dashboard")
 
 def _sb():
     try:
+        from pg_client import create_client
+        return create_client()
+    except Exception:
+        pass
+
+    try:
         from supabase import create_client
     except (ImportError, AttributeError):
         import sys
@@ -586,11 +592,14 @@ def _audit_page(base: str, path: str) -> Dict[str, Any]:
     }
 
 
+_STATIC_PATHS = {"/", "/search", "/insights", "/pulse", "/about", "/claim"}
+
+
 def _sample_paths(paths: List[str], limit: int) -> List[str]:
-    static = [p for p in paths if not (p.startswith("/clinics/") or p.startswith("/insights/") or p.startswith("/care/"))]
+    static = [p for p in paths if p in _STATIC_PATHS]
     clinics = [p for p in paths if p.startswith("/clinics/")]
     posts = [p for p in paths if p.startswith("/insights/")]
-    pseo = [p for p in paths if p.startswith("/care/")]
+    pseo = [p for p in paths if p not in _STATIC_PATHS and not p.startswith(("/clinics/", "/insights/"))]
     chosen = list(static)
 
     def take(group: List[str], n: int) -> List[str]:
@@ -614,7 +623,7 @@ def _sample_paths(paths: List[str], limit: int) -> List[str]:
 def metric_seo_internal(sample: int = 40) -> Dict[str, Any]:
     base = _find_base()
     if not base:
-        return {"ok": False, "error": "Không kết nối được website (localhost:3000 / web:3000) để audit."}
+        return {"ok": False, "error": "Could not connect to website (localhost:3000 / web:3000) for audit."}
 
     result: Dict[str, Any] = {"ok": True, "base_url": base}
 
@@ -640,8 +649,8 @@ def metric_seo_internal(sample: int = 40) -> Dict[str, Any]:
     result["sitemap_by_type"] = {
         "clinics": sum(1 for p in paths if p.startswith("/clinics/")),
         "insights": sum(1 for p in paths if p.startswith("/insights/")),
-        "local_pages": sum(1 for p in paths if p.startswith("/care/")),
-        "other": sum(1 for p in paths if not p.startswith(("/clinics/", "/insights/", "/care/"))),
+        "local_pages": sum(1 for p in paths if p not in _STATIC_PATHS and not p.startswith(("/clinics/", "/insights/"))),
+        "other": sum(1 for p in paths if p in _STATIC_PATHS),
     }
 
     try:

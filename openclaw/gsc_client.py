@@ -327,55 +327,55 @@ def fetch_ga4(period: str = "week", row_limit: int = 10) -> Dict[str, Any]:
 def _key_step() -> str:
     email = service_account_email()
     if email:
-        return f"✅ Đã thấy file service account trên server.\n   Email cần được cấp quyền: `{email}`"
+        return f"✅ Found service account key file on server.\n   Grant read access to: `{email}`"
     return (
-        "1) Google Cloud Console → tạo project → bật **Search Console API** và **Google Analytics Data API**.\n"
-        "2) IAM & Admin → Service Accounts → tạo account → Keys → tạo JSON key.\n"
-        "3) Lưu file đó trên server tại `openclaw/secrets/google_service_account.json`\n"
-        "   ⚠️ KHÔNG gửi file/key này qua Telegram."
+        "1) Google Cloud Console → create a project → enable **Search Console API** and **Google Analytics Data API**.\n"
+        "2) IAM & Admin → Service Accounts → create account → Keys → create JSON key.\n"
+        "3) Save that file on the server at `openclaw/secrets/google_service_account.json`\n"
+        "   ⚠️ NEVER send this secret key file via Telegram."
     )
 
 
 def gsc_instructions() -> str:
     status = get_status()
-    lines = ["🔎 **Kết nối Google Search Console (GSC)**", ""]
+    lines = ["🔎 **Connect Google Search Console (GSC)**", ""]
     if status["gsc"]["configured"]:
-        lines.append(f"Đã cấu hình: `{status['gsc']['site_url']}`. Gõ `/connect_gsc verify` để kiểm tra kết nối thật.")
+        lines.append(f"Configured: `{status['gsc']['site_url']}`. Type `/connect_gsc verify` to test the live connection.")
         return "\n".join(lines)
     lines += [
-        "**Bước 1 — Xác minh website trên GSC** (nếu chưa): https://search.google.com/search-console → Add property → chọn *Domain* (khuyến nghị) và xác minh qua DNS.",
+        "**Step 1 — Verify website on GSC** (if not done yet): https://search.google.com/search-console → Add property → select *Domain* (recommended) and verify via DNS.",
         "",
-        "**Bước 2 — Service account (chỉ đọc):**",
+        "**Step 2 — Read-only Service Account:**",
         _key_step(),
         "",
-        "**Bước 3 — Cấp quyền:** GSC → Settings → Users and permissions → Add user → dán email service account với quyền *Restricted* (chỉ xem).",
+        "**Step 3 — Grant permission:** GSC → Settings → Users and permissions → Add user → paste the service account email with *Restricted* (read-only) access.",
         "",
-        "**Bước 4 — Báo cho bot property của bạn** (không phải bí mật):",
-        "• `/connect_gsc sc-domain:tenmiencuaban.com`",
-        "• hoặc `/connect_gsc https://www.tenmiencuaban.com/`",
+        "**Step 4 — Set your property identifier** (non-secret):",
+        "• `/connect_gsc sc-domain:yourdomain.com`",
+        "• or `/connect_gsc https://www.yourdomain.com/`",
         "",
-        "**Bước 5:** `/connect_gsc verify` để thử kết nối. Sau đó `/stats seo` sẽ gộp dữ liệu Google + audit nội bộ.",
+        "**Step 5:** `/connect_gsc verify` to test connection. Afterwards, `/stats seo` will merge Google data with the internal SEO audit.",
     ]
     return "\n".join(lines)
 
 
 def ga4_instructions() -> str:
     status = get_status()
-    lines = ["📈 **Kết nối Google Analytics 4 (GA4)**", ""]
+    lines = ["📈 **Connect Google Analytics 4 (GA4)**", ""]
     if status["ga4"]["configured"]:
-        lines.append(f"Đã cấu hình Property `{status['ga4']['property_id']}`. Gõ `/connect_ga4 verify` để kiểm tra.")
+        lines.append(f"Configured Property `{status['ga4']['property_id']}`. Type `/connect_ga4 verify` to test.")
         return "\n".join(lines)
     lines += [
-        "Website đã gắn tag GA4 (Measurement ID trong `NEXT_PUBLIC_GA_MEASUREMENT_ID`) — việc còn lại là cho bot **quyền đọc báo cáo**.",
+        "The website already includes the GA4 tag (`NEXT_PUBLIC_GA_MEASUREMENT_ID`) — you only need to grant the bot **read access to reports**.",
         "",
-        "**Bước 1 — Service account (chỉ đọc):**",
+        "**Step 1 — Read-only Service Account:**",
         _key_step(),
         "",
-        "**Bước 2 — Cấp quyền:** GA4 → Admin → Property access management → thêm email service account với vai trò *Viewer*.",
+        "**Step 2 — Grant permission:** GA4 → Admin → Property access management → add the service account email as *Viewer*.",
         "",
-        "**Bước 3 — Property ID:** GA4 → Admin → Property details → copy dãy số **Property ID** (không phải `G-…`).",
+        "**Step 3 — Property ID:** GA4 → Admin → Property details → copy the numeric **Property ID** (not `G-…`).",
         "• `/connect_ga4 123456789`",
         "",
-        "**Bước 4:** `/connect_ga4 verify` để thử kết nối.",
+        "**Step 4:** `/connect_ga4 verify` to test the connection.",
     ]
     return "\n".join(lines)

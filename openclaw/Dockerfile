@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     npm \
     docker.io \
-    docker-compose-plugin \
+    docker-compose \
     && rm -rf /var/lib/apt/lists/*
 
 COPY openclaw/requirements.txt /app/openclaw/requirements.txt

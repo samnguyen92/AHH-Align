@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { DM_Sans, Geist, Geist_Mono } from 'next/font/google';
 import { PageViewTracker } from '@/components/layout/page-view-tracker';
 import { SiteChrome } from '@/components/layout/site-chrome';
 import { JsonLd } from '@/lib/json-ld';
@@ -9,14 +8,9 @@ import '@uiw/react-markdown-preview/markdown.css';
 import './globals.css';
 import './longevity.css';
 
-const dmSans = DM_Sans({
-  variable: '--font-sans',
-  subsets: ['latin', 'latin-ext'],
-  display: 'swap',
-});
-
-const geist = Geist({ variable: '--font-lg-sans', subsets: ['latin', 'latin-ext'], display: 'swap' });
-const geistMono = Geist_Mono({ variable: '--font-lg-mono', subsets: ['latin'], display: 'swap' });
+const dmSans = { variable: '--font-sans' };
+const geist = { variable: '--font-lg-sans' };
+const geistMono = { variable: '--font-lg-mono' };
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

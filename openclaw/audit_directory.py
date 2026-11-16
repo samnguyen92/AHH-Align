@@ -17,7 +17,10 @@ from collections import Counter
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
-from supabase import create_client
+try:
+    from pg_client import create_client
+except Exception:
+    from supabase import create_client
 
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))

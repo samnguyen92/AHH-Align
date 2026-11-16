@@ -112,14 +112,44 @@ def upload_image_bytes(
     content_type: str,
     bucket: Optional[str] = None,
 ) -> Optional[str]:
-    supabase = create_supabase_client()
-    if not supabase:
-        print("[!] Missing Supabase credentials; skipping cloud image upload.")
-        return None
-
-    bucket_name = bucket or get_storage_bucket()
+    """
+    Save image to local Docker Volume (public/uploads/) and return '/uploads/...'.
+    Fallback to Supabase Storage only if explicitly requested.
+    """
     normalized_path = storage_path.lstrip("/")
 
+    # 1. Primary: Save directly to public/uploads/
+    try:
+        # Check both local dev path and Docker container /app path
+        candidates = [
+            os.path.join(_OPENCLAW_DIR, "..", "public", "uploads"),
+            os.path.join("/app", "public", "uploads"),
+            os.path.join("public", "uploads"),
+        ]
+        target_dir = None
+        for cand in candidates:
+            cand_abs = os.path.abspath(cand)
+            if os.path.exists(os.path.dirname(cand_abs)):
+                target_dir = cand_abs
+                break
+
+        if target_dir:
+            dest_file = os.path.join(target_dir, normalized_path)
+            os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+            with open(dest_file, "wb") as f:
+                f.write(image_bytes)
+            local_url = f"/uploads/{normalized_path}"
+            print(f"[+] Saved image to local storage: {local_url} ({dest_file})")
+            return local_url
+    except Exception as exc:
+        print(f"[!] Local image save error: {exc}")
+
+    # 2. Fallback: Supabase Storage
+    supabase = create_supabase_client()
+    if not supabase:
+        return f"/uploads/{normalized_path}"
+
+    bucket_name = bucket or get_storage_bucket()
     try:
         supabase.storage.from_(bucket_name).upload(
             path=normalized_path,
@@ -130,14 +160,9 @@ def upload_image_bytes(
                 "upsert": "true",
             },
         )
-        public_url = get_public_url(supabase, bucket_name, normalized_path)
-        print(f"[+] Uploaded image to Supabase Storage: {public_url}")
-        return public_url
-    except Exception as exc:
-        print(
-            f"[!] Supabase Storage upload failed for bucket '{bucket_name}' path '{normalized_path}': {exc}"
-        )
-        return None
+        return get_public_url(supabase, bucket_name, normalized_path)
+    except Exception:
+        return f"/uploads/{normalized_path}"
 
 
 def upload_image_value(image_value: Optional[str], folder: str, filename_base: str) -> Optional[str]:

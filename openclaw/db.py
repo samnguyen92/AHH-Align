@@ -3,7 +3,11 @@ import uuid
 import re
 import unicodedata
 from dotenv import load_dotenv
-from supabase import create_client, Client
+try:
+    from pg_client import create_client
+    Client = object
+except Exception:
+    from supabase import create_client, Client
 from normalize import (
     clean_value,
     compute_quality,
