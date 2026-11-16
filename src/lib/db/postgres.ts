@@ -453,6 +453,26 @@ export function createPostgresClient() {
       async signOut() {
         return { error: null };
       },
+      admin: {
+        async listUsers({ page = 1, perPage = 100 }: { page?: number; perPage?: number } = {}) {
+          try {
+            const client = getPool();
+            const offset = (page - 1) * perPage;
+            const res = await client.query('SELECT * FROM auth.users ORDER BY created_at DESC LIMIT $1 OFFSET $2', [perPage, offset]);
+            const users = res.rows.map((u: any) => ({
+              id: u.id,
+              email: u.email,
+              user_metadata: u.raw_user_meta_data || {},
+              app_metadata: u.raw_app_meta_data || {},
+              created_at: u.created_at,
+              last_sign_in_at: u.last_sign_in_at,
+            }));
+            return { data: { users }, error: null };
+          } catch (err: any) {
+            return { data: { users: [] }, error: err };
+          }
+        },
+      },
     },
   };
 }
