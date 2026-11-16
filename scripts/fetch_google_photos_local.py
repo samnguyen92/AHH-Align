@@ -17,17 +17,43 @@ import urllib.parse
 import urllib.request
 from typing import Dict, List, Optional
 
-from dotenv import load_dotenv
+def load_simple_dotenv(filepath: str):
+    if not os.path.exists(filepath):
+        return
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except Exception:
+        pass
 
 # Add openclaw directory to path
 _ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(_ROOT_DIR, "openclaw"))
 
-load_dotenv(os.path.join(_ROOT_DIR, ".env.local"))
-load_dotenv(os.path.join(_ROOT_DIR, "openclaw", ".env"))
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(_ROOT_DIR, ".env.local"))
+    load_dotenv(os.path.join(_ROOT_DIR, "openclaw", ".env"))
+except ImportError:
+    load_simple_dotenv(os.path.join(_ROOT_DIR, ".env.local"))
+    load_simple_dotenv(os.path.join(_ROOT_DIR, "openclaw", ".env"))
 
-from pg_client import create_client
-from google_places import get_google_places_key, get_place_details, get_photo_uri
+try:
+    from pg_client import create_client
+    from google_places import get_google_places_key, get_place_details, get_photo_uri
+except ImportError as exc:
+    print(f"[!] Dependencies missing on host: {exc}")
+    print("[*] Please run this script inside the OpenClaw Docker container:")
+    print("    docker compose exec openclaw-bot python /app/scripts/fetch_google_photos_local.py")
+    sys.exit(0)
 
 try:
     from PIL import Image, ImageOps

@@ -54,15 +54,33 @@ echo "[*] Building and starting Docker services (PostgreSQL 16 + Next.js + OpenC
 docker compose down || true
 docker compose up -d --build
 
-# 5. Check container statuses
-echo "[*] Waiting for services to become healthy..."
-sleep 5
+# 5. Check container statuses & wait for web server to be ready
+echo "[*] Waiting for services to become ready..."
 docker compose ps
 
+PORT="${WEB_PORT:-4000}"
+echo "[*] Verifying web application on port $PORT..."
+READY=false
+for i in {1..15}; do
+  if curl -s -f "http://127.0.0.1:$PORT/api/health/supabase" > /dev/null 2>&1 || curl -s -f "http://127.0.0.1:$PORT/" > /dev/null 2>&1; then
+    READY=true
+    break
+  fi
+  echo "    Still warming up Next.js... ($i/15)"
+  sleep 2
+done
+
+SERVER_IP=$(curl -s -m 3 https://ifconfig.me 2>/dev/null || echo "76.13.179.185")
+
 echo "=================================================="
-echo "✅ Deployment complete!"
-echo "   - Web App: http://localhost:4000"
-echo "   - PostgreSQL: db:5432 (internal)"
-echo "   - Storage: public/uploads/ (Docker Volume)"
+if [ "$READY" = true ]; then
+  echo "✅ Deployment complete! Server is running and responding."
+else
+  echo "⚠️ Containers started, but Next.js is still compiling initial routes."
+fi
+echo "   - Web App URL: http://$SERVER_IP:$PORT"
+echo "   - Health Check: http://$SERVER_IP:$PORT/api/health/supabase"
+echo "   - Fetch Photos via Docker:"
+echo "     docker compose exec openclaw-bot python /app/scripts/fetch_google_photos_local.py"
 echo "=================================================="
 
