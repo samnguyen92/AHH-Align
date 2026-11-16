@@ -32,4 +32,3 @@ yarn-error.log*
 # Project specific ignores
 openclaw/.env
 openclaw/telegram_memory.json
-public/generated-insights/*

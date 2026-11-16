@@ -17,6 +17,14 @@ export function getSafeClinicImageSrc(src?: string | null): string | null {
     return null;
   }
 
+  // Rewrite legacy Supabase storage URLs to local public paths
+  if (value.includes('supabase.co/storage/v1/object/public/generated-images/')) {
+    const parts = value.split('supabase.co/storage/v1/object/public/generated-images/');
+    if (parts[1]) {
+      return `/${parts[1]}`;
+    }
+  }
+
   if (
     value.startsWith('/generated-clinics/') ||
     value.startsWith('/images/') ||
@@ -29,21 +37,8 @@ export function getSafeClinicImageSrc(src?: string | null): string | null {
 
   if (value.startsWith('https://') || value.startsWith('http://')) {
     try {
-      const url = new URL(value);
-      const hostname = url.hostname.toLowerCase();
-
-      // Check against allowed domains from next.config.ts remotePatterns
-      const isSupabase = hostname.endsWith('.supabase.co') || hostname === 'supabase.co';
-      const isGoogle = hostname === 'lh3.googleusercontent.com' || hostname.endsWith('.googleusercontent.com');
-      const isWix = hostname === 'static.wixstatic.com';
-      const isAnchor = hostname === 'anchordentalga.com' || hostname.endsWith('.anchordentalga.com');
-
-      if (isSupabase || isGoogle || isWix || isAnchor) {
-        return value;
-      }
-      
-      // If it's a random external domain, return null to prevent next/image runtime crashes
-      return null;
+      new URL(value);
+      return value;
     } catch {
       return null;
     }
