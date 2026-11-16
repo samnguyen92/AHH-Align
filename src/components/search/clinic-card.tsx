@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ClinicImage } from '@/components/clinic/clinic-image';
+import { getClinicFallbackImage } from '@/lib/clinic-image';
 import type { Clinic } from '@/types/database';
 
 interface ClinicCardProps {
@@ -12,6 +13,7 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
   const ratingCount = m.review_profile?.review_count ?? m.rating_count ?? 0;
   const hasRating = rating > 0;
   const imageSrc = m.images?.[0] || m.gallery_images?.[0] || null;
+  const fallbackSrc = getClinicFallbackImage(clinic.specialty, clinic.slug || clinic.id);
   const priceTier = m.price_tier || '$$';
   const locationsCount = m.locations?.length || 1;
   const deliveryLabel = clinic.is_telehealth_available ? 'In person & Telehealth' : 'In person';
@@ -37,6 +39,8 @@ export function ClinicCard({ clinic }: ClinicCardProps) {
           alt={clinic.name}
           className="h-full w-full"
           iconClassName="h-10 w-10"
+          fallbackSrc={fallbackSrc}
+          specialty={clinic.specialty}
         />
         {locationText && (
           <span className="lg-dir-card-corner">

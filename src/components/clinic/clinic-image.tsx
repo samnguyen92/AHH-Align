@@ -2,13 +2,15 @@
 
 import Image from 'next/image';
 import { useState } from 'react';
-import { getSafeClinicImageSrc } from '@/lib/clinic-image';
+import { getSafeClinicImageSrc, getClinicFallbackImage } from '@/lib/clinic-image';
 
 interface ClinicImageProps {
   src?: string | null;
   alt: string;
   className?: string;
   iconClassName?: string;
+  fallbackSrc?: string | null;
+  specialty?: string | null;
 }
 
 export function ClinicImage({
@@ -16,15 +18,19 @@ export function ClinicImage({
   alt,
   className = '',
   iconClassName = 'h-12 w-12',
+  fallbackSrc,
+  specialty,
 }: ClinicImageProps) {
   const [failed, setFailed] = useState(false);
-  const safeSrc = failed ? null : getSafeClinicImageSrc(src);
+  const fallback = fallbackSrc || getClinicFallbackImage(specialty, alt);
+  const candidateSrc = getSafeClinicImageSrc(src);
+  const activeSrc = failed || !candidateSrc ? fallback : candidateSrc;
 
   return (
     <div className={`relative overflow-hidden bg-gray-200 ${className}`}>
-      {safeSrc ? (
+      {activeSrc ? (
         <Image
-          src={safeSrc}
+          src={activeSrc}
           alt={alt}
           fill
           sizes="(max-width: 768px) 100vw, 384px"

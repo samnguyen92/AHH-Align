@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { ArrowRight, MapPin, Star } from 'lucide-react';
 import { ArticleImage } from '@/components/insights/article-image';
+import { ClinicImage } from '@/components/clinic/clinic-image';
 import { getPublishedArticles } from '@/services/article-service';
-import { SAMPLE_NEXT_HEALTH_CLINIC, searchClinics } from '@/services/clinic-service';
+import { SAMPLE_NEXT_HEALTH_CLINIC, searchClinics, getSearchFilterOptions } from '@/services/clinic-service';
+import { getClinicFallbackImage, getSafeClinicImageSrc } from '@/lib/clinic-image';
 import type { Article, Clinic } from '@/types/database';
 import { CountUp, ParallaxImage, Rail, Reveal, SplitTitle } from '@/components/lg/motion';
 
@@ -121,24 +123,68 @@ const TESTIMONIALS = [
 ] as const;
 
 const FALLBACK_CLINICS: Clinic[] = [
-  SAMPLE_NEXT_HEALTH_CLINIC,
+  {
+    ...SAMPLE_NEXT_HEALTH_CLINIC,
+    metadata: {
+      ...SAMPLE_NEXT_HEALTH_CLINIC.metadata,
+      images: ['/brand/lg/primary-care.jpg'],
+    },
+  },
   {
     id: 'fallback-vn-wellness',
     org_id: null,
     name: 'VN Wellness Medical Group',
     slug: 'vn-wellness-medical-group',
     description: 'Culturally informed care for Vietnamese families.',
-    address: null,
+    address: '915 W Valley Blvd',
     city: 'Los Angeles',
     state: 'CA',
-    zip_code: null,
-    phone: null,
+    zip_code: '91803',
+    phone: '(626) 555-0199',
     languages: ['Vietnamese', 'English'],
     specialty: 'Primary Care',
     is_telehealth_available: true,
     claimed_by: null,
     is_claimed: false,
-    metadata: { rating: 4.8, images: [] },
+    metadata: { rating: 4.8, images: ['https://images.unsplash.com/photo-1534190760961-74e8c1c5c3da?auto=format&fit=crop&w=700&q=80'] },
+    created_at: '',
+  },
+  {
+    id: 'fallback-seoul-medical',
+    org_id: null,
+    name: 'Seoul Family Medicine Clinic',
+    slug: 'seoul-family-medicine-clinic',
+    description: 'Comprehensive family medicine and preventive care in Korean and English.',
+    address: '3832 Wilshire Blvd',
+    city: 'Los Angeles',
+    state: 'CA',
+    zip_code: '90010',
+    phone: '(213) 555-0144',
+    languages: ['Korean', 'English'],
+    specialty: 'Family Medicine',
+    is_telehealth_available: true,
+    claimed_by: null,
+    is_claimed: false,
+    metadata: { rating: 4.9, images: ['/brand/lg/family.jpg'] },
+    created_at: '',
+  },
+  {
+    id: 'fallback-asian-health-services',
+    org_id: null,
+    name: 'Asian Health & Dental Services',
+    slug: 'asian-health-and-dental-services',
+    description: 'Community-rooted dental and preventative healthcare with Cantonese and Mandarin bilingual staff.',
+    address: '818 Jackson St',
+    city: 'San Francisco',
+    state: 'CA',
+    zip_code: '94133',
+    phone: '(415) 555-0182',
+    languages: ['Chinese', 'English'],
+    specialty: 'Dental',
+    is_telehealth_available: false,
+    claimed_by: null,
+    is_claimed: false,
+    metadata: { rating: 5.0, images: ['https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80'] },
     created_at: '',
   },
 ] as Clinic[];
@@ -186,7 +232,8 @@ function toHomeInsightCard(article: Article): HomeInsightCard {
 }
 
 function clinicImage(clinic: Clinic, index: number) {
-  return clinic.metadata?.images?.[0] || CITIES[index % CITIES.length].image;
+  const safe = getSafeClinicImageSrc(clinic.metadata?.images?.[0]);
+  return safe || getClinicFallbackImage(clinic.specialty, clinic.slug || clinic.id || index);
 }
 
 function clinicRating(clinic: Clinic) {
@@ -195,21 +242,29 @@ function clinicRating(clinic: Clinic) {
 }
 
 export default async function HomePage() {
-  const [publishedArticles, clinicResult, ...counts] = await Promise.all([
+  const [publishedArticles, clinicResult, filterOptions] = await Promise.all([
     getPublishedArticles(undefined, 1, 3, 'pulse'),
     searchClinics({ limit: 4 }),
-    ...CITIES.map((city) => searchClinics({ city: city.name.split(',')[0].trim(), limit: 1 })),
-    ...QUIZ_SPECIALTIES.map((specialty) => searchClinics({ specialty, limit: 1 })),
-    ...QUIZ_LANGUAGES.map((language) => searchClinics({ language, limit: 1 })),
+    getSearchFilterOptions(),
   ]);
 
-  const cityCounts = counts.slice(0, CITIES.length);
-  const specialtyCounts = counts.slice(CITIES.length, CITIES.length + QUIZ_SPECIALTIES.length);
-  const languageCounts = counts.slice(CITIES.length + QUIZ_SPECIALTIES.length);
+  const cityCountMap = new Map(
+    filterOptions.cities.map((c) => [c.name.toLowerCase().trim(), c.count])
+  );
+  const specialtyCountMap = new Map(
+    filterOptions.specialties.map((s) => [s.name.toLowerCase().trim(), s.count])
+  );
+  const languageCountMap = new Map(
+    filterOptions.languages.map((l) => [l.name.toLowerCase().trim(), l.count])
+  );
 
   const quizCounts = {
-    specialties: Object.fromEntries(QUIZ_SPECIALTIES.map((s, i) => [s, specialtyCounts[i]?.total ?? 0])),
-    languages: Object.fromEntries(QUIZ_LANGUAGES.map((l, i) => [l, languageCounts[i]?.total ?? 0])),
+    specialties: Object.fromEntries(
+      QUIZ_SPECIALTIES.map((s) => [s, specialtyCountMap.get(s.toLowerCase()) ?? 0])
+    ),
+    languages: Object.fromEntries(
+      QUIZ_LANGUAGES.map((l) => [l, languageCountMap.get(l.toLowerCase()) ?? 0])
+    ),
   };
 
   const insightCards =
@@ -217,10 +272,13 @@ export default async function HomePage() {
   const clinics = clinicResult.data.length > 0 ? clinicResult.data.slice(0, 4) : FALLBACK_CLINICS;
   const totalClinics = clinicResult.total;
 
-  const citiesWithCounts = CITIES.map((city, index) => ({
-    ...city,
-    count: String(cityCounts[index]?.total ?? 0),
-  }));
+  const citiesWithCounts = CITIES.map((city) => {
+    const cityNameOnly = city.name.split(',')[0].trim().toLowerCase();
+    return {
+      ...city,
+      count: String(cityCountMap.get(cityNameOnly) ?? 0),
+    };
+  });
 
   const points = [
     {
@@ -348,7 +406,14 @@ export default async function HomePage() {
               <Reveal key={clinic.id} delay={index * 0.06} className="lg-fill">
                 <Link href={`/clinics/${clinic.slug}`} className="lg-ccard">
                   <div className="ph">
-                    <ArticleImage src={clinicImage(clinic, index)} alt={clinic.name} className="aspect-[4/3] w-full" iconSize={46} />
+                    <ClinicImage
+                      src={clinicImage(clinic, index)}
+                      alt={clinic.name}
+                      className="aspect-[4/3] w-full"
+                      iconClassName="h-10 w-10"
+                      fallbackSrc={getClinicFallbackImage(clinic.specialty, clinic.slug || clinic.id || index)}
+                      specialty={clinic.specialty}
+                    />
                   </div>
                   <div className="bd">
                     <h3>{clinic.name}</h3>

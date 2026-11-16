@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { Clinic, PricingItem, Review, ServiceOffering } from '@/types/database';
 import { TabNav } from '@/components/lg/motion';
 import { LgGallery } from '@/components/clinic/lg-gallery';
+import { getClinicFallbackImage, getSafeClinicImageSrc } from '@/lib/clinic-image';
 
 const EXT_ARROW = (
   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -153,8 +154,11 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
   const bookUrl = websiteUrl || appointmentUrl;
   const phoneHref = clinic.phone ? `tel:${clinic.phone.replace(/[^0-9+]/g, '')}` : null;
 
-  const rawImages = [...(m.images || []), ...(m.gallery_images || [])].filter((v, i, a) => v && a.indexOf(v) === i);
-  const images = rawImages.length > 0 ? rawImages : ['/brand/lg/hero.jpg', '/brand/lg/primary-care.jpg', '/brand/lg/family.jpg'];
+  const rawImages = [...(m.images || []), ...(m.gallery_images || [])]
+    .map((img: string) => getSafeClinicImageSrc(img))
+    .filter((v: string | null, i: number, a: (string | null)[]): v is string => Boolean(v && a.indexOf(v) === i));
+  const fallbackImg = getClinicFallbackImage(clinic.specialty, clinic.slug || clinic.id);
+  const images = rawImages.length > 0 ? rawImages : [fallbackImg, '/brand/lg/primary-care.jpg', '/brand/lg/family.jpg'];
 
   const cityState = [clinic.city, clinic.state]
     .filter((v): v is string => Boolean(v && !['null', 'none', 'undefined'].includes(v.trim().toLowerCase())))
