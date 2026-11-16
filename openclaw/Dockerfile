@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
+    libatomic1 \
     nodejs \
     npm \
     docker.io \
