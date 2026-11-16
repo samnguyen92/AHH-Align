@@ -8,6 +8,8 @@ import { getClinicFallbackImage, getSafeClinicImageSrc } from '@/lib/clinic-imag
 import type { Article, Clinic } from '@/types/database';
 import { CountUp, ParallaxImage, Rail, Reveal, SplitTitle } from '@/components/lg/motion';
 
+export const dynamic = 'force-dynamic';
+
 const HERO_IMAGE = '/brand/home-hero-care-team.png';
 
 const ARROW = (
@@ -249,13 +251,13 @@ export default async function HomePage() {
   ]);
 
   const cityCountMap = new Map(
-    filterOptions.cities.map((c) => [c.name.toLowerCase().trim(), c.count])
+    filterOptions.cities.map((c: any) => [((c.name || c.value || '') as string).toLowerCase().trim(), c.count])
   );
   const specialtyCountMap = new Map(
-    filterOptions.specialties.map((s) => [s.name.toLowerCase().trim(), s.count])
+    filterOptions.specialties.map((s: any) => [((s.name || s.value || '') as string).toLowerCase().trim(), s.count])
   );
   const languageCountMap = new Map(
-    filterOptions.languages.map((l) => [l.name.toLowerCase().trim(), l.count])
+    filterOptions.languages.map((l: any) => [((l.name || l.value || '') as string).toLowerCase().trim(), l.count])
   );
 
   const quizCounts = {

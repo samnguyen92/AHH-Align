@@ -47,6 +47,7 @@ openclaw/reports/
 openclaw/secrets/
 public/generated-insights/
 public/generated-clinics/
+public/uploads/
 postgres/backup/
 scripts/__pycache__/
 

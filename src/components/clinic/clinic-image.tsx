@@ -21,21 +21,27 @@ export function ClinicImage({
   fallbackSrc,
   specialty,
 }: ClinicImageProps) {
-  const [failed, setFailed] = useState(false);
+  const [failCount, setFailCount] = useState(0);
   const fallback = fallbackSrc || getClinicFallbackImage(specialty, alt);
   const candidateSrc = getSafeClinicImageSrc(src);
-  const activeSrc = failed || !candidateSrc ? fallback : candidateSrc;
+
+  let activeSrc: string | null = candidateSrc || fallback;
+  if (failCount === 1) {
+    activeSrc = fallback && fallback !== candidateSrc ? fallback : '/brand/lg/primary-care.jpg';
+  } else if (failCount >= 2) {
+    activeSrc = '/brand/lg/primary-care.jpg';
+  }
 
   return (
     <div className={`relative overflow-hidden bg-gray-200 ${className}`}>
-      {activeSrc ? (
+      {activeSrc && failCount < 3 ? (
         <Image
           src={activeSrc}
           alt={alt}
           fill
           sizes="(max-width: 768px) 100vw, 384px"
           className="object-cover"
-          onError={() => setFailed(true)}
+          onError={() => setFailCount((c) => c + 1)}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-gray-200 text-gray-400">

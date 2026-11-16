@@ -66,28 +66,25 @@ export function getSafeClinicImageSrc(src?: string | null): string | null {
   if (value.includes('supabase.co/storage/v1/object/public/generated-images/')) {
     const parts = value.split('supabase.co/storage/v1/object/public/generated-images/');
     if (parts[1]) {
-      // If it points to generated-clinics which is not local, return null to trigger specialty fallback
-      if (parts[1].startsWith('generated-clinics/')) {
-        return null;
-      }
-      return `/${parts[1]}`;
+      return `/uploads/${parts[1]}`.replace('//', '/');
     }
   }
 
-  // generated-clinics is not bundled locally; return null to fall back to curated specialty photography
+  // Map /generated-clinics/ to the physical static directory /uploads/generated-clinics/
   if (value.startsWith('/generated-clinics/')) {
-    return null;
+    return `/uploads${value}`;
   }
 
   if (
     value.startsWith('/brand/') ||
+    value.startsWith('/generated-clinics/') ||
     value.startsWith('/generated-insights/') ||
     value.startsWith('/images/') ||
     value.startsWith('/uploads/') ||
     value.startsWith('data:image/') ||
     value.startsWith('/')
   ) {
-    return value;
+    return value.startsWith('/') && !value.startsWith('data:') ? value.split('?')[0] : value;
   }
 
   if (value.startsWith('https://') || value.startsWith('http://')) {

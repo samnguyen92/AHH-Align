@@ -963,17 +963,17 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
     });
 
     const specialties = Object.entries(specialtyCounts)
-      .map(([value, count]) => ({ value, count }))
+      .map(([value, count]) => ({ value, name: value, count }))
       .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 
     const languages = Object.entries(languageCounts)
-      .map(([value, count]) => ({ value, count }))
+      .map(([value, count]) => ({ value, name: value, count }))
       .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 
     const cities = Object.entries(cityCounts)
       .map(([key, item]) => {
         const city = key.substring(0, key.indexOf(','));
-        return { value: city, state: item.state, count: item.count };
+        return { value: city, name: city, state: item.state, count: item.count };
       })
       .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 

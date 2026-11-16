@@ -24,9 +24,10 @@ export function getSafeArticleImageSrc(src?: string | null): string | null {
     value.startsWith('/generated-insights/') ||
     value.startsWith('/images/') ||
     value.startsWith('/uploads/') ||
-    value.startsWith('data:image/')
+    value.startsWith('data:image/') ||
+    value.startsWith('/')
   ) {
-    return value;
+    return value.startsWith('/') && !value.startsWith('data:') ? value.split('?')[0] : value;
   }
 
   if (value.startsWith('https://') || value.startsWith('http://')) {

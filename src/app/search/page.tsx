@@ -9,6 +9,8 @@ import { DirectorySearchBar } from '@/components/search/directory-search-bar';
 import { SearchEventTracker } from '@/components/search/search-event-tracker';
 import { ParallaxImage, SplitTitle } from '@/components/lg/motion';
 
+export const dynamic = 'force-dynamic';
+
 interface SearchUrlParams {
   city?: string;
   state?: string;
