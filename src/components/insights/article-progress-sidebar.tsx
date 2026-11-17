@@ -70,13 +70,13 @@ export function ArticleProgressSidebar({
         <div className="article-toc-card">
           <p className="article-toc-card__eyebrow">In this article</p>
           <p className="article-toc-card__progress">{progress}% read</p>
-          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[var(--ahh-mist)]">
+          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#0D1F1C]/10">
             <div
-              className="h-full rounded-full bg-[var(--ahh-deep-teal)] transition-[width] duration-150"
+              className="h-full rounded-full bg-[#024E44] transition-[width] duration-150"
               style={{ width: `${progress}%` }}
             />
           </div>
-          <div className="mt-3 flex gap-4 text-xs text-[var(--ahh-muted)]">
+          <div className="mt-3 flex gap-4 text-xs text-[#0D1F1C]/60">
             <span>{readMinutes} min read</span>
             <span>{wordCount.toLocaleString('en-US')} words</span>
           </div>

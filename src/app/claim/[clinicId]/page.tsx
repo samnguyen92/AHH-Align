@@ -8,7 +8,7 @@ interface ClaimPageProps {
 }
 
 export const metadata: Metadata = {
-  title: 'Claim Clinic Profile | Asian Health Hub',
+  title: 'Claim Clinic Profile',
 };
 
 export default async function ClaimPage({ params }: ClaimPageProps) {

@@ -86,55 +86,55 @@ export default async function DashboardPage() {
   }));
 
   return (
-    <main className="bg-gray-50 px-4 py-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-8">
-          <p className="text-sm font-semibold uppercase tracking-wide text-[var(--ahh-blue)]">
+    <div className="site-a bg-white px-3 pb-6 pt-20 text-[#0D1F1C] md:px-5 md:pt-[5.375rem]">
+      <div className="mx-auto max-w-[90rem]">
+        <div className="mb-1.5 rounded-xl bg-stone-50 p-5 md:mb-2 md:rounded-2xl md:p-7">
+          <p className="text-xs font-semibold uppercase tracking-widest opacity-55">
             Provider dashboard
           </p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-950">
+          <h1 className="mt-3 text-[clamp(2.25rem,4.5vw,4rem)] font-bold leading-[0.95] tracking-tight">
             Welcome{user.name ? `, ${user.name}` : ''}
           </h1>
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="mt-2 text-sm text-[#0D1F1C]/70">
             Track clinic ownership requests and prepare verified profile updates.
           </p>
         </div>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-lg border border-gray-200 bg-white p-5">
-            <Building2 className="h-5 w-5 text-[var(--ahh-blue)]" />
-            <p className="mt-3 text-2xl font-bold text-gray-950">{rows.length}</p>
-            <p className="text-sm text-gray-600">Claim requests</p>
+        <section className="grid gap-2 md:grid-cols-3 md:gap-3">
+          <div className="rounded-xl bg-[#E3F1EC] p-5 md:rounded-2xl md:p-6">
+            <Building2 className="h-5 w-5 text-[#024E44]" />
+            <p className="mt-3 text-2xl font-bold text-[#0D1F1C]">{rows.length}</p>
+            <p className="text-sm text-[#0D1F1C]/70">Claim requests</p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-5">
+          <div className="rounded-xl bg-[#E3F1EC] p-5 md:rounded-2xl md:p-6">
             <Clock3 className="h-5 w-5 text-amber-600" />
-            <p className="mt-3 text-2xl font-bold text-gray-950">
+            <p className="mt-3 text-2xl font-bold text-[#0D1F1C]">
               {rows.filter((claim) => claim.status === 'pending').length}
             </p>
-            <p className="text-sm text-gray-600">Pending review</p>
+            <p className="text-sm text-[#0D1F1C]/70">Pending review</p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-5">
+          <div className="rounded-xl bg-[#E3F1EC] p-5 md:rounded-2xl md:p-6">
             <CheckCircle2 className="h-5 w-5 text-green-600" />
-            <p className="mt-3 text-2xl font-bold text-gray-950">
+            <p className="mt-3 text-2xl font-bold text-[#0D1F1C]">
               {rows.filter((claim) => claim.status === 'approved').length}
             </p>
-            <p className="text-sm text-gray-600">Approved profiles</p>
+            <p className="text-sm text-[#0D1F1C]/70">Approved profiles</p>
           </div>
         </section>
 
-        <section className="mt-8 rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-            <h2 className="text-lg font-bold text-gray-950">Ownership requests</h2>
+        <section className="mt-1.5 overflow-hidden rounded-xl bg-white ring-1 ring-[#0D1F1C]/10 md:mt-2 md:rounded-2xl">
+          <div className="flex items-center justify-between border-b border-[#0D1F1C]/10 px-5 py-4">
+            <h2 className="text-lg font-bold text-[#0D1F1C]">Ownership requests</h2>
             <div className="flex gap-4">
               <Link
                 href="/dashboard/edit"
-                className="text-sm font-semibold text-[var(--ahh-blue)] hover:underline"
+                className="text-sm font-semibold text-[#024E44] hover:underline"
               >
                 Edit profiles
               </Link>
               <Link
                 href="/search"
-                className="text-sm font-semibold text-[var(--ahh-blue)] hover:underline"
+                className="text-sm font-semibold text-[#024E44] hover:underline"
               >
                 Find another clinic
               </Link>
@@ -149,12 +149,12 @@ export default async function DashboardPage() {
 
           {!error && rows.length === 0 && (
             <div className="px-5 py-10 text-center">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[#0D1F1C]/70">
                 No claim requests yet. Search the directory and claim your clinic profile.
               </p>
               <Link
                 href="/search"
-                className="mt-4 inline-flex rounded-lg bg-[var(--ahh-blue)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ahh-blue-dark)]"
+                className="mt-4 inline-flex rounded-full bg-[#024E44] px-6 py-3 text-sm font-bold text-white btn-fx"
               >
                 Search directory
               </Link>
@@ -162,21 +162,21 @@ export default async function DashboardPage() {
           )}
 
           {rows.length > 0 && (
-            <div className="divide-y divide-gray-100">
+            <div className="divide-y divide-[#0D1F1C]/10">
               {rows.map((claim) => (
                 <article key={claim.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="flex items-center gap-2">
                       <StatusIcon status={claim.status} />
-                      <h3 className="font-semibold text-gray-950">
+                      <h3 className="font-semibold text-[#0D1F1C]">
                         {claim.clinics?.name ?? 'Clinic profile'}
                       </h3>
                     </div>
-                    <p className="mt-1 text-sm text-gray-600">
+                    <p className="mt-1 text-sm text-[#0D1F1C]/70">
                       {claim.clinics?.city}, {claim.clinics?.state} · {claim.proof_type?.replaceAll('_', ' ') ?? 'verification'}
                     </p>
                   </div>
-                  <span className="rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold capitalize text-gray-700">
+                  <span className="rounded-full border border-[#0D1F1C]/15 px-3 py-1 text-xs font-semibold capitalize text-[#0D1F1C]/80">
                     {claim.status}
                   </span>
                 </article>
@@ -185,6 +185,6 @@ export default async function DashboardPage() {
           )}
         </section>
       </div>
-    </main>
+    </div>
   );
 }

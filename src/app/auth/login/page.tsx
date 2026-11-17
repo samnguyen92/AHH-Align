@@ -1,14 +1,15 @@
+import { AuthFrame } from '@/components/site/auth-frame';
 import type { Metadata } from 'next';
 import { LoginForm } from '@/components/auth/login-form';
 
 export const metadata: Metadata = {
-  title: 'Provider Login | Asian Health Hub',
+  title: 'Provider Login',
 };
 
 export default function LoginPage() {
   return (
-    <main className="bg-gray-50 px-4 py-16 sm:px-6 lg:px-8">
+    <AuthFrame title="Manage your clinic profile" caption="For clinics">
       <LoginForm />
-    </main>
+    </AuthFrame>
   );
 }

@@ -54,8 +54,8 @@
 }
 
 :root {
-  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-lg-sans: 'Geist', 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-lg-sans: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-geist-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-lg-mono: var(--font-geist-mono);
   --background: oklch(1 0 0);
@@ -163,7 +163,7 @@
   --ahh-deep-teal: #024E44;
   --ahh-deep-teal-2: #013F37;
   --ahh-forest: #17624f;
-  --ahh-lime: #D0FF71;
+  --ahh-lime: #E3F1EC;
   --ahh-soft-yellow: #F2EDAD;
   --ahh-blush-pink: #FDD0CC;
   --ahh-sage-green: #92C7AD;

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ClinicGrid } from '@/components/search/clinic-grid';
+import { DirectoryPage } from '@/components/site/directory';
+import { getDirectoryData } from '@/lib/site-data';
 import { JsonLd } from '@/lib/json-ld';
 import { absoluteUrl, SITE_NAME } from '@/lib/site';
 import {
@@ -9,10 +9,7 @@ import {
   stateSlugToCode,
   unslugifySegment,
 } from '@/lib/local-seo';
-import {
-  getTopSpecialtyCombos,
-  searchClinics,
-} from '@/services/clinic-service';
+import { getTopSpecialtyCombos } from '@/services/clinic-service';
 
 export const revalidate = 86400;
 
@@ -55,15 +52,9 @@ export default async function SpecialtyLandingPage({ params }: SpecialtyPageProp
   const cityName = unslugifySegment(city);
   const specialtyName = unslugifySegment(specialty);
   const stateCode = stateSlugToCode(state);
-  const result = await searchClinics({
-    city: cityName,
-    state: stateCode,
-    specialty: specialtyName,
-    page: 1,
-    limit: 12,
-  });
+  const data = await getDirectoryData({ city: cityName, state: stateCode, specialty: specialtyName });
 
-  if (result.total === 0) {
+  if (data.total === 0) {
     notFound();
   }
 
@@ -82,42 +73,17 @@ export default async function SpecialtyLandingPage({ params }: SpecialtyPageProp
   };
 
   return (
-    <main className="bg-white">
+    <>
       <JsonLd data={jsonLd} />
-      <section className="bg-[var(--ahh-blue)] px-4 py-14 text-white sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-6xl">
-          <Link href={`/${state}/${city}`} className="text-sm font-semibold text-blue-100 hover:text-white">
-            &larr; Back to {cityName}
-          </Link>
-          <h1 className="mt-4 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">
-            {specialtyName} Clinics in {cityName}, {stateCode}
-          </h1>
-          <p className="mt-5 max-w-2xl text-sm leading-6 text-blue-100">
-            Find local {specialtyName.toLowerCase()} providers with language access and culturally aware support for Asian American patients.
-          </p>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-950">
-              {result.total} matching clinic{result.total === 1 ? '' : 's'}
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-gray-600">
-              Review profiles for languages, ratings, clinic details, and direct contact options.
-            </p>
-          </div>
-          <Link
-            href={`/search?city=${encodeURIComponent(cityName)}&state=${stateCode}&specialty=${encodeURIComponent(specialtyName)}`}
-            className="inline-flex h-11 items-center justify-center rounded-lg bg-[var(--ahh-blue)] px-4 text-sm font-semibold text-white hover:bg-[var(--ahh-blue-dark)]"
-          >
-            Open filtered search
-          </Link>
-        </div>
-
-        <ClinicGrid clinics={result.data} total={result.total} />
-      </section>
-    </main>
+      <DirectoryPage
+        data={data}
+        intro={{
+          eyebrow: 'Local healthcare directory',
+          title: `${specialtyName} Clinics in ${cityName}, ${stateCode}`,
+          lede: `Find local ${specialtyName.toLowerCase()} providers with language access and culturally aware support for Asian American patients.`,
+          back: { href: `/${state}/${city}`, label: `Back to ${cityName}` },
+        }}
+      />
+    </>
   );
 }

@@ -2,24 +2,16 @@
 
 import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { Header } from "@/components/layout/header"
-import { LgHeader } from "@/components/lg/lg-header"
-import { BottomCTA } from "@/components/layout/bottom-cta"
-import { Footer } from "@/components/layout/footer"
+import { Navbar } from "@/components/site/kit"
+import { SiteFooter } from "@/components/site/footer"
 import { supabase } from "@/services/supabase-client"
 
 export function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const isAdmin = pathname === "/admin" || pathname.startsWith("/admin/")
-  const isHome = pathname === "/"
-  const isAbout = pathname === "/about"
-  const isPulse = pathname === "/pulse" || pathname.startsWith("/pulse/")
-  const isSearch = pathname === "/search"
-  const isInsightsIndex = pathname === "/insights"
-  const isInsightDetail = /^\/insights\/[^/]+/.test(pathname)
-  const isClinicDetail = /^\/clinics\/[^/]+/.test(pathname)
-  const isClaim = pathname === "/claim" || pathname.startsWith("/claim/")
+  // Design previews (src/app/preview) render full-bleed with their own nav.
+  const isPreview = pathname.startsWith("/preview/")
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
@@ -31,16 +23,19 @@ export function SiteChrome({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, [router])
 
-  if (isAdmin) {
+  if (isAdmin || isPreview) {
     return <>{children}</>
   }
 
+  // One chrome for every public page (design option A): the floating rounded menu, then the dark footer tile
+  // with the quick-search pill that rises once the visitor scrolls.
   return (
-    <>
-      <LgHeader overHero={isHome || isAbout || isSearch || isInsightsIndex} />
+    <div className="site flex min-h-full flex-1 flex-col bg-white">
+      <Navbar />
       <main className="flex-1">{children}</main>
-      {!isHome && !isAbout && !isClinicDetail && !isSearch && !isInsightsIndex && <BottomCTA />}
-      <Footer />
-    </>
+      <div className="mt-6 md:mt-10">
+        <SiteFooter />
+      </div>
+    </div>
   )
 }

@@ -92,76 +92,76 @@ export function ClinicEditForm({ clinic }: ClinicEditFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-      <div className="grid gap-4 md:grid-cols-2">
+    <form onSubmit={handleSubmit} className="rounded-xl bg-white p-5 ring-1 ring-[#0D1F1C]/10 md:rounded-2xl md:p-7">
+      <div className="grid gap-5 md:grid-cols-2">
         <label className="md:col-span-2">
-          <span className="text-sm font-medium text-gray-700">Clinic name</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" />
-        </label>
-
-        <label className="md:col-span-2">
-          <span className="text-sm font-medium text-gray-700">Description</span>
-          <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" />
+          <span className="text-sm font-bold">Clinic name</span>
+          <input value={name} onChange={(event) => setName(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]" />
         </label>
 
         <label className="md:col-span-2">
-          <span className="text-sm font-medium text-gray-700">Address</span>
-          <input value={address} onChange={(event) => setAddress(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" />
-        </label>
-
-        <label>
-          <span className="text-sm font-medium text-gray-700">City</span>
-          <input value={city} onChange={(event) => setCity(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" />
-        </label>
-
-        <label>
-          <span className="text-sm font-medium text-gray-700">State</span>
-          <input value={state} onChange={(event) => setState(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm uppercase outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" maxLength={2} />
-        </label>
-
-        <label>
-          <span className="text-sm font-medium text-gray-700">ZIP code</span>
-          <input value={zipCode} onChange={(event) => setZipCode(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" />
-        </label>
-
-        <label>
-          <span className="text-sm font-medium text-gray-700">Phone</span>
-          <input value={phone} onChange={(event) => setPhone(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" />
-        </label>
-
-        <label>
-          <span className="text-sm font-medium text-gray-700">Specialty</span>
-          <input value={specialty} onChange={(event) => setSpecialty(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" />
-        </label>
-
-        <label>
-          <span className="text-sm font-medium text-gray-700">Languages</span>
-          <input value={languages} onChange={(event) => setLanguages(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" placeholder="Vietnamese, English" />
+          <span className="text-sm font-bold">Description</span>
+          <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} className="mt-2 w-full rounded-2xl bg-stone-50 px-5 py-3 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition focus:bg-white focus:ring-2 focus:ring-[#024E44]" />
         </label>
 
         <label className="md:col-span-2">
-          <span className="text-sm font-medium text-gray-700">Services</span>
-          <input value={services} onChange={(event) => setServices(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" placeholder="Primary care, Pediatrics, Dental" />
+          <span className="text-sm font-bold">Address</span>
+          <input value={address} onChange={(event) => setAddress(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]" />
+        </label>
+
+        <label>
+          <span className="text-sm font-bold">City</span>
+          <input value={city} onChange={(event) => setCity(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]" />
+        </label>
+
+        <label>
+          <span className="text-sm font-bold">State</span>
+          <input value={state} onChange={(event) => setState(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44] uppercase" maxLength={2} />
+        </label>
+
+        <label>
+          <span className="text-sm font-bold">ZIP code</span>
+          <input value={zipCode} onChange={(event) => setZipCode(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]" />
+        </label>
+
+        <label>
+          <span className="text-sm font-bold">Phone</span>
+          <input value={phone} onChange={(event) => setPhone(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]" />
+        </label>
+
+        <label>
+          <span className="text-sm font-bold">Specialty</span>
+          <input value={specialty} onChange={(event) => setSpecialty(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]" />
+        </label>
+
+        <label>
+          <span className="text-sm font-bold">Languages</span>
+          <input value={languages} onChange={(event) => setLanguages(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]" placeholder="Vietnamese, English" />
         </label>
 
         <label className="md:col-span-2">
-          <span className="text-sm font-medium text-gray-700">Insurance accepted</span>
-          <input value={insurance} onChange={(event) => setInsurance(event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100" placeholder="Medicare, Medi-Cal, Private insurance" />
+          <span className="text-sm font-bold">Services</span>
+          <input value={services} onChange={(event) => setServices(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]" placeholder="Primary care, Pediatrics, Dental" />
+        </label>
+
+        <label className="md:col-span-2">
+          <span className="text-sm font-bold">Insurance accepted</span>
+          <input value={insurance} onChange={(event) => setInsurance(event.target.value)} className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]" placeholder="Medicare, Medi-Cal, Private insurance" />
         </label>
       </div>
 
-      <label className="mt-5 flex items-center gap-2 text-sm font-medium text-gray-700">
-        <input type="checkbox" checked={isTelehealth} onChange={(event) => setIsTelehealth(event.target.checked)} className="h-4 w-4 rounded border-gray-300" />
+      <label className="mt-5 flex items-center gap-2 text-sm font-medium">
+        <input type="checkbox" checked={isTelehealth} onChange={(event) => setIsTelehealth(event.target.checked)} className="h-4 w-4 accent-[#024E44]" />
         Telehealth available
       </label>
 
       {message && (
-        <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">
+        <p className="mt-4 rounded-xl bg-[#E3F1EC] px-4 py-3 text-sm font-semibold text-[#024E44]" role="status">
           {message}
         </p>
       )}
 
-      <button type="submit" disabled={isLoading} className="mt-6 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--ahh-blue)] px-4 text-sm font-semibold text-white hover:bg-[var(--ahh-blue-dark)] disabled:opacity-60">
+      <button type="submit" disabled={isLoading} className="mt-6 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#024E44] px-6 text-sm font-bold text-white btn-fx disabled:opacity-60">
         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
         Save profile
       </button>

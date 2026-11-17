@@ -39,49 +39,38 @@ export default function NewsletterForm() {
 
   if (status === 'success') {
     return (
-      <div className="mt-8 w-full max-w-[440px] rounded-[24px] bg-[#FDFBF9] p-6 shadow-[0_18px_50px_rgba(2,78,68,0.18)] border border-white text-left flex flex-col items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#E5F0EB] text-[var(--ahh-deep-teal)]">
-          <CheckCircle2 className="h-6 w-6" />
-        </div>
-        <p className="text-center text-sm font-semibold text-[var(--ahh-ink)]">{message}</p>
+      <div className="mt-7 flex w-full max-w-[32rem] items-center gap-3 rounded-full bg-white px-5 py-4 text-[#0D1F1C]" role="status">
+        <CheckCircle2 className="h-5 w-5 shrink-0 text-[#024E44]" aria-hidden="true" />
+        <p className="text-sm font-semibold">{message}</p>
       </div>
     );
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="mt-8 w-full max-w-[440px] rounded-[24px] bg-[#FDFBF9] p-5 sm:p-6 shadow-[0_18px_50px_rgba(2,78,68,0.18)] border border-white text-left space-y-4"
-    >
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#E5F0EB] text-[var(--ahh-deep-teal)] mb-4">
-        <Mail className="h-5 w-5" />
-      </div>
-
-      <div className="flex min-h-12 w-full items-center gap-2.5 rounded-[12px] border border-[#E9EEF4] px-4 bg-white focus-within:border-[var(--ahh-deep-teal)] focus-within:ring-2 focus-within:ring-[var(--ahh-deep-teal)]/10 transition">
-        <Mail className="h-4 w-4 text-[var(--ahh-muted)] shrink-0" />
+    <form onSubmit={handleSubmit} className="mt-7 w-full max-w-[32rem]">
+      <div className="flex items-center gap-2 rounded-full bg-white p-1.5 pl-5 text-[#0D1F1C] ring-1 ring-[#0D1F1C]/10 focus-within:ring-[#024E44]">
+        <Mail className="h-5 w-5 shrink-0 opacity-50" aria-hidden="true" />
+        <label htmlFor="pulse-email" className="sr-only">Email address</label>
         <input
+          id="pulse-email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="Enter your email address"
-          className="w-full bg-transparent text-sm text-[var(--ahh-ink)] outline-none placeholder:text-[var(--ahh-muted-2)]"
+          placeholder="Your email"
+          className="h-11 min-w-0 flex-1 bg-transparent text-base font-medium outline-none placeholder:text-[#0D1F1C]/45"
           required
           disabled={status === 'loading'}
         />
+        <button
+          type="submit"
+          disabled={status === 'loading'}
+          className="flex h-12 shrink-0 items-center gap-2 rounded-full bg-[#024E44] px-6 text-sm font-bold text-white btn-fx focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#024E44] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {status === 'loading' ? 'Subscribing…' : 'Subscribe'}
+          {status !== 'loading' && <ArrowRight className="h-4 w-4" aria-hidden="true" />}
+        </button>
       </div>
-
-      {status === 'error' && (
-        <p className="text-xs text-red-500">{message}</p>
-      )}
-
-      <button
-        type="submit"
-        disabled={status === 'loading'}
-        className="w-full min-h-12 rounded-full bg-[var(--ahh-deep-teal)] text-white text-sm font-bold flex items-center justify-center gap-2 transition hover:bg-[#024e44]/90 disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {status === 'loading' ? 'Subscribing...' : 'Subscribe Free'}
-        {status !== 'loading' && <ArrowRight className="h-4 w-4" />}
-      </button>
+      {status === 'error' && <p className="mt-2 pl-5 text-xs font-semibold text-red-700">{message}</p>}
     </form>
   );
 }

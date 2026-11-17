@@ -99,47 +99,47 @@ export function LoginForm() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+    <div className="mx-auto w-full max-w-md">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-950">Provider Login</h1>
-        <p className="mt-2 text-sm text-gray-600">
+        <h1 className="text-3xl font-bold leading-tight tracking-tight md:text-4xl">Provider Login</h1>
+        <p className="mt-2 text-sm font-medium opacity-70">
           Sign in to claim and manage your clinic profile.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Email</span>
-          <span className="mt-1 flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 focus-within:border-[var(--ahh-blue)] focus-within:ring-2 focus-within:ring-blue-100">
-            <Mail className="h-4 w-4 text-gray-400" />
+          <span className="text-sm font-bold">Email</span>
+          <span className="mt-2 flex items-center gap-3 rounded-full bg-stone-50 px-5 ring-1 ring-[#0D1F1C]/10 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-[#024E44]">
+            <Mail className="h-4 w-4 shrink-0 opacity-45" />
             <input
               type="email"
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="w-full border-0 bg-transparent text-sm outline-none"
+              className="h-11 w-full border-0 bg-transparent text-base font-medium outline-none placeholder:text-[#0D1F1C]/40"
               placeholder="you@clinic.com"
             />
           </span>
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Password</span>
-          <span className="mt-1 flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 focus-within:border-[var(--ahh-blue)] focus-within:ring-2 focus-within:ring-blue-100">
-            <Lock className="h-4 w-4 text-gray-400" />
+          <span className="text-sm font-bold">Password</span>
+          <span className="mt-2 flex items-center gap-3 rounded-full bg-stone-50 px-5 ring-1 ring-[#0D1F1C]/10 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-[#024E44]">
+            <Lock className="h-4 w-4 shrink-0 opacity-45" />
             <input
               type="password"
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="w-full border-0 bg-transparent text-sm outline-none"
+              className="h-11 w-full border-0 bg-transparent text-base font-medium outline-none placeholder:text-[#0D1F1C]/40"
               placeholder="Password"
             />
           </span>
         </label>
 
         {message && (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-800" role="alert">
             {message}
           </p>
         )}
@@ -147,7 +147,7 @@ export function LoginForm() {
         <button
           type="submit"
           disabled={isLoading}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[var(--ahh-blue)] px-4 text-sm font-semibold text-white transition-colors hover:bg-[var(--ahh-blue-dark)] disabled:opacity-60"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#024E44] px-6 text-sm font-bold text-white btn-fx disabled:opacity-60"
         >
           {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
           Sign in
@@ -158,14 +158,14 @@ export function LoginForm() {
         type="button"
         onClick={handleGoogleLogin}
         disabled={isLoading}
-        className="mt-3 flex h-10 w-full items-center justify-center rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50 disabled:opacity-60"
+        className="mt-3 flex h-12 w-full items-center justify-center rounded-full border border-[#0D1F1C]/25 px-6 text-sm font-bold transition-colors hover:border-[#0D1F1C] disabled:opacity-60"
       >
         Continue with Google
       </button>
 
-      <p className="mt-5 text-center text-sm text-gray-600">
+      <p className="mt-6 text-center text-sm font-medium opacity-80">
         New provider?{' '}
-        <Link href="/auth/signup" className="font-semibold text-[var(--ahh-blue)]">
+        <Link href="/auth/signup" className="font-bold text-[#024E44] underline underline-offset-4">
           Create an account
         </Link>
       </p>
