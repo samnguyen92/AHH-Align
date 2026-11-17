@@ -52,49 +52,49 @@ export function AccountSettingsForm({ initialName, email }: AccountSettingsFormP
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+    <form onSubmit={handleSubmit} className="rounded-xl bg-white p-5 ring-1 ring-[#0D1F1C]/10 md:rounded-2xl md:p-7">
       <div className="mb-5">
-        <h2 className="text-lg font-bold text-gray-950">Account settings</h2>
-        <p className="mt-1 text-sm text-gray-600">
+        <h2 className="text-lg font-bold text-[#0D1F1C]">Account settings</h2>
+        <p className="mt-1 text-sm text-[#0D1F1C]/70">
           Update your provider username and password.
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-2">
         <label>
-          <span className="text-sm font-medium text-gray-700">Username</span>
+          <span className="text-sm font-bold">Username</span>
           <input
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100"
+            className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]"
             placeholder="Clinic owner or manager"
           />
         </label>
 
         <label>
-          <span className="text-sm font-medium text-gray-700">Email</span>
+          <span className="text-sm font-bold">Email</span>
           <input
             value={email}
             disabled
-            className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500"
+            className="mt-2 h-12 w-full rounded-full bg-stone-100 px-5 text-base font-medium opacity-60"
           />
         </label>
 
         <label className="md:col-span-2">
-          <span className="text-sm font-medium text-gray-700">New password</span>
+          <span className="text-sm font-bold">New password</span>
           <input
             type="password"
             minLength={8}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="mt-1 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm outline-none focus:border-[var(--ahh-blue)] focus:ring-2 focus:ring-blue-100"
+            className="mt-2 h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]"
             placeholder="Leave blank to keep current password"
           />
         </label>
       </div>
 
       {message && (
-        <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">
+        <p className="mt-4 rounded-xl bg-[#E3F1EC] px-4 py-3 text-sm font-semibold text-[#024E44]" role="status">
           {message}
         </p>
       )}
@@ -102,7 +102,7 @@ export function AccountSettingsForm({ initialName, email }: AccountSettingsFormP
       <button
         type="submit"
         disabled={isLoading}
-        className="mt-6 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--ahh-blue)] px-4 text-sm font-semibold text-white hover:bg-[var(--ahh-blue-dark)] disabled:opacity-60"
+        className="mt-6 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#024E44] px-6 text-sm font-bold text-white btn-fx disabled:opacity-60"
       >
         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
         Save account

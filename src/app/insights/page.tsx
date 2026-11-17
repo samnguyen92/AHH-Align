@@ -1,7 +1,8 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
-import { ArticleImage } from '@/components/insights/article-image';
-import { ParallaxImage, Reveal, SplitTitle } from '@/components/lg/motion';
+import { SiteImg } from '@/components/site/img';
+import { ArrowCircle, Caption, Display, Grid, Page, Pill, Tile, pad, ring, tile } from '@/components/site/ui';
+import { getSafeArticleImageSrc } from '@/lib/article-image';
 import {
   getArticleTags,
   getPublishedArticlesByMode,
@@ -12,7 +13,7 @@ import type { Article } from '@/types/database';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'Health Insights & Guides | Asian Health Hub',
+  title: 'Health Insights & Guides',
   description: 'Expert medical guides, healthcare tips, and community health news for the Asian community.',
 };
 
@@ -52,121 +53,58 @@ function formatDate(date: string | null) {
   });
 }
 
-function ArticleMetaRow({
-  article,
-  featured = false,
-}: {
-  article: Article;
-  featured?: boolean;
-}) {
-  const primaryTag = article.tags[0] || article.category || 'Community Health';
+/** site photos stand in when an article has no usable image, a different one per position */
+const ARTICLE_FALLBACKS = ['a3-guide-left', 'a4-guide-right', 'b3-steps', 'h2-step-filter', 'h3-step-compare', 'a2-section2'].map(
+  (n) => `/brand/photos/${n}.webp`,
+);
+const fallbackAt = (i: number) => ARTICLE_FALLBACKS[i % ARTICLE_FALLBACKS.length];
+
+function ArticlePhoto({ article, i, eager }: { article: Article; i: number; eager?: boolean }) {
   return (
-    <div className="lg-ins-meta">
-      <span className={`lg-ins-tag ${featured ? 'lg-ins-tag--solid' : ''}`}>
-        <span className="dot" aria-hidden="true" />
-        {primaryTag}
-      </span>
-      <span className="lg-ins-date">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="13"
-          height="13"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden="true"
-        >
-          <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
-          <line x1="16" x2="16" y1="2" y2="6" />
-          <line x1="8" x2="8" y1="2" y2="6" />
-          <line x1="3" x2="21" y1="10" y2="10" />
-        </svg>
-        {formatDate(article.published_at)}
-      </span>
-    </div>
+    <SiteImg
+      src={getSafeArticleImageSrc(article.seo_meta.og_image)}
+      fallback={fallbackAt(i)}
+      alt=""
+      eager={eager}
+      className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+    />
   );
 }
 
-function FeaturedArticleCard({ article }: { article?: Article }) {
-  if (!article) {
-    return (
-      <div className="rounded-[22px] bg-white p-8 text-sm text-[#5A7A70] border border-[#024E44]/12">
-        No published articles yet.
-      </div>
-    );
-  }
+function Meta({ article, light = false }: { article: Article; light?: boolean }) {
+  return <p className={`text-xs font-semibold ${light ? 'opacity-90' : 'opacity-55'}`}>{formatDate(article.published_at)}</p>;
+}
 
+/** the lead story of a section: a photo tile with the headline over it */
+function LeadCard({ article, i }: { article: Article; i: number }) {
   return (
-    <Link href={`/insights/${article.slug}`} className="lg-ins-featured">
-      <div className="lg-ins-featured-media">
-        <ArticleImage
-          src={article.seo_meta.og_image}
-          alt={article.title}
-          className="h-full w-full"
-        />
-      </div>
-      <div className="lg-ins-featured-body">
-        <ArticleMetaRow article={article} featured />
-        <h3 className="line-clamp-3">{article.title}</h3>
-        <p className="line-clamp-4">
-          {article.excerpt || 'Read practical healthcare guidance for Asian American patients and families.'}
-        </p>
-        <div className="mt-auto pt-3">
-          <span className="lg-ins-btn">
-            <span>Read Full Guide</span>
-            <span className="ico" aria-hidden="true">→</span>
-          </span>
+    <Link href={`/insights/${article.slug}`} className={`group relative block h-full min-h-[30rem] overflow-hidden ${tile} ${ring} md:min-h-[min(48rem,88svh)]`}>
+      <ArticlePhoto article={article} i={i} />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+      <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-6 p-3 text-white md:bottom-6 md:left-6 md:right-6 md:p-5">
+        <div className="min-w-0">
+          <Meta article={article} light />
+          <h3 className="mt-3 line-clamp-3 max-w-[20ch] text-[clamp(2.25rem,4.4vw,4.5rem)] font-bold leading-[0.98] tracking-tight">{article.title}</h3>
         </div>
+        <ArrowCircle light className="hidden md:flex" />
       </div>
     </Link>
   );
 }
 
-function SecondaryTopArticleCard({ article }: { article: Article }) {
-  return (
-    <Link href={`/insights/${article.slug}`} className="lg-ins-horizontal">
-      <div className="lg-ins-horizontal-media">
-        <ArticleImage
-          src={article.seo_meta.og_image}
-          alt={article.title}
-          className="h-full w-full"
-        />
-      </div>
-      <div className="lg-ins-horizontal-body">
-        <ArticleMetaRow article={article} />
-        <h3 className="line-clamp-2">{article.title}</h3>
-        <p className="line-clamp-2">
-          {article.excerpt || 'Short, useful healthcare context for choosing care with confidence.'}
-        </p>
-        <div className="lg-ins-horizontal-foot">
-          <span>Read article</span>
-          <span className="circle" aria-hidden="true">→</span>
-        </div>
-      </div>
-    </Link>
-  );
-}
+const STORY_BG = ['bg-stone-50', 'bg-[#E3F1EC]', 'bg-[#FBF4EC]', 'bg-stone-50'] as const;
 
-function CompactArticleCard({ article }: { article: Article }) {
+/** a standard story: photo on top, words below on the tile */
+function StoryCard({ article, i, bg }: { article: Article; i: number; bg: string }) {
   return (
-    <Link href={`/insights/${article.slug}`} className="lg-card lg-ins-compact">
-      <div className="ph">
-        <ArticleImage
-          src={article.seo_meta.og_image}
-          alt={article.title}
-          className="h-full w-full"
-        />
+    <Link href={`/insights/${article.slug}`} className={`group flex flex-col overflow-hidden ${tile} ${bg} ${ring}`}>
+      <div className="relative m-2 aspect-[4/3] overflow-hidden rounded-lg md:m-3 md:rounded-xl">
+        <ArticlePhoto article={article} i={i} />
       </div>
-      <div className="bd">
-        <ArticleMetaRow article={article} />
-        <h3 className="line-clamp-2">{article.title}</h3>
-        <p className="line-clamp-3">
-          {article.excerpt || 'Practical healthcare context for choosing care with confidence.'}
-        </p>
-        <div className="lg-ins-compact-foot">
-          <span>Read article</span>
-          <span className="circle" aria-hidden="true">→</span>
+      <div className="flex flex-1 flex-col gap-2 px-4 pb-5 pt-2 md:px-5 md:pb-6">
+        <h3 className="line-clamp-3 text-lg font-bold leading-snug group-hover:underline">{article.title}</h3>
+        <div className="mt-auto pt-1">
+          <Meta article={article} />
         </div>
       </div>
     </Link>
@@ -174,71 +112,57 @@ function CompactArticleCard({ article }: { article: Article }) {
 }
 
 function ArticleSection({
-  eyebrow,
   title,
-  tintFrom = 2,
   description,
   articles,
   viewAllHref,
   showAll = false,
-  variant = 'paper',
+  offset = 0,
+  tone = 'zinc',
 }: {
-  eyebrow: string;
   title: string;
-  tintFrom?: number;
   description: string;
   articles: Article[];
   viewAllHref: string;
   showAll?: boolean;
-  variant?: 'paper' | 'white';
+  offset?: number;
+  tone?: 'zinc' | 'ink';
 }) {
-  const [featured, ...rest] = articles;
-  const topArticles = rest.slice(0, 2);
-  const compact = showAll ? rest.slice(2) : rest.slice(2, 6);
+  const [lead, ...rest] = articles;
+  const more = showAll ? rest : rest.slice(0, 4);
 
   return (
-    <section className={`lg-section ${variant === 'white' ? 'lg-section--white' : ''}`}>
-      <div className="lg-wrap">
-        <div className="lg-ins-sec-head">
+    <>
+      <Grid className="md:grid-cols-4">
+        <Tile tone={tone} className={`flex min-h-[14rem] flex-col justify-between gap-6 ${pad}`}>
+          <Display size="text-[clamp(2.25rem,3.6vw,4rem)]">{title}</Display>
           <div>
-            <span className="lg-ins-kicker">{eyebrow}</span>
-            <SplitTitle as="h2" text={title} tintFrom={tintFrom} />
-            <p className="lg-ins-sub">{description}</p>
+            <Caption className="opacity-75">{description}</Caption>
+            {!showAll && articles.length > 1 && (
+              <Pill href={viewAllHref} variant={tone === 'ink' ? 'white' : 'ink'} className="mt-5">
+                View all
+              </Pill>
+            )}
           </div>
-          {!showAll && (
-            <Link href={viewAllHref} className="lg-ins-viewall">
-              <span>View all articles</span>
-              <span className="arr" aria-hidden="true">→</span>
-            </Link>
+        </Tile>
+        <div className="md:col-span-3">
+          {lead ? (
+            <LeadCard article={lead} i={offset} />
+          ) : (
+            <Tile tone="stone" className={`h-full ${pad}`}>
+              <Caption>No articles here yet.</Caption>
+            </Tile>
           )}
         </div>
-
-        <div className="lg-ins-lead-grid">
-          <Reveal className="lg-fill">
-            <FeaturedArticleCard article={featured} />
-          </Reveal>
-          {topArticles.length > 0 && (
-            <div className="lg-ins-side-stack">
-              {topArticles.map((article, i) => (
-                <Reveal key={article.id} delay={0.08 * (i + 1)} className="lg-fill">
-                  <SecondaryTopArticleCard article={article} />
-                </Reveal>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {compact.length > 0 && (
-          <div className="lg-ins-grid4">
-            {compact.map((article, i) => (
-              <Reveal key={article.id} delay={(i % 4) * 0.06} className="lg-fill">
-                <CompactArticleCard article={article} />
-              </Reveal>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
+      </Grid>
+      {more.length > 0 && (
+        <Grid className="sm:grid-cols-2 lg:grid-cols-4">
+          {more.map((a, i) => (
+            <StoryCard key={a.id} article={a} i={offset + 1 + i} bg={STORY_BG[i % STORY_BG.length]} />
+          ))}
+        </Grid>
+      )}
+    </>
   );
 }
 
@@ -250,6 +174,15 @@ function isModeCategory(categorySlug?: string) {
     categorySlug === 'guides' ||
     categorySlug === 'in-depth-guides'
   );
+}
+
+/** stored tags are sometimes slugs ("AAPI-heritage-month"); show them as words */
+function topicLabel(tag: string) {
+  if (tag.includes(' ') || !tag.includes('-')) return tag;
+  return tag
+    .split('-')
+    .map((w) => (w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ');
 }
 
 export default async function InsightsPage({
@@ -277,150 +210,142 @@ export default async function InsightsPage({
 
   const heroArticle = latestInsights[0] ?? latestGuides[0];
   const topics = [...new Set([...articleTags, ...DEFAULT_HOT_TAGS])]
-    .map((topic) => ({ label: topic, slug: slugifyArticleCategory(topic) }))
+    .map((topic) => ({ label: topicLabel(topic), slug: slugifyArticleCategory(topic) }))
     .filter((topic) => topic.slug && !isModeCategory(topic.slug))
     .slice(0, 10);
 
   return (
-    <div className="lg">
-      {/* ===== Insights Hero ===== */}
-      <header className="lg-ins-hero">
-        <div className="lg-wrap">
-          <div className="grid">
-            <div>
-              <span className="lg-dir-eyebrow">Community Health Journal</span>
-              <SplitTitle
-                as="h1"
-                text="Evidence-based health guides for Asian American families."
-                tintFrom={4}
-              />
-              <p className="lead">
-                Practical medical articles, preventive checklists, and in-depth care guides tailored to Vietnamese and Korean communities navigating the US healthcare system.
-              </p>
-
-              <div className="lg-ins-modes">
-                {CATEGORY_FILTERS.map((filter) => {
-                  const isActive =
-                    (!filter.slug && !categorySlug && !tagSlug) || filter.slug === selectedMode;
-                  return (
-                    <Link
-                      key={filter.label}
-                      href={filter.slug ? categoryHref(filter.slug) : '/insights'}
-                      className={`lg-ins-mode ${isActive ? 'is-active' : ''}`}
-                    >
-                      {filter.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-
-            {heroArticle && (
-              <Reveal delay={0.1}>
-                <Link href={`/insights/${heroArticle.slug}`} className="lg-ins-spotlight">
-                  <div className="lg-ins-spotlight-media">
-                    <ArticleImage
-                      src={heroArticle.seo_meta.og_image}
-                      alt={heroArticle.title}
-                      className="h-full w-full"
-                    />
-                  </div>
-                  <div className="lg-ins-spotlight-body">
-                    <span className="lg-ins-spotlight-kicker">Featured Story</span>
-                    <h3 className="line-clamp-2">{heroArticle.title}</h3>
-                    <p className="line-clamp-2">
-                      {heroArticle.excerpt || 'Read our latest community guide for navigating bilingual care.'}
-                    </p>
-                  </div>
-                </Link>
-              </Reveal>
-            )}
+    <Page>
+      {/* Hero: title tile, then the featured story */}
+      <Grid className="md:grid-cols-2">
+        <Tile tone="stone" as="header" className={`flex min-h-[28rem] flex-col justify-between gap-10 ${pad}`}>
+          <Caption>Health Guides</Caption>
+          <div>
+            <Display as="h1">
+              Health
+              <br />
+              guides for
+              <br />
+              your family
+            </Display>
+            <Caption className="mt-5 opacity-75">Written for Vietnamese, Korean and Chinese American families</Caption>
+            <nav className="mt-7 flex flex-wrap gap-1.5" aria-label="Article type">
+              {CATEGORY_FILTERS.map((filter) => {
+                const isActive = (!filter.slug && !categorySlug && !tagSlug) || filter.slug === selectedMode;
+                return (
+                  <Link
+                    key={filter.label}
+                    href={filter.slug ? categoryHref(filter.slug) : '/insights'}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`rounded-full px-5 py-2.5 text-sm font-bold transition-colors ${ring} ${
+                      isActive ? 'bg-[#0D1F1C] text-white' : 'bg-white ring-1 ring-[#0D1F1C]/10 hover:bg-[#E3F1EC]'
+                    }`}
+                  >
+                    {filter.label}
+                  </Link>
+                );
+              })}
+            </nav>
           </div>
-        </div>
-      </header>
+        </Tile>
+        {heroArticle ? (
+          <Link href={`/insights/${heroArticle.slug}`} className={`group relative min-h-[24rem] overflow-hidden ${tile} ${ring}`}>
+            <ArticlePhoto article={heroArticle} i={5} eager />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/5 to-transparent" />
+            <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-bold backdrop-blur-md md:left-5 md:top-5">
+              Featured story
+            </span>
+            <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-6 rounded-xl bg-black/30 p-4 text-white backdrop-blur-xl md:bottom-5 md:left-5 md:right-5 md:rounded-2xl md:p-5">
+              <div className="min-w-0">
+                <h2 className="line-clamp-2 text-xl font-bold leading-tight md:text-2xl">{heroArticle.title}</h2>
+              </div>
+              <ArrowCircle light />
+            </div>
+          </Link>
+        ) : (
+          <Tile tone="mint" className={pad}>
+            <Caption>No published articles yet.</Caption>
+          </Tile>
+        )}
+      </Grid>
 
-      {/* ===== Topic Filter Bar ===== */}
-      <section className="lg-ins-topics" aria-label="Filter by topic">
-        <div className="lg-wrap">
-          <div className="lg-ins-topics-row">
-            <span className="lg-ins-topics-lbl">Hot Topics:</span>
-            <Link
-              href="/insights"
-              className={`lg-topic-pill ${!categorySlug && !tagSlug ? 'is-active' : ''}`}
-            >
-              All Topics
-            </Link>
-            {topics.map((topic) => (
+      {/* Topics */}
+      {/* phones: one row that scrolls sideways; wider screens: the chips wrap beside the label */}
+      <Tile tone="stone" className="py-4 md:flex md:items-center md:gap-4 md:px-7 md:py-5">
+        <span className="block px-4 text-xs font-semibold uppercase tracking-widest opacity-55 md:shrink-0 md:px-0">Topics</span>
+        <nav
+          className="mt-3 flex gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] md:mt-0 md:flex-wrap md:overflow-visible md:px-0 [&::-webkit-scrollbar]:hidden"
+          aria-label="Filter by topic"
+        >
+          {[{ label: 'All topics', slug: '' }, ...topics].map((topic) => {
+            const on = topic.slug ? tagSlug === topic.slug : !categorySlug && !tagSlug;
+            return (
               <Link
-                key={topic.slug}
-                href={tagHref(topic.slug)}
-                className={`lg-topic-pill ${tagSlug === topic.slug ? 'is-active' : ''}`}
+                key={topic.slug || 'all'}
+                href={topic.slug ? tagHref(topic.slug) : '/insights'}
+                aria-current={on ? 'page' : undefined}
+                className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors ${ring} ${
+                  on ? 'bg-[#024E44] text-white' : 'bg-white hover:bg-[#E3F1EC]'
+                }`}
               >
                 {topic.label}
               </Link>
-            ))}
-          </div>
-        </div>
-      </section>
+            );
+          })}
+        </nav>
+      </Tile>
 
-      {/* ===== Editorial Sections ===== */}
       {selectedMode !== 'guide' && (
         <ArticleSection
-          eyebrow="Community Updates & Tips"
-          title="Latest Health Insights"
-          tintFrom={2}
-          description="Concise, actionable medical guidance and local healthcare updates for patients and caregivers."
+          title="Latest insights"
+          description="Short reads for patients and caregivers"
           articles={latestInsights}
           viewAllHref={categoryHref('insights')}
           showAll={Boolean(categorySlug || tagSlug)}
-          variant="paper"
         />
       )}
 
       {selectedMode !== 'insight' && (
         <ArticleSection
-          eyebrow="Step-by-Step Playbooks"
-          title="In-Depth Patient Guides"
-          tintFrom={2}
-          description="Comprehensive guides covering USCIS medical exams, insurance coverage, preventive screenings, and choosing the right specialist."
+          title="In-depth guides"
+          description="Step by step, from insurance to screenings"
           articles={latestGuides}
           viewAllHref={categoryHref('guides')}
           showAll={Boolean(categorySlug || tagSlug)}
-          variant="white"
+          offset={3}
+          tone="ink"
         />
       )}
 
-      {/* ===== Bottom Film CTA ===== */}
-      <section className="lg-film">
-        <div className="lg-wrap">
-          <div className="lg-panel">
-            <ParallaxImage src="/brand/lg/primary-care.jpg" alt="Doctor consultation" />
-            <div className="copy">
-              <span className="lg-eyebrow" style={{ color: 'var(--lg-lime)' }}>
-                Put Knowledge Into Action
-              </span>
-              <SplitTitle
-                as="h2"
-                text="Ready to speak with a doctor in your language?"
-                tintFrom={5}
-              />
-              <p>
-                Browse verified clinics across the United States with Vietnamese, Korean, Mandarin, and Cantonese-speaking care teams.
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <Link href="/search" className="lg-cta lg-cta--lime">
-                  <span>Search the Directory</span>
-                  <span className="arr" aria-hidden="true">→</span>
-                </Link>
-                <Link href="/claim" className="lg-cta lg-cta--line">
-                  <span>Claim a Clinic Profile</span>
-                  <span className="arr" aria-hidden="true">→</span>
-                </Link>
-              </div>
+      {/* Closing: put it into action */}
+      <Grid className="md:grid-cols-4">
+        <Link href="/search" className={`group relative min-h-[22rem] overflow-hidden md:col-span-3 ${tile} ${ring}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/photos/a1-hero.webp" alt="" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" loading="lazy" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+          <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between gap-6 text-white md:bottom-7 md:left-7 md:right-7">
+            <div>
+              <h2 className="max-w-[18ch] text-[clamp(2rem,4.5vw,4.5rem)] font-bold leading-[0.95] tracking-tight">
+                Ready to speak with a doctor in your language?
+              </h2>
             </div>
+            <ArrowCircle light />
           </div>
-        </div>
-      </section>
-    </div>
+        </Link>
+        <Tile tone="mint" className={`flex min-h-[16rem] flex-col justify-between gap-6 ${pad}`}>
+          <div>
+            <Caption className="text-[#024E44]">For clinics</Caption>
+            <h3 className="mt-3 text-2xl font-bold leading-tight md:text-3xl">
+              Claim
+              <br />
+              your free
+              <br />
+              profile
+            </h3>
+          </div>
+          <Pill href="/claim" className="self-start">Claim Now</Pill>
+        </Tile>
+      </Grid>
+    </Page>
   );
 }

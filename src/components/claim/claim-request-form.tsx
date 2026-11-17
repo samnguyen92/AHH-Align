@@ -104,36 +104,36 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
 
   if (isAuthenticated === null) {
     return (
-      <div className="flex h-48 items-center justify-center rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <Loader2 className="h-6 w-6 animate-spin text-[var(--ahh-blue)]" />
+      <div className="flex h-48 items-center justify-center rounded-xl bg-stone-50 p-6 md:rounded-2xl">
+        <Loader2 className="h-6 w-6 animate-spin text-[#024E44]" aria-label="Loading" />
       </div>
     );
   }
 
   if (claimId) {
     return (
-      <div className="rounded-[16px] border border-emerald-100 bg-white p-6 sm:p-10 lg:p-12 shadow-3xs text-center space-y-6">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 mx-auto">
+      <div className="space-y-6 rounded-xl bg-[#E3F1EC] p-6 text-center sm:p-10 md:rounded-2xl lg:p-12" role="status">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white text-[#024E44]">
           <CheckCircle2 className="h-10 w-10" />
         </div>
         <div className="space-y-2">
-          <h2 className="text-2xl font-bold text-[var(--ahh-ink)]">Claim Submitted Successfully!</h2>
-          <p className="text-sm text-[var(--ahh-muted)] leading-relaxed">
-            Your request for <span className="font-semibold text-[var(--ahh-ink)]">{clinic.name}</span> is pending review. Our team will verify ownership and update status within 24-48 hours.
+          <h2 className="text-2xl font-bold">Claim submitted</h2>
+          <p className="text-sm font-medium leading-relaxed opacity-75">
+            Your request for <span className="font-bold">{clinic.name}</span> is pending review. Our team will verify ownership and update status within 24-48 hours.
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-3 pt-2">
           <Link
             href={`/api/claim/status/${claimId}`}
-            className="brand-button-secondary font-bold"
+            className="inline-flex min-h-12 items-center rounded-full border border-[#0D1F1C] px-6 text-sm font-bold btn-fx btn-fx--green"
           >
-            Check Status
+            Check status
           </Link>
           <Link
             href="/dashboard"
-            className="brand-button font-bold bg-[var(--ahh-deep-teal)] text-white hover:bg-[var(--ahh-deep-teal)]/90"
+            className="inline-flex min-h-12 items-center rounded-full bg-[#024E44] px-6 text-sm font-bold text-white btn-fx"
           >
-            Go to Dashboard
+            Go to dashboard
           </Link>
         </div>
       </div>
@@ -141,13 +141,13 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-[16px] bg-white p-6 sm:p-10 lg:p-12 border border-[var(--ahh-border)] shadow-3xs space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6 rounded-xl bg-white p-5 ring-1 ring-[#0D1F1C]/10 md:rounded-2xl md:p-7">
       <div>
-        <p className="text-xs font-bold uppercase tracking-widest text-[var(--ahh-deep-teal)]">
+        <p className="text-xs font-semibold uppercase tracking-widest opacity-55">
           Claim request
         </p>
-        <h1 className="mt-2 text-2xl font-bold text-[var(--ahh-ink)]">{clinic.name}</h1>
-        <p className="mt-2 text-xs text-[var(--ahh-muted)] leading-relaxed">
+        <h2 className="mt-2 text-2xl font-bold md:text-3xl">{clinic.name}</h2>
+        <p className="mt-2 text-sm font-medium leading-relaxed opacity-70">
           Verify that you own or manage this clinic profile. Approved owners will be able to update profile details in a later dashboard release.
         </p>
       </div>
@@ -156,33 +156,33 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
         {!isAuthenticated && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+              <label className="block text-sm font-bold">
                 Full name *
               </label>
               <input
                 required
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
-                className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+                className="h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]"
                 placeholder="Your full name"
               />
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+              <label className="block text-sm font-bold">
                 Role at Clinic *
               </label>
               <input
                 required
                 value={role}
                 onChange={(event) => setRole(event.target.value)}
-                className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+                className="h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]"
                 placeholder="Owner, Manager, Doctor, etc."
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+              <label className="block text-sm font-bold">
                 Email Address *
               </label>
               <input
@@ -190,13 +190,13 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
                 required
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+                className="h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]"
                 placeholder="you@example.com"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+              <label className="block text-sm font-bold">
                 Phone Number *
               </label>
               <input
@@ -204,7 +204,7 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
                 required
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
-                className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+                className="h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]"
                 placeholder="(555) 000-0000"
               />
             </div>
@@ -212,13 +212,13 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
         )}
 
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+          <label className="block text-sm font-bold">
             Verification Method *
           </label>
           <select
             value={proofType}
             onChange={(event) => setProofType(event.target.value)}
-            className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+            className="h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]"
           >
             <option value="npi_verification">NPI verification</option>
             <option value="phone_verification">Phone verification</option>
@@ -227,34 +227,34 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+          <label className="block text-sm font-bold">
             Proof Detail *
           </label>
           <input
             required
             value={proofValue}
             onChange={(event) => setProofValue(event.target.value)}
-            className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+            className="h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]"
             placeholder="NPI number, callback phone, or document reference"
           />
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-[var(--ahh-ink)] block">
+          <label className="block text-sm font-bold">
             Additional notes
           </label>
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             rows={4}
-            className="w-full px-3.5 py-2.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
+            className="w-full resize-y rounded-2xl bg-stone-50 px-5 py-3 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]"
             placeholder="Tell us your role at the clinic and the best way to verify ownership."
           />
         </div>
       </div>
 
       {message && (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs font-semibold text-destructive flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-800" role="alert">
           <span>{message}</span>
         </div>
       )}
@@ -263,7 +263,7 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
         <button
           type="submit"
           disabled={isLoading}
-          className="brand-button-secondary px-8 font-bold flex items-center justify-center shrink-0 min-h-10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex min-h-12 shrink-0 items-center justify-center rounded-full bg-[#024E44] px-7 text-sm font-bold text-white btn-fx disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
           Submit claim request

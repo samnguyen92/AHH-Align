@@ -60,21 +60,21 @@ export default async function DashboardEditPage({ searchParams }: EditDashboardP
     : clinics[0];
 
   return (
-    <main className="bg-gray-50 px-4 py-10 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="site-a bg-white px-3 pb-6 pt-20 text-[#0D1F1C] md:px-5 md:pt-[5.375rem]">
+      <div className="mx-auto max-w-[90rem]">
+        <div className="mb-1.5 flex flex-col gap-4 rounded-xl bg-stone-50 p-5 sm:flex-row sm:items-end sm:justify-between md:mb-2 md:rounded-2xl md:p-7">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-[var(--ahh-blue)]">
+            <p className="text-xs font-semibold uppercase tracking-widest opacity-55">
               Edit profile
             </p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-950">
+            <h1 className="mt-3 text-[clamp(2.25rem,4.5vw,4rem)] font-bold leading-[0.95] tracking-tight">
               Clinic profile manager
             </h1>
-            <p className="mt-2 text-sm text-gray-600">
+            <p className="mt-2 text-sm text-[#0D1F1C]/70">
               Update verified information for profiles approved under your account.
             </p>
           </div>
-          <Link href="/dashboard" className="text-sm font-semibold text-[var(--ahh-blue)] hover:underline">
+          <Link href="/dashboard" className="text-sm font-semibold text-[#024E44] hover:underline">
             Back to dashboard
           </Link>
         </div>
@@ -83,28 +83,28 @@ export default async function DashboardEditPage({ searchParams }: EditDashboardP
           <AccountSettingsForm initialName={user.name ?? ''} email={user.email ?? ''} />
 
           {clinics.length === 0 && (
-            <section className="rounded-lg border border-gray-200 bg-white p-8 text-center">
-              <h2 className="text-lg font-bold text-gray-950">No approved profiles yet</h2>
-              <p className="mt-2 text-sm text-gray-600">
+            <section className="rounded-xl bg-stone-50 p-8 text-center md:rounded-2xl">
+              <h2 className="text-lg font-bold text-[#0D1F1C]">No approved profiles yet</h2>
+              <p className="mt-2 text-sm text-[#0D1F1C]/70">
                 Submit a claim request first. Once approved, the profile will appear here.
               </p>
-              <Link href="/search" className="mt-5 inline-flex rounded-lg bg-[var(--ahh-blue)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--ahh-blue-dark)]">
+              <Link href="/search" className="mt-5 inline-flex rounded-full bg-[#024E44] px-6 py-3 text-sm font-bold text-white btn-fx">
                 Find your clinic
               </Link>
             </section>
           )}
 
           {clinics.length > 0 && (
-            <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
-              <aside className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
+            <div className="grid gap-2 md:gap-3 lg:grid-cols-[240px_1fr]">
+              <aside className="rounded-xl bg-stone-50 p-3 md:rounded-2xl">
                 {clinics.map((clinic) => (
                   <Link
                     key={clinic.id}
                     href={`/dashboard/edit?clinicId=${clinic.id}`}
-                    className={`block rounded-md px-3 py-2 text-sm font-medium ${
+                    className={`block rounded-full px-4 py-2.5 text-sm font-semibold transition-colors ${
                       selectedClinic?.id === clinic.id
-                        ? 'bg-blue-50 text-[var(--ahh-blue)]'
-                        : 'text-gray-700 hover:bg-gray-50'
+                        ? 'bg-[#0D1F1C] text-white'
+                        : 'hover:bg-[#E3F1EC]'
                     }`}
                   >
                     {clinic.name}
@@ -117,6 +117,6 @@ export default async function DashboardEditPage({ searchParams }: EditDashboardP
           )}
         </div>
       </div>
-    </main>
+    </div>
   );
 }

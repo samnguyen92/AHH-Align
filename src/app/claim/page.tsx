@@ -1,30 +1,38 @@
 "use client";
 
 import { useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import {
-  ArrowRight,
-  Search,
-  FileText,
-  ShieldCheck,
-  CheckCircle2,
-  Edit3,
-  Languages,
-  ImagePlus,
-  Info,
-} from 'lucide-react';
-import { Reveal, SplitTitle } from '@/components/lg/motion';
+import { BadgeCheck, Check, CheckCircle2, Edit3, ImagePlus, Info, Languages, Star } from 'lucide-react';
+import { Caption, Display, Grid, Page, Pill, Roll, Tile, pad, ring } from '@/components/site/ui';
+
+const STEPS = [
+  { title: 'Find your clinic' },
+  { title: 'Submit ownership' },
+  { title: 'AHH verifies' },
+  { title: 'Access granted' },
+] as const;
+
+const PERKS = [
+  { title: 'Edit information', icon: Edit3 },
+  { title: 'Language support', icon: Languages },
+  { title: 'Photos and logo', icon: ImagePlus },
+] as const;
+
+const UPDATE_OPTIONS = [
+  ['profileInfo', 'Profile info'],
+  ['hoursLocation', 'Hours and location'],
+  ['languageSupport', 'Language support'],
+  ['specialtiesServices', 'Specialties and services'],
+  ['other', 'Other (note below)'],
+  ['missingClinic', 'Missing clinic (add new)'],
+] as const;
+
+const btn = `inline-flex min-h-12 shrink-0 items-center justify-center rounded-full px-6 text-sm font-bold md:text-base ${ring} btn-fx`;
+const input =
+  'h-12 w-full rounded-full bg-stone-50 px-5 text-base font-medium outline-none ring-1 ring-[#0D1F1C]/10 transition placeholder:text-[#0D1F1C]/40 focus:bg-white focus:ring-2 focus:ring-[#024E44]';
 
 export default function ClaimLandingPage() {
-  const router = useRouter();
-
-  // Scroll Helpers
   const scrollToSection = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    }
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
 
   // Form State
@@ -48,10 +56,6 @@ export default function ClaimLandingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState('');
-
-  // Footer Search State
-  const [footerKeyword, setFooterKeyword] = useState('');
-  const [footerLanguage, setFooterLanguage] = useState('');
 
   const handleCheckboxChange = (key: keyof typeof updates) => {
     setUpdates((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -106,492 +110,224 @@ export default function ClaimLandingPage() {
     }
   };
 
-  const handleFooterSearch = () => {
-    const params = new URLSearchParams();
-    if (footerKeyword) params.set('q', footerKeyword);
-    if (footerLanguage) params.set('language', footerLanguage);
-    router.push(`/search?${params.toString()}`);
+
+
+  const resetForm = () => {
+    setIsSuccess(false);
+    setClinicName('');
+    setFullName('');
+    setRole('');
+    setEmail('');
+    setWebsite('');
+    setPhone('');
+    setUpdates({
+      profileInfo: false,
+      hoursLocation: false,
+      languageSupport: false,
+      specialtiesServices: false,
+      other: false,
+      missingClinic: false,
+    });
+    setNotes('');
+    setConsent(false);
   };
 
   return (
-    <div className="bg-[#E5F0EB] px-[10px] pb-[10px] min-h-screen">
-      <div className="home-shell space-y-6">
-
-        {/* Hero Section */}
-        <section className="overflow-hidden rounded-[16px] bg-[var(--ahh-deep-teal)] text-white">
-          <div className="grid min-h-[580px] items-center gap-10 px-6 pb-16 pt-32 sm:px-10 lg:grid-cols-[minmax(0,1fr)_480px] lg:px-20 lg:pb-20 lg:pt-40">
-            <div className="max-w-2xl">
-              <p className="mb-5 inline-flex rounded-full bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-white/75">
-                Provider Ownership
-              </p>
-              <SplitTitle
-                text="Reach Vietnamese & Korean Patients – Claim Your Free Clinic Profile"
-                tintFrom={6}
-                className="text-[36px] sm:text-[48px] lg:text-[54px] font-light leading-[1.1] tracking-normal"
-              />
-              <p className="mt-6 max-w-xl text-sm sm:text-base leading-7 text-white/70">
-                Already listed or new? Claim your profile to update your info, show in our directory list, and start attracting thousands of Vietnamese and Korean speaking patients.
-              </p>
-
-              {/* Checklist */}
-              <div className="mt-8 flex flex-col sm:flex-row gap-4 sm:gap-6 text-sm font-semibold">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--ahh-lime)] text-[var(--ahh-deep-teal)]">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                  </span>
-                  <span>#1 Clinics in AHH lists</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--ahh-lime)] text-[var(--ahh-deep-teal)]">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                  </span>
-                  <span>No fees</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--ahh-lime)] text-[var(--ahh-deep-teal)]">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                  </span>
-                  <span>Targeted Patients</span>
-                </div>
-              </div>
-
-              {/* Buttons */}
-              <div className="mt-8 flex flex-wrap gap-4">
-                <button
-                  onClick={() => scrollToSection('new-submission-form')}
-                  className="brand-button bg-[var(--ahh-lime)] text-[var(--ahh-deep-teal)] hover:bg-[var(--ahh-lime)]/90 cursor-pointer font-bold"
-                >
-                  Submit a new Clinic Profile
-                </button>
-                <button
-                  onClick={() => scrollToSection('claim-existing')}
-                  className="brand-button border border-white bg-transparent text-white hover:bg-white/10 cursor-pointer font-bold"
-                >
-                  Claim an Existing Profile
-                </button>
-              </div>
+    <Page>
+      {/* Hero: the offer beside a sample profile */}
+      <Grid className="md:grid-cols-2">
+        <Tile tone="green" as="header" className={`flex min-h-[30rem] flex-col justify-between gap-10 ${pad}`}>
+          <Caption className="opacity-80">Claim your free clinic profile</Caption>
+          <div>
+            <h1 className="max-w-[16ch] text-[clamp(2.5rem,5.4vw,5.5rem)] font-bold leading-[0.95] tracking-tight">
+              Reach Vietnamese &amp; Korean patients
+            </h1>
+            <Caption className="mt-5 opacity-85">Already listed or new, it is free</Caption>
+            <ul className="mt-6 flex flex-wrap gap-1.5 text-xs font-semibold">
+              {['#1 Clinics in AHH lists', 'No fees', 'Targeted patients'].map((x) => (
+                <li key={x} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5">
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  {x}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-7 flex flex-wrap gap-2">
+              <button type="button" onClick={() => scrollToSection('new-submission-form')} className={`${btn} btn-fx--green bg-white text-[#0D1F1C]`}>
+                <Roll>Submit a new clinic</Roll>
+              </button>
+              <button type="button" onClick={() => scrollToSection('claim-existing')} className={`${btn} btn-fx--white border border-white text-white`}>
+                <Roll>Claim an existing profile</Roll>
+              </button>
             </div>
-
-            {/* SVG Profile Mockup */}
-            <Reveal delay={0.12} className="relative overflow-hidden rounded-[18px] bg-white/5 border border-white/10 p-6 flex flex-col justify-between shadow-2xl h-[340px] text-white">
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold">Anchor Dental Georgia</h3>
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-white">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                    </span>
-                  </div>
-                  <p className="text-xs text-white/60 mt-1">Duluth, Georgia</p>
-                </div>
-                <span className="text-2xs bg-emerald-500/20 text-emerald-300 font-extrabold uppercase px-2 py-0.5 rounded-full border border-emerald-500/30">
-                  Verified
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center gap-1.5 text-xs text-white/80">
-                  <span className="text-white/40">Specialty:</span>
-                  <span className="font-semibold bg-white/10 px-2 py-0.5 rounded-md text-2xs">Dental</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-white/80">
-                  <span className="text-white/40">Languages:</span>
-                  <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md text-2xs font-bold">Vietnamese</span>
-                  <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-md text-2xs font-bold">English</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-white/80">
-                  <span className="text-white/40">Rating:</span>
-                  <div className="flex items-center text-amber-400 gap-0.5">
-                    {[...Array(5)].map((_, i) => (
-                      <svg key={i} xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                    ))}
-                  </div>
-                  <span className="font-bold text-white/90">4.9</span>
-                  <span className="text-white/50 text-3xs">(84 reviews)</span>
-                </div>
-              </div>
-
-              <div className="border-t border-white/10 pt-4 flex justify-between items-center text-2xs text-white/50">
-                <span>Attracting patients 24/7</span>
-                <span className="text-emerald-400 font-bold">AHH #1 List</span>
-              </div>
-            </Reveal>
           </div>
-        </section>
+        </Tile>
 
-        {/* How It Works Section */}
-        <section className="home-section rounded-[16px] bg-white px-5 py-16 sm:px-10 lg:px-20">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <h2 className="text-3xl font-bold text-[var(--ahh-ink)]">How It Works</h2>
-            <p className="mt-3 text-sm text-[var(--ahh-muted)]">
-              Get your profile claimed and updated in 4 simple steps.
+        {/* sample of what a claimed profile shows */}
+        <Tile tone="mint" className={`flex min-h-[22rem] flex-col justify-center ${pad}`}>
+          <div className="rounded-xl bg-white p-5 shadow-[0_20px_50px_-20px_rgba(13,31,28,0.25)] md:rounded-2xl md:p-6" aria-label="Example clinic profile">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold opacity-60">Dental</p>
+                <h2 className="mt-1 text-2xl font-bold leading-tight">Anchor Dental Georgia</h2>
+                <p className="mt-1 text-sm opacity-70">Duluth, Georgia</p>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full bg-[#E3F1EC] px-2.5 py-1 text-xs font-bold text-[#024E44]">
+                <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                Verified
+              </span>
+            </div>
+            <p className="mt-4 inline-flex items-center gap-1 text-sm font-bold">
+              <Star className="h-4 w-4 text-[#024E44]" fill="currentColor" aria-hidden="true" />
+              4.9 <span className="font-medium opacity-55">(84 reviews)</span>
             </p>
-          </div>
-
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Step 1 */}
-            <div className="rounded-[18px] bg-[var(--ahh-mist-2)] p-6 space-y-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[var(--ahh-blue)] shadow-3xs">
-                <Search className="h-5 w-5" />
-              </div>
-              <h3 className="text-sm font-bold text-[var(--ahh-ink)]">1. Find Your Clinic</h3>
-              <p className="text-xs leading-6 text-[var(--ahh-muted)]">
-                Search our directory to see if your clinic already exists. If not, you can submit a new one.
-              </p>
-            </div>
-
-            {/* Step 2 */}
-            <div className="rounded-[18px] bg-[var(--ahh-mist-2)] p-6 space-y-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[var(--ahh-blue)] shadow-3xs">
-                <FileText className="h-5 w-5" />
-              </div>
-              <h3 className="text-sm font-bold text-[var(--ahh-ink)]">2. Submit ownership</h3>
-              <p className="text-xs leading-6 text-[var(--ahh-muted)]">
-                Fill out the simple claim form on this page, or click &quot;Claim Clinic&quot; on your profile page.
-              </p>
-            </div>
-
-            {/* Step 3 */}
-            <div className="rounded-[18px] bg-[var(--ahh-mist-2)] p-6 space-y-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[var(--ahh-blue)] shadow-3xs">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <h3 className="text-sm font-bold text-[var(--ahh-ink)]">3. AHH Verifies</h3>
-              <p className="text-xs leading-6 text-[var(--ahh-muted)]">
-                Our team will review the request to verify you are authorized to manage this profile (takes 24-48 hours).
-              </p>
-            </div>
-
-            {/* Step 4 */}
-            <div className="rounded-[18px] bg-[var(--ahh-mist-2)] p-6 space-y-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[var(--ahh-blue)] shadow-3xs">
-                <CheckCircle2 className="h-5 w-5" />
-              </div>
-              <h3 className="text-sm font-bold text-[var(--ahh-ink)]">4. Access Granted</h3>
-              <p className="text-xs leading-6 text-[var(--ahh-muted)]">
-                Once verified, update language capabilities, specialties, reviews, and attract patients.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Claim Existing Profile Section */}
-        <section id="claim-existing" className="scroll-mt-28 home-section grid gap-10 rounded-[16px] bg-[var(--ahh-mist-2)] px-5 py-16 sm:px-10 lg:grid-cols-[1fr_minmax(0,1.2fr)] lg:items-center lg:px-20">
-          <div className="space-y-6">
-            <h2 className="text-[28px] sm:text-[34px] font-bold leading-tight text-[var(--ahh-ink)]">
-              Claim an Existing Clinic Profile
-            </h2>
-            <p className="text-sm leading-7 text-[var(--ahh-muted)]">
-              If your clinic is already listed on Asian Health Hub, you can claim ownership of it. This will let you keep your information accurate and up to date. Claiming is free, fast, and takes less than 5 minutes.
+            <p className="mt-3 flex flex-wrap gap-1">
+              {['Vietnamese', 'English'].map((l) => (
+                <span key={l} className="rounded-full bg-[#E3F1EC] px-2.5 py-0.5 text-xs font-semibold text-[#024E44]">{l}</span>
+              ))}
             </p>
-            <Link href="/search" className="brand-button-secondary inline-flex items-center gap-1.5 font-bold cursor-pointer">
-              Search & Claim Profile
-              <ArrowRight className="h-4 w-4" />
-            </Link>
+            <p className="mt-5 border-t border-[#0D1F1C]/10 pt-4 text-xs font-semibold opacity-60">Attracting patients 24/7</p>
           </div>
+        </Tile>
+      </Grid>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-[16px] bg-white p-5 space-y-3 shadow-3xs border border-gray-100 flex flex-col justify-between">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                <Edit3 className="h-4.5 w-4.5" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-[var(--ahh-ink)]">Edit Information</h4>
-                <p className="text-[11px] leading-5 text-[var(--ahh-muted)] mt-1">Keep hours, phone, address, services, and profile information up to date.</p>
-              </div>
-            </div>
+      {/* How it works */}
+      <Grid className="sm:grid-cols-2 lg:grid-cols-4">
+        {STEPS.map((s, i) => (
+          <Tile key={s.title} tone={i % 2 ? 'zinc' : 'stone'} className={`flex min-h-[17rem] flex-col justify-between gap-6 ${pad}`}>
+            <span className="text-[clamp(3.5rem,6vw,6rem)] font-bold leading-[0.8] tracking-tight tabular-nums">0{i + 1}</span>
+            <h3 className="text-xl font-bold leading-tight md:text-2xl">{s.title}</h3>
+          </Tile>
+        ))}
+      </Grid>
 
-            <div className="rounded-[16px] bg-white p-5 space-y-3 shadow-3xs border border-gray-100 flex flex-col justify-between">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                <Languages className="h-4.5 w-4.5" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-[var(--ahh-ink)]">Language support</h4>
-                <p className="text-[11px] leading-5 text-[var(--ahh-muted)] mt-1">Specify language capabilities like Vietnamese or Korean for patient trust.</p>
-              </div>
-            </div>
+      {/* Claim an existing profile */}
+      <Grid id="claim-existing" className="scroll-mt-28 md:grid-cols-4">
+        <Tile tone="ink" className={`flex min-h-[18rem] flex-col justify-between gap-8 md:col-span-1 ${pad}`}>
+          <h2 className="text-3xl font-bold leading-[1.02] tracking-tight md:text-4xl">Claim an existing profile</h2>
+          <Pill href="/search" variant="white" className="self-start">Search &amp; claim</Pill>
+        </Tile>
+        {PERKS.map((perk, i) => {
+          const Icon = perk.icon;
+          return (
+            <Tile key={perk.title} tone={i % 2 ? 'cream' : 'mint'} className={`isolate flex min-h-[18rem] flex-col justify-between gap-6 ${pad}`}>
+              <Icon className="pointer-events-none absolute -top-[10%] right-0 -z-10 h-[125%] w-auto translate-x-[34%] opacity-[0.07]" strokeWidth={1} aria-hidden="true" />
+              <span className="grid h-14 w-14 place-items-center rounded-full bg-white/70">
+                <Icon className="h-7 w-7" strokeWidth={1.6} aria-hidden="true" />
+              </span>
+              <h3 className="text-xl font-bold leading-tight md:text-2xl">{perk.title}</h3>
+            </Tile>
+          );
+        })}
+      </Grid>
 
-            <div className="rounded-[16px] bg-white p-5 space-y-3 shadow-3xs border border-gray-100 flex flex-col justify-between">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                <ImagePlus className="h-4.5 w-4.5" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-[var(--ahh-ink)]">Photos & Logo</h4>
-                <p className="text-[11px] leading-5 text-[var(--ahh-muted)] mt-1">Upload high quality photos of your facilities, doctors, and brand logo.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* New Clinic Submission Form Section */}
-        <section id="new-submission-form" className="scroll-mt-28 home-section rounded-[16px] bg-white p-6 sm:p-10 lg:p-12 border border-[var(--ahh-border)] shadow-3xs">
+      {/* New clinic submission */}
+      <Grid id="new-submission-form" className="scroll-mt-28 lg:grid-cols-4">
+        <Tile tone="stone" className={`flex min-h-[14rem] flex-col justify-between gap-6 ${pad}`}>
+          <Display size="text-[clamp(2.5rem,4.6vw,4.5rem)]">
+            Submit
+            <br />
+            a clinic
+          </Display>
+          <Caption className="opacity-70">Reviewed within 24 to 48 hours</Caption>
+        </Tile>
+        <Tile tone="none" className={`bg-white ring-1 ring-[#0D1F1C]/10 lg:col-span-3 ${pad}`}>
           {isSuccess ? (
-            <div className="text-center py-12 space-y-6 max-w-md mx-auto">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 mx-auto">
-                <CheckCircle2 className="h-10 w-10" />
-              </div>
+            <div className="mx-auto max-w-md space-y-6 py-12 text-center" role="status">
+              <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#E3F1EC] text-[#024E44]">
+                <CheckCircle2 className="h-9 w-9" aria-hidden="true" />
+              </span>
               <div className="space-y-2">
-                <h3 className="text-2xl font-bold text-[var(--ahh-ink)]">Submission Successful!</h3>
-                <p className="text-sm text-[var(--ahh-muted)] leading-relaxed">
-                  Thank you for submitting your clinic profile information. Our verification team will review your application and contact you within 24-48 hours.
+                <h3 className="text-2xl font-bold">Submission received</h3>
+                <p className="text-sm font-medium leading-relaxed opacity-75">
+                  Thank you for submitting your clinic profile information. Our verification team will review your application
+                  and contact you within 24-48 hours.
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setIsSuccess(false);
-                  setClinicName('');
-                  setFullName('');
-                  setRole('');
-                  setEmail('');
-                  setWebsite('');
-                  setPhone('');
-                  setUpdates({
-                    profileInfo: false,
-                    hoursLocation: false,
-                    languageSupport: false,
-                    specialtiesServices: false,
-                    other: false,
-                    missingClinic: false,
-                  });
-                  setNotes('');
-                  setConsent(false);
-                }}
-                className="brand-button-secondary font-bold cursor-pointer"
-              >
-                Submit another profile
+              <button type="button" onClick={resetForm} className={`${btn} btn-fx--green border border-[#0D1F1C]`}>
+                <Roll>Submit another profile</Roll>
               </button>
             </div>
           ) : (
-            <div className="space-y-8">
-              <div>
-                <h2 className="text-2xl font-bold text-[var(--ahh-ink)]">New Clinic Submission Form</h2>
-                <p className="text-xs text-[var(--ahh-muted)] mt-1.5">
-                  Fields marked with an asterisk (*) are required.
-                </p>
-              </div>
-
+            <form onSubmit={handleFormSubmit} className="space-y-6">
               {error && (
-                <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs font-semibold text-destructive flex items-center gap-2">
-                  <Info className="h-4 w-4 shrink-0" />
-                  <span>{error}</span>
-                </div>
+                <p className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-800" role="alert">
+                  <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {error}
+                </p>
               )}
 
-              <form onSubmit={handleFormSubmit} className="space-y-6">
-                <div className="grid gap-6 sm:grid-cols-2">
-                  {/* Clinic Name */}
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <label className="text-xs font-bold text-[var(--ahh-ink)]">
-                      Clinic/Practice Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Type clinic name to search or add to our directory"
-                      value={clinicName}
-                      onChange={(e) => setClinicName(e.target.value)}
-                      className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
-                    />
-                  </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field id="claim-clinic" label="Clinic or practice name *" className="sm:col-span-2">
+                  <input id="claim-clinic" type="text" required placeholder="Type clinic name" value={clinicName} onChange={(e) => setClinicName(e.target.value)} className={input} />
+                </Field>
+                <Field id="claim-name" label="Your full name *">
+                  <input id="claim-name" type="text" required placeholder="e.g., Dr. Tom Nguyen" value={fullName} onChange={(e) => setFullName(e.target.value)} className={input} />
+                </Field>
+                <Field id="claim-role" label="Your role at the clinic *">
+                  <input id="claim-role" type="text" required placeholder="Owner, medical director, practice manager…" value={role} onChange={(e) => setRole(e.target.value)} className={input} />
+                </Field>
+                <Field id="claim-email" label="Clinic email address *" className="sm:col-span-2">
+                  <input id="claim-email" type="email" required placeholder="info@clinicdomain.com" value={email} onChange={(e) => setEmail(e.target.value)} className={input} />
+                </Field>
+                <Field id="claim-web" label="Clinic website">
+                  <input id="claim-web" type="url" placeholder="www.clinicname.com" value={website} onChange={(e) => setWebsite(e.target.value)} className={input} />
+                </Field>
+                <Field id="claim-phone" label="Phone number *">
+                  <input id="claim-phone" type="tel" required placeholder="Public facing phone number" value={phone} onChange={(e) => setPhone(e.target.value)} className={input} />
+                </Field>
+              </div>
 
-                  {/* Full Name */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[var(--ahh-ink)]">
-                      Your Full Name *
+              <fieldset className="space-y-3">
+                <legend className="text-sm font-bold">What would you like to update? <span className="font-medium opacity-60">(select all that apply)</span></legend>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {UPDATE_OPTIONS.map(([key, label]) => (
+                    <label
+                      key={key}
+                      className={`flex min-h-12 cursor-pointer select-none items-center gap-3 rounded-full px-4 text-sm font-semibold transition-colors ${
+                        updates[key] ? 'bg-[#0D1F1C] text-white' : 'bg-stone-50 hover:bg-[#E3F1EC]'
+                      }`}
+                    >
+                      <input type="checkbox" checked={updates[key]} onChange={() => handleCheckboxChange(key)} className="h-4 w-4 shrink-0 accent-[#024E44]" />
+                      {label}
                     </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g., Dr. Tom Nguyen"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
-                    />
-                  </div>
-
-                  {/* Role */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[var(--ahh-ink)]">
-                      Your Role at the Clinic *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Owner / Medical Director / Practice Manager / Other"
-                      value={role}
-                      onChange={(e) => setRole(e.target.value)}
-                      className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
-                    />
-                  </div>
-
-                  {/* Clinic Email */}
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <label className="text-xs font-bold text-[var(--ahh-ink)]">
-                      Clinic Email Address *
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="info@clinicdomain.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
-                    />
-                  </div>
-
-                  {/* Clinic Website */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[var(--ahh-ink)]">
-                      Clinic Website Address
-                    </label>
-                    <input
-                      type="url"
-                      placeholder="Website URL (e.g. www.clinicname.com)"
-                      value={website}
-                      onChange={(e) => setWebsite(e.target.value)}
-                      className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
-                    />
-                  </div>
-
-                  {/* Phone Number */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[var(--ahh-ink)]">
-                      Phone Number *
-                    </label>
-                    <input
-                      type="tel"
-                      required
-                      placeholder="Public facing phone number"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      className="w-full h-10 px-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors"
-                    />
-                  </div>
+                  ))}
                 </div>
+              </fieldset>
 
-                {/* What would you like to update */}
-                <div className="space-y-3">
-                  <label className="text-xs font-bold text-[var(--ahh-ink)] block">
-                    What Would You Like to Update? (Select all that apply)
-                  </label>
+              <Field id="claim-notes" label="Notes (max 500 characters)">
+                <textarea
+                  id="claim-notes"
+                  maxLength={500}
+                  placeholder="We also offer acupuncture and nutrition counseling…"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={4}
+                  className={`${input} h-auto resize-y rounded-2xl py-3`}
+                />
+              </Field>
 
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <label className="flex items-center gap-2.5 rounded-xl border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/30 p-3 text-xs font-semibold text-gray-700 cursor-pointer select-none hover:bg-white">
-                      <input
-                        type="checkbox"
-                        checked={updates.profileInfo}
-                        onChange={() => handleCheckboxChange('profileInfo')}
-                        className="rounded border-gray-300 text-[var(--ahh-deep-teal)] focus:ring-[var(--ahh-deep-teal)] h-4 w-4"
-                      />
-                      <span>Profile Info</span>
-                    </label>
-
-                    <label className="flex items-center gap-2.5 rounded-xl border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/30 p-3 text-xs font-semibold text-gray-700 cursor-pointer select-none hover:bg-white">
-                      <input
-                        type="checkbox"
-                        checked={updates.hoursLocation}
-                        onChange={() => handleCheckboxChange('hoursLocation')}
-                        className="rounded border-gray-300 text-[var(--ahh-deep-teal)] focus:ring-[var(--ahh-deep-teal)] h-4 w-4"
-                      />
-                      <span>Hours & Location</span>
-                    </label>
-
-                    <label className="flex items-center gap-2.5 rounded-xl border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/30 p-3 text-xs font-semibold text-gray-700 cursor-pointer select-none hover:bg-white">
-                      <input
-                        type="checkbox"
-                        checked={updates.languageSupport}
-                        onChange={() => handleCheckboxChange('languageSupport')}
-                        className="rounded border-gray-300 text-[var(--ahh-deep-teal)] focus:ring-[var(--ahh-deep-teal)] h-4 w-4"
-                      />
-                      <span>Language Support</span>
-                    </label>
-
-                    <label className="flex items-center gap-2.5 rounded-xl border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/30 p-3 text-xs font-semibold text-gray-700 cursor-pointer select-none hover:bg-white">
-                      <input
-                        type="checkbox"
-                        checked={updates.specialtiesServices}
-                        onChange={() => handleCheckboxChange('specialtiesServices')}
-                        className="rounded border-gray-300 text-[var(--ahh-deep-teal)] focus:ring-[var(--ahh-deep-teal)] h-4 w-4"
-                      />
-                      <span>Specialties & Services</span>
-                    </label>
-
-                    <label className="flex items-center gap-2.5 rounded-xl border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/30 p-3 text-xs font-semibold text-gray-700 cursor-pointer select-none hover:bg-white">
-                      <input
-                        type="checkbox"
-                        checked={updates.other}
-                        onChange={() => handleCheckboxChange('other')}
-                        className="rounded border-gray-300 text-[var(--ahh-deep-teal)] focus:ring-[var(--ahh-deep-teal)] h-4 w-4"
-                      />
-                      <span>Other (please note below)</span>
-                    </label>
-
-                    <label className="flex items-center gap-2.5 rounded-xl border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/30 p-3 text-xs font-semibold text-gray-700 cursor-pointer select-none hover:bg-white">
-                      <input
-                        type="checkbox"
-                        checked={updates.missingClinic}
-                        onChange={() => handleCheckboxChange('missingClinic')}
-                        className="rounded border-gray-300 text-[var(--ahh-deep-teal)] focus:ring-[var(--ahh-deep-teal)] h-4 w-4"
-                      />
-                      <span>Missing Clinic (Add new)</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Additional Notes */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[var(--ahh-ink)] block">
-                    Add Some Notes (Update details | Max 500 characters)
-                  </label>
-                  <textarea
-                    maxLength={500}
-                    placeholder="We also offer Acupuncture and Nutrition counseling..."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={4}
-                    className="w-full p-3.5 rounded-lg border border-[var(--ahh-border)] bg-[var(--ahh-mist-2)]/50 focus:bg-white text-sm text-[var(--ahh-ink)] outline-none focus:border-[var(--ahh-deep-teal)] focus:ring-1 focus:ring-[var(--ahh-deep-teal)] transition-colors resize-y"
-                  />
-                </div>
-
-                {/* Consent & Submit */}
-                <div className="pt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <label className="flex items-start gap-2.5 text-xs text-gray-600 font-semibold cursor-pointer max-w-xl select-none">
-                    <input
-                      type="checkbox"
-                      required
-                      checked={consent}
-                      onChange={(e) => setConsent(e.target.checked)}
-                      className="mt-0.5 rounded border-gray-300 text-[var(--ahh-deep-teal)] focus:ring-[var(--ahh-deep-teal)] h-4 w-4 shrink-0"
-                    />
-                    <span>
-                      I confirm I am authorized to manage this clinic profile and the information I have provided is accurate. *
-                    </span>
-                  </label>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="brand-button-secondary px-8 font-bold flex items-center justify-center shrink-0 min-h-10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isSubmitting ? (
-                      <span className="flex items-center gap-2">
-                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Submitting...
-                      </span>
-                    ) : (
-                      'Submit Profile'
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+              <div className="flex flex-col gap-4 border-t border-[#0D1F1C]/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
+                <label className="flex max-w-xl cursor-pointer select-none items-start gap-3 text-sm font-medium">
+                  <input type="checkbox" required checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[#024E44]" />
+                  <span>I confirm I am authorized to manage this clinic profile and the information I have provided is accurate. *</span>
+                </label>
+                <button type="submit" disabled={isSubmitting} className={`${btn} bg-[#024E44] text-white disabled:cursor-not-allowed disabled:opacity-50`}>
+                  <Roll>{isSubmitting ? 'Submitting…' : 'Submit profile'}</Roll>
+                </button>
+              </div>
+            </form>
           )}
-        </section>
+        </Tile>
+      </Grid>
+    </Page>
+  );
+}
 
-      </div>
+function Field({ id, label, className = '', children }: { id: string; label: string; className?: string; children: React.ReactNode }) {
+  return (
+    <div className={`space-y-2 ${className}`}>
+      <label htmlFor={id} className="block text-sm font-bold">{label}</label>
+      {children}
     </div>
   );
 }

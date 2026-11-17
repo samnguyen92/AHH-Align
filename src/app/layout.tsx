@@ -90,7 +90,12 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Geist+Mono:wght@100..900&display=swap"
+          rel="stylesheet"
+        />
+        {/* Homepage native-script words only (subset by the text parameter), so CJK fonts stay a few KB. */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@600&family=Noto+Sans+SC:wght@600&text=%E4%B8%AD%E5%A5%BD%E6%82%A8%E6%96%87%EA%B5%AD%EB%85%95%EC%84%B8%EC%95%88%EC%96%B4%EC%9A%94%ED%95%98%ED%95%9C&display=swap"
           rel="stylesheet"
         />
       </head>

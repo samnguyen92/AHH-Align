@@ -17,6 +17,8 @@ import type { Article } from '@/types/database';
 import { absoluteUrl } from '@/lib/site';
 import { Mail } from 'lucide-react';
 import Link from 'next/link';
+import { ArrowCircle, Caption, Grid, Pill, Tile, pad, ring, tile } from '@/components/site/ui';
+import { PostHeader, PostPage, postWrap } from '@/components/site/post';
 
 export const dynamic = 'force-dynamic';
 
@@ -178,7 +180,7 @@ export async function generateMetadata({ params, searchParams }: ArticlePageProp
   const isHistoricalVersion = selectedView.version !== currentView.version;
 
   return {
-    title: `${selectedView.title} | Asian Health Hub`,
+    title: selectedView.title,
     description: selectedView.excerpt || getSeoString(selectedView.seoMeta, 'description') || undefined,
     robots: isHistoricalVersion ? { index: false, follow: false } : undefined,
     openGraph: {
@@ -250,8 +252,8 @@ function ShareRow({ title, shareUrl }: { title: string; shareUrl: string }) {
   ];
 
   return (
-    <div className="flex items-center gap-3 text-xs text-[var(--ahh-muted)]">
-      <span>Share:</span>
+    <div className="flex items-center gap-3 text-sm font-semibold">
+      <span className="opacity-60">Share</span>
       <div className="flex items-center gap-2">
         {links.map((item) => (
           <a
@@ -260,7 +262,7 @@ function ShareRow({ title, shareUrl }: { title: string; shareUrl: string }) {
             aria-label={item.label}
             target={item.href.startsWith('mailto:') ? undefined : '_blank'}
             rel={item.href.startsWith('mailto:') ? undefined : 'noreferrer'}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--ahh-border)] text-[var(--ahh-ink)] transition hover:border-[var(--ahh-deep-teal)] hover:bg-[var(--ahh-mist)] hover:text-[var(--ahh-deep-teal)]"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-[#0D1F1C]/20 transition-colors hover:border-[#024E44] hover:bg-[#024E44] hover:text-white"
           >
             {item.icon}
           </a>
@@ -292,12 +294,12 @@ function VersionSwitcher({
   }
 
   return (
-    <section className="brand-container pt-6">
-      <div className="brand-card p-4">
+    <section>
+      <div className="rounded-xl bg-stone-50 px-4 py-3 md:rounded-2xl md:px-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="brand-caption font-semibold uppercase text-[var(--ahh-muted)]">Article versions</p>
-            <p className="mt-1 text-sm text-[var(--ahh-ink)]">
+            <p className="font-semibold uppercase text-[#0D1F1C]/60">Article versions</p>
+            <p className="mt-1 text-sm text-[#0D1F1C]">
               Viewing {selectedVersion.label}
               {selectedVersion.isCurrent ? ' (current)' : ` saved ${formatDate(selectedVersion.savedAt)}`}.
             </p>
@@ -312,8 +314,8 @@ function VersionSwitcher({
                   className={[
                     'rounded-full border px-4 py-2 text-xs font-semibold transition',
                     isSelected
-                      ? 'border-[var(--ahh-deep-teal)] bg-[var(--ahh-deep-teal)] text-white'
-                      : 'border-[var(--ahh-border)] bg-white text-[var(--ahh-ink)] hover:border-[var(--ahh-deep-teal)] hover:text-[var(--ahh-deep-teal)]',
+                      ? 'border-[#0D1F1C] bg-[#0D1F1C] text-white'
+                      : 'border-[#0D1F1C]/15 bg-white text-[#0D1F1C] hover:border-[#0D1F1C]',
                   ].join(' ')}
                 >
                   {version.label}
@@ -325,18 +327,14 @@ function VersionSwitcher({
         </div>
 
         {!selectedVersion.isCurrent && (
-          <div className="mt-4 grid gap-3 border-t border-[var(--ahh-border)] pt-4 text-xs text-[var(--ahh-muted)] sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 border-t border-[#0D1F1C]/15 pt-4 text-xs text-[#0D1F1C]/60 sm:grid-cols-3">
             <span>Words: {(selectedVersion.wordCount || countWords(selectedVersion.content)).toLocaleString()}</span>
             <span>Saved: {formatDate(selectedVersion.savedAt)}</span>
             <span>Current: {currentVersion.label}</span>
           </div>
         )}
 
-        {selectedVersion.rewriteInstruction && (
-          <p className="mt-3 border-t border-[var(--ahh-border)] pt-3 text-xs leading-6 text-[var(--ahh-muted)]">
-            Rewrite note: {selectedVersion.rewriteInstruction}
-          </p>
-        )}
+        {/* the rewrite note is an editor instruction, not something readers need */}
       </div>
     </section>
   );
@@ -344,17 +342,17 @@ function VersionSwitcher({
 
 function NewsletterInline() {
   return (
-    <aside className="article-newsletter-inline my-10 rounded-[var(--ahh-radius)] bg-[var(--ahh-deep-teal)] px-6 py-6 text-center text-white">
-      <h2 className="text-lg font-semibold">AHH Pulse Newsletter</h2>
-      <p className="mx-auto mt-1 max-w-md text-xs text-white/70">
-        Monthly healthcare guides, clinic spotlights, and practical tips for Asian American patients.
-      </p>
-      <div className="mx-auto mt-4 flex max-w-sm items-center rounded-full bg-white p-1">
-        <span className="flex-1 px-4 text-left text-xs text-[var(--ahh-muted)]">Enter your email</span>
-        <span className="rounded-full bg-[var(--ahh-lime)] px-4 py-2 text-xs font-bold text-[var(--ahh-deep-teal)]">
-          Subscribe
-        </span>
+    <aside className="article-newsletter-inline my-10 flex flex-col items-start justify-between gap-5 rounded-xl bg-[#E3F1EC] p-6 md:flex-row md:items-end md:rounded-2xl md:p-8">
+      <div>
+        <p className="text-xs font-semibold text-[#024E44] md:text-sm">AHH Pulse newsletter</p>
+        <h2 className="mt-2 text-2xl font-bold leading-tight md:text-3xl">Health guides, once a month</h2>
+        <p className="mt-2 max-w-md text-sm font-medium opacity-75">
+          Clinic spotlights and practical tips for Asian American patients and families.
+        </p>
       </div>
+      <Link href="/pulse" className={`shrink-0 rounded-full bg-[#024E44] px-6 py-3 text-sm font-bold text-white btn-fx ${ring}`}>
+        Subscribe
+      </Link>
     </aside>
   );
 }
@@ -509,7 +507,7 @@ function createMarkdownComponents({
           type="checkbox"
           checked={checked}
           readOnly
-          className="mr-2 mt-1 h-4 w-4 shrink-0 rounded border-[var(--ahh-border)] accent-[var(--ahh-deep-teal)]"
+          className="mr-2 mt-1 h-4 w-4 shrink-0 rounded border-[#0D1F1C]/15 accent-[#024E44]"
         />
       ) : (
         <input type={type} readOnly />
@@ -551,7 +549,7 @@ function createMarkdownComponents({
         href={href}
         target={href?.startsWith('http') ? '_blank' : undefined}
         rel={href?.startsWith('http') ? 'noreferrer' : undefined}
-        className="font-medium text-[var(--ahh-deep-teal)] underline underline-offset-4"
+        className="font-medium text-[#024E44] underline underline-offset-4"
       >
         {children}
       </a>
@@ -829,96 +827,89 @@ export default async function ArticleDetailPage({ params, searchParams }: Articl
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <main className="article-detail-page">
-        <section className="article-page-hero">
-          <div className="article-page-hero__panel">
-            <div className="article-page-hero__inner brand-container">
-              <nav aria-label="Breadcrumb" className="article-breadcrumbs">
-                <Link href="/">Home</Link>
-                <span>/</span>
-                <Link href="/insights">Insights</Link>
-                <span>/</span>
-                <span>{selectedView.category || 'Patient Guides'}</span>
-              </nav>
-
-              <div className="article-hero-tags">
-                <span>{selectedView.category || 'Patient Guide'}</span>
-                <span>{selectedView.tags[0] || 'Asian Health'}</span>
-                <span>{formatDate(selectedView.publishedAt)}</span>
-                <span>{readMinutes} min read</span>
-              </div>
-
-              <h1 className="article-page-hero__title">
-                {selectedView.title}
-              </h1>
-
-              <div className="article-author-card">
-                <span className="article-author-avatar">AH</span>
-                <span>
-                  <strong>Asian Health Hub Editorial Team</strong>
-                  <small>Patient guidance · culturally informed care</small>
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <VersionSwitcher
-          slug={article.slug}
-          versions={versions}
-          selectedVersion={selectedView}
-          currentVersion={currentView}
+      <PostPage>
+        <PostHeader
+          crumbs={[
+            { label: 'Health Guides', href: '/insights' },
+            { label: selectedView.category || 'Patient guide' },
+          ]}
+          title={selectedView.title}
+          meta={[formatDate(selectedView.publishedAt), `${readMinutes} min read`, 'Asian Health Hub Editorial Team']}
+          actions={<ShareRow title={selectedView.title} shareUrl={shareUrl} />}
+          image={safeImageSrc}
+          fallback="/brand/photos/a3-guide-left.webp"
+          imageAlt={selectedView.title}
+          glanceTitle="In this guide"
+          glance={[
+            { label: 'Topic', value: selectedView.tags[0] || selectedView.category || 'Asian health' },
+            { label: 'Reading time', value: `${readMinutes} minutes, ${wordCount.toLocaleString('en-US')} words` },
+            { label: 'Sections', value: outline.filter((o) => o.level === 2).length || outline.length },
+            { label: 'Written by', value: 'Asian Health Hub Editorial Team' },
+          ]}
         />
 
-        <section className="article-content-section">
-          <article className="article-detail-shell brand-container grid gap-10 lg:grid-cols-[minmax(0,868px)_288px]">
-            <div id="article-reading-area">
-              <header className="article-detail-header">
-                <ArticleImage
-                  src={heroImageSrc}
-                  alt={selectedView.title}
-                  className="article-hero-image aspect-[16/8]"
-                  iconSize={92}
-                />
-                <p className="article-excerpt">
-                  {selectedView.excerpt || getSeoString(selectedView.seoMeta, 'description') || 'A practical guide for Asian American patients navigating care with confidence.'}
-                </p>
-              </header>
+        {versions.length > 1 && (
+          <div className={`${postWrap} mt-3`}>
+            <VersionSwitcher slug={article.slug} versions={versions} selectedVersion={selectedView} currentVersion={currentView} />
+          </div>
+        )}
 
-              <div className="mt-5">
-                <ShareRow title={selectedView.title} shareUrl={shareUrl} />
-              </div>
+        {/* Reading column with the progress sidebar (sticky), as on the clinic profile */}
+        <article className={`article-detail-page ${postWrap} mt-10 grid gap-10 md:mt-16 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-16`}>
+          <div id="article-reading-area" className="min-w-0">
+            <p className="article-excerpt max-w-[65ch] text-lg font-medium leading-relaxed md:text-xl">
+              {selectedView.excerpt || getSeoString(selectedView.seoMeta, 'description') || 'A practical guide for Asian American patients navigating care with confidence.'}
+            </p>
 
-              <div id="article-content" className="article-content">
-                <ArticleMarkdownWithImages
-                  preparedContent={preparedContent}
-                  imageSources={contentImageSources}
-                  title={selectedView.title}
-                />
-              </div>
-
-              <NewsletterInline />
-
-              {selectedView.tags.length > 0 && (
-                <div className="mt-10 flex flex-wrap gap-2 border-t border-[var(--ahh-border)] pt-6">
-                  {selectedView.tags.map((tag) => (
-                    <span key={tag} className="brand-chip">
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              )}
+            <div id="article-content" className="article-content">
+              <ArticleMarkdownWithImages
+                preparedContent={preparedContent}
+                imageSources={contentImageSources}
+                title={selectedView.title}
+              />
             </div>
 
-            <ArticleProgressSidebar
-              outline={outline}
-              readMinutes={readMinutes}
-              wordCount={wordCount}
-              relatedArticles={relatedArticles}
-            />
-          </article>
-        </section>
-      </main>
+            <NewsletterInline />
+
+            {selectedView.tags.length > 0 && (
+              <div className="mt-10 flex flex-wrap gap-1.5 border-t border-[#0D1F1C]/10 pt-6">
+                {selectedView.tags.map((tag) => (
+                  <span key={tag} className="rounded-full bg-stone-100 px-3 py-1.5 text-xs font-semibold">
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <ArticleProgressSidebar
+            outline={outline}
+            readMinutes={readMinutes}
+            wordCount={wordCount}
+            relatedArticles={relatedArticles}
+          />
+        </article>
+
+        {/* Closing: find care */}
+        <Grid className={`${postWrap} mt-16 md:mt-24 md:grid-cols-4`}>
+          <Link href="/search" className={`group relative min-h-[18rem] overflow-hidden md:col-span-3 ${tile} ${ring}`}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/photos/a2-section2.webp" alt="" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" loading="lazy" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+            <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between gap-6 text-white md:bottom-7 md:left-7 md:right-7">
+              <h2 className="max-w-[18ch] text-[clamp(1.75rem,3.6vw,3.5rem)] font-bold leading-[0.98] tracking-tight">Find a clinic that speaks your language</h2>
+              <ArrowCircle light />
+            </div>
+          </Link>
+          <Tile tone="mint" className={`flex min-h-[14rem] flex-col justify-between gap-6 ${pad}`}>
+            <Caption className="text-[#024E44]">More reading</Caption>
+            <div>
+              <h3 className="text-2xl font-bold leading-tight md:text-3xl">All health guides</h3>
+              <Pill href="/insights" className="mt-5">Browse guides</Pill>
+            </div>
+          </Tile>
+        </Grid>
+      </PostPage>
     </>
   );
 }

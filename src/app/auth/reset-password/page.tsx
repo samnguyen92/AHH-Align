@@ -1,14 +1,15 @@
+import { AuthFrame } from '@/components/site/auth-frame';
 import type { Metadata } from 'next';
 import { ResetPasswordForm } from '@/components/auth/reset-password-form';
 
 export const metadata: Metadata = {
-  title: 'Reset Password | Asian Health Hub',
+  title: 'Reset Password',
 };
 
 export default function ResetPasswordPage() {
   return (
-    <main className="bg-gray-50 px-4 py-16 sm:px-6 lg:px-8">
+    <AuthFrame title="Back to your clinic profile" caption="For clinics">
       <ResetPasswordForm />
-    </main>
+    </AuthFrame>
   );
 }
