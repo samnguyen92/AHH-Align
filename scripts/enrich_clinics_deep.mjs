@@ -32,6 +32,66 @@ const OPENROUTER_KEY =
   envOpenClaw.OPENROUTER_API_KEY ||
   envLocal.OPENROUTER_API_KEY;
 
+function isValidImage(buf) {
+  if (!buf || buf.length < 4000) return false;
+  // JPEG
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true;
+  // PNG
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true;
+  // WebP
+  if (
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) return true;
+  return false;
+}
+
+function detectExtension(buf) {
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+  if (
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) return 'webp';
+  return 'jpg';
+}
+
+async function downloadPhoto(url, timeoutMs = 12000) {
+  try {
+    let fullUrl = url;
+    if (fullUrl.startsWith('//')) fullUrl = `https:${fullUrl}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(fullUrl, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      },
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (isValidImage(buf)) return buf;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function scrapeGmapsPhotosViaDocker(placeId) {
+  if (!placeId) return [];
+  try {
+    const cmd = `docker exec asian-health-hub-openclaw python /app/openclaw/scrape_gmaps_photos.py "${placeId}"`;
+    const out = execSync(cmd, { timeout: 35000, encoding: 'utf-8' });
+    const urls = JSON.parse(out.trim());
+    return Array.isArray(urls) ? urls : [];
+  } catch (err) {
+    // console.error(`[!] Gmaps scrape failed for ${placeId}:`, err.message);
+    return [];
+  }
+}
+
 function crawlWebsiteDeep(websiteUrl) {
   if (!websiteUrl) return { pages: [] };
   try {
@@ -148,8 +208,53 @@ async function enrichClinic(pool, clinic) {
   console.log(`=====================================================`);
 
   const meta = clinic.metadata || {};
+  const slug = clinic.slug || `clinic-${clinic.id}`;
   const website = meta.website || meta.source_url || meta.google_website_url;
+  const placeId = meta.google_place_id;
 
+  // 1. Collect candidate photos from Google Maps (via Playwright) + website
+  console.log(`   [*] Fetching real Google Maps photos for place ID ${placeId || 'N/A'}...`);
+  const candidateUrls = [];
+  if (placeId) {
+    const gPhotos = scrapeGmapsPhotosViaDocker(placeId);
+    console.log(`   [+] Found ${gPhotos.length} Google Maps photos.`);
+    candidateUrls.push(...gPhotos);
+  }
+
+  // Also check existing gallery_images if any
+  if (Array.isArray(meta.gallery_images)) {
+    for (const gUrl of meta.gallery_images) {
+      if (typeof gUrl === 'string' && gUrl.startsWith('http') && !gUrl.includes('logo')) {
+        candidateUrls.push(gUrl);
+      }
+    }
+  }
+
+  // Download up to 10 unique photos directly into volume public/uploads/...
+  const savedPublicUrls = [];
+  let pIdx = 1;
+  const seenHashes = new Set();
+
+  for (const imgUrl of candidateUrls) {
+    if (savedPublicUrls.length >= 10) break;
+    const buf = await downloadPhoto(imgUrl);
+    if (!buf) continue;
+
+    const hash = crypto.createHash('md5').update(buf).digest('hex');
+    if (seenHashes.has(hash)) continue;
+    seenHashes.add(hash);
+
+    const ext = detectExtension(buf);
+    const fileName = `${slug}-google-${pIdx}.${ext}`;
+    const filePath = path.join(UPLOADS_DIR, fileName);
+    fs.writeFileSync(filePath, buf);
+    savedPublicUrls.push(`/uploads/generated-clinics/google-places/${fileName}`);
+    pIdx++;
+  }
+
+  console.log(`   [+] Successfully saved ${savedPublicUrls.length} real photos to disk.`);
+
+  // 2. Deep crawl website for pricing, faqs, about, services
   console.log(`   [*] Deep crawling website: ${website}...`);
   const crawlResult = crawlWebsiteDeep(website);
   console.log(`   [+] Pages crawled: ${crawlResult.pages?.length || 0}`);
@@ -159,6 +264,7 @@ async function enrichClinic(pool, clinic) {
     });
   }
 
+  // 3. AI extraction
   console.log(`   [*] Extracting Pricing, FAQs, and NEXT HEALTH data via AI...`);
   const extracted = await extractWithOpenRouter(clinic, crawlResult);
 
@@ -169,7 +275,13 @@ async function enrichClinic(pool, clinic) {
 
   const newMeta = { ...meta };
 
-  // 1. Pricing: if real pricing found, assign it; if empty array, set [] and null summary so section is hidden
+  // Set real images and clear remote gallery duplicates
+  if (savedPublicUrls.length > 0) {
+    newMeta.images = savedPublicUrls;
+  }
+  newMeta.gallery_images = [];
+
+  // Pricing: if real pricing found, assign it; if empty array, set [] and null summary so section is hidden
   if (Array.isArray(extracted.pricing) && extracted.pricing.length > 0) {
     newMeta.pricing = extracted.pricing;
     newMeta.pricing_summary = extracted.pricing_summary || null;
@@ -180,26 +292,20 @@ async function enrichClinic(pool, clinic) {
     console.log(`   [-] No public pricing found on site. Pricing section will be hidden.`);
   }
 
-  // 2. FAQs:
+  // FAQs
   if (Array.isArray(extracted.faqs) && extracted.faqs.length > 0) {
     newMeta.faqs = extracted.faqs;
     console.log(`   [+] Added ${extracted.faqs.length} FAQs!`);
   }
 
-  // 3. Metadata fields:
+  // NEXT HEALTH fields
   if (extracted.what_to_know?.length) newMeta.what_to_know = extracted.what_to_know;
   if (extracted.differentiators?.length) newMeta.differentiators = extracted.differentiators;
   if (extracted.before_you_book?.length) newMeta.before_you_book = extracted.before_you_book;
   if (extracted.cultural_context) newMeta.cultural_context = extracted.cultural_context;
   if (extracted.services_offered?.length) newMeta.services_offered = extracted.services_offered;
 
-  // 4. Image duplicate cleanup: remove remote URLs from gallery_images if images exists
-  if (Array.isArray(newMeta.images) && newMeta.images.length > 0) {
-    // Keep only local images
-    newMeta.gallery_images = [];
-  }
-
-  // 5. Score & Status
+  // Score & Status
   const photosCount = (newMeta.images || []).length;
   const score = calculateScore(newMeta, photosCount);
   newMeta.completeness_score = score;
