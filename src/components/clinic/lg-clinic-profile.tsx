@@ -154,7 +154,8 @@ export function LgClinicProfile({ clinic }: { clinic: Clinic }) {
   const bookUrl = websiteUrl || appointmentUrl;
   const phoneHref = clinic.phone ? `tel:${clinic.phone.replace(/[^0-9+]/g, '')}` : null;
 
-  const rawImages = [...(m.images || []), ...(m.gallery_images || [])]
+  const candidateImages = (m.images && m.images.length > 0) ? m.images : (m.gallery_images || []);
+  const rawImages = candidateImages
     .map((img: string) => getSafeClinicImageSrc(img))
     .filter((v: string | null, i: number, a: (string | null)[]): v is string => Boolean(v && a.indexOf(v) === i));
   const fallbackImg = getClinicFallbackImage(clinic.specialty, clinic.slug || clinic.id);

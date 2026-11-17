@@ -42,6 +42,10 @@ export interface ClinicMetadata {
   about_highlight?: string;
   short_description?: string;
   review_summary?: string;
+  what_to_know?: Array<{ title: string; detail: string }>;
+  differentiators?: Array<{ title: string; detail: string }>;
+  before_you_book?: Array<{ title: string; detail: string }>;
+  completeness_score?: number;
   faqs?: ClinicFaq[];
   website?: string;
   appointment_url?: string;
@@ -291,6 +295,7 @@ export interface Clinic {
   is_telehealth_available: boolean;
   claimed_by: string | null;
   is_claimed: boolean;
+  status?: 'published' | 'draft' | string;
   metadata: ClinicMetadata;
   created_at: string;
 }

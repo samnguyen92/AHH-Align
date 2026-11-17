@@ -32,6 +32,8 @@ export function ClinicImage({
     activeSrc = '/brand/lg/primary-care.jpg';
   }
 
+  const isUpload = Boolean(activeSrc && (activeSrc.startsWith('/uploads/') || activeSrc.startsWith('/generated-clinics/')));
+
   return (
     <div className={`relative overflow-hidden bg-gray-200 ${className}`}>
       {activeSrc && failCount < 3 ? (
@@ -39,6 +41,7 @@ export function ClinicImage({
           src={activeSrc}
           alt={alt}
           fill
+          unoptimized={isUpload}
           sizes="(max-width: 768px) 100vw, 384px"
           className="object-cover"
           onError={() => setFailCount((c) => c + 1)}

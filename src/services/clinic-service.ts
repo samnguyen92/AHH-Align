@@ -45,7 +45,8 @@ export async function searchClinics(
     // Xây dựng query cơ bản
     let query = supabase
       .from('clinics')
-      .select('*', { count: 'exact' });
+      .select('*', { count: 'exact' })
+      .neq('status', 'draft');
 
     // 1. City filter (hỗ trợ chọn nhiều cities cách nhau bởi dấu phẩy)
     if (params.city) {

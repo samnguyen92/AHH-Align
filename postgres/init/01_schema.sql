@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS clinics (
   is_telehealth_available BOOLEAN NOT NULL DEFAULT false,
   claimed_by              UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   is_claimed              BOOLEAN NOT NULL DEFAULT false,
+  status                  TEXT NOT NULL DEFAULT 'published',
   metadata                JSONB DEFAULT '{}'::JSONB,
   created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
