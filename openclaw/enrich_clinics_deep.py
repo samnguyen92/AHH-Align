@@ -54,11 +54,26 @@ def get_db_connection():
     if not db_url:
         # In Docker container
         db_url = "postgresql://postgres:ahh_secure_pass_2026@db:5432/asian_health_hub"
+    conn = None
     try:
-        return psycopg2.connect(db_url)
+        conn = psycopg2.connect(db_url)
     except Exception:
         # Fallback to localhost:5433
-        return psycopg2.connect("postgresql://postgres:ahh_secure_pass_2026@127.0.0.1:5433/asian_health_hub")
+        conn = psycopg2.connect("postgresql://postgres:ahh_secure_pass_2026@127.0.0.1:5433/asian_health_hub")
+    
+    # Ensure status column exists in clinics table
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'published';
+                UPDATE clinics SET status = 'published' WHERE status IS NULL;
+            """)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"[!] ensure_schema notice: {e}")
+
+    return conn
 
 def detect_extension(buf: bytes) -> str:
     if len(buf) > 3 and buf[0] == 0xFF and buf[1] == 0xD8 and buf[2] == 0xFF:

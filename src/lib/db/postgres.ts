@@ -7,6 +7,18 @@
 import { Pool } from 'pg';
 
 let pool: Pool | null = null;
+let schemaEnsured = false;
+
+function ensureSchema(p: Pool) {
+  if (schemaEnsured) return;
+  schemaEnsured = true;
+  p.query(`
+    ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'published';
+    UPDATE clinics SET status = 'published' WHERE status IS NULL;
+  `).catch((err) => {
+    console.warn('[db] Schema ensure notice:', err.message);
+  });
+}
 
 export function getDatabaseUrl(): string {
   if (process.env.DATABASE_URL) {
@@ -27,6 +39,7 @@ export function getPool(): Pool {
     pool.on('error', (err) => {
       console.error('[pg] Unexpected idle client error:', err);
     });
+    ensureSchema(pool);
   }
   return pool;
 }
@@ -85,7 +98,8 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
 
   neq(col: string, val: any): this {
     this.params.push(val);
-    this.whereClauses.push(`${formatColumnRef(col)} != $${this.params.length}`);
+    const colRef = formatColumnRef(col);
+    this.whereClauses.push(`(${colRef} IS NULL OR ${colRef} != $${this.params.length})`);
     return this;
   }
 
