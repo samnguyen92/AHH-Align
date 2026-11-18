@@ -268,7 +268,7 @@ export function HomePage({ data }: { data: HomeData }) {
             s1Ref.current = el;
             s1Reveal.attach(el);
           }}
-          className="flex h-screen w-full flex-col gap-2 overflow-hidden px-3 pb-1.5 pt-20 md:gap-3 md:px-5 md:pb-2 md:pt-[5.375rem]"
+          className="flex h-screen w-full flex-col gap-2 overflow-hidden md:h-[max(100svh,40rem)] px-3 pb-1.5 pt-20 md:gap-3 md:px-5 md:pb-2 md:pt-[5.375rem]"
         >
           <div className="grid shrink-0 grid-cols-3 gap-2 md:gap-3">
             {bars.map((bar, i) => (
@@ -350,7 +350,7 @@ export function HomePage({ data }: { data: HomeData }) {
             s2Ref.current = el;
             s2Reveal.attach(el);
           }}
-          className={`${section} flex min-h-screen flex-col overflow-hidden md:h-screen`}
+          className={`${section} flex min-h-screen flex-col overflow-hidden md:h-[max(100svh,48rem)]`}
         >
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 md:grid-cols-2 md:grid-rows-[1fr_1fr] md:gap-3">
             <MaskedCard
@@ -415,7 +415,7 @@ export function HomePage({ data }: { data: HomeData }) {
         </section>
 
         {/* ================= 3. Top clinics ================= */}
-        <section ref={(el) => sClinics.attach(el)} className={`${section} md:h-screen`}>
+        <section ref={(el) => sClinics.attach(el)} className={`${section} md:h-[max(100svh,48rem)]`}>
           <div className="grid h-full grid-cols-1 gap-2 md:grid-cols-4 md:grid-rows-[0.9fr_1.1fr] md:gap-3">
             <div
               className="flex min-h-[12.5rem] flex-col justify-between rounded-xl bg-stone-50 p-5 md:col-span-2 md:rounded-2xl md:p-7"
@@ -469,7 +469,7 @@ export function HomePage({ data }: { data: HomeData }) {
         </section>
 
         {/* ================= 4. Specialties ================= */}
-        <section ref={(el) => sSpecs.attach(el)} className={`${section} md:h-screen`}>
+        <section ref={(el) => sSpecs.attach(el)} className={`${section} md:h-[max(100svh,48rem)]`}>
           <div className="grid h-full grid-cols-2 gap-2 md:grid-cols-5 md:grid-rows-[1.1fr_1fr_1fr] md:gap-3">
             <div
               className="relative isolate col-span-2 flex min-h-[10rem] flex-col justify-between overflow-hidden rounded-xl bg-zinc-200 p-5 md:col-span-5 md:flex-row md:items-end md:rounded-2xl md:p-7"
@@ -549,7 +549,7 @@ export function HomePage({ data }: { data: HomeData }) {
         </section>
 
         {/* ================= 5. How it works ================= */}
-        <section ref={(el) => sSteps.attach(el)} className={`${section} md:h-screen`}>
+        <section ref={(el) => sSteps.attach(el)} className={`${section} md:h-[max(100svh,48rem)]`}>
           <div className="grid h-full grid-cols-1 gap-2 md:grid-cols-3 md:gap-3">
             {STEPS.map((s, i) => (
               <div
@@ -574,7 +574,7 @@ export function HomePage({ data }: { data: HomeData }) {
         </section>
 
         {/* ================= 6. Cities ================= */}
-        <section ref={(el) => sCities.attach(el)} className={`${section} md:h-screen`}>
+        <section ref={(el) => sCities.attach(el)} className={`${section} md:h-[max(100svh,48rem)]`}>
           <div className="grid h-full grid-cols-2 gap-2 md:grid-cols-4 md:grid-rows-4 md:gap-3">
             <div
               className="col-span-2 flex min-h-[10rem] flex-col justify-between rounded-xl bg-[#0D1F1C] p-5 text-white md:row-span-2 md:rounded-2xl md:p-7"
@@ -632,8 +632,8 @@ export function HomePage({ data }: { data: HomeData }) {
         </section>
 
         {/* ================= 7. Guides + clinics ================= */}
-        <section ref={(el) => sGuides.attach(el)} className={`${section} flex min-h-screen flex-col overflow-hidden md:h-screen`}>
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
+        <section ref={(el) => sGuides.attach(el)} className={`${section} flex min-h-screen flex-col overflow-hidden md:h-[max(100svh,48rem)]`}>
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 md:grid-cols-2 md:grid-rows-[minmax(0,1fr)] md:gap-3">
             <div className="flex flex-col gap-2 md:gap-3">
               <div className="flex min-h-[11.25rem] flex-[1.2] flex-col justify-between rounded-xl bg-[#FBF4EC] p-5 md:min-h-0 md:rounded-2xl md:p-7" style={sGuides.getAnimStyle(0)}>
                 <h2 className="text-[clamp(3rem,7vw,6.5rem)] font-bold leading-[0.95]">
