@@ -560,3 +560,135 @@ def check_anomalies_job(lang: str = "en") -> str:
 
 
 
+
+def _find_clinic_rows(target: str) -> list[dict]:
+    from rescan_all_clinics import db_query
+
+    q = (target or "").strip()
+    if not q:
+        return []
+    rows = db_query(
+        """
+        SELECT * FROM clinics
+        WHERE slug = $1
+           OR id::text = $1
+           OR name ILIKE $2
+           OR slug ILIKE $2
+        ORDER BY CASE WHEN lower(slug) = lower($1) OR lower(name) = lower($1) THEN 0 ELSE 1 END,
+                 (metadata->>'rating_count')::int DESC NULLS LAST
+        LIMIT 5
+        """,
+        [q, f"%{q}%"],
+    )
+    return rows
+
+
+def inspect_clinic_job(target: str, lang: str = "vi") -> str:
+    rows = _find_clinic_rows(target)
+    if not rows:
+        if lang == "vi":
+            return (
+                f"❌ Không tìm thấy phòng khám nào khớp với **“{target}”** trong database của website.\n"
+                "👉 Nếu đây là phòng khám mới chưa có trên trang web, bạn có thể nhắn: `tìm phòng khám <tên> trên Google Places` hoặc `/scrape_clinic_url <tên> | <website_url>`."
+            )
+        return (
+            f"❌ No clinic matching **“{target}”** was found in the website database.\n"
+            "👉 To import a new clinic from Google Places, say `find clinic <name> on Google Places` or `/scrape_clinic_url <name> | <url>`."
+        )
+
+    c = rows[0]
+    m = c.get("metadata") or {}
+    slug = c.get("slug") or ""
+    imgs = m.get("images") or []
+    img_src = m.get("images_source") or ("google/existing" if imgs else "none")
+    langs = c.get("languages") or []
+    lang_ev = m.get("languages_evidence") or []
+    wtk = m.get("what_to_know") or []
+    diff = m.get("differentiators") or []
+    byb = m.get("before_you_book") or []
+    svcs = m.get("services_offered") or m.get("services") or []
+    pricing = m.get("pricing") or []
+    ins = (m.get("insurance") or {}).get("accepted_networks") or m.get("insurance_accepted") or []
+    team = m.get("team_members") or []
+    revs = m.get("reviews") or []
+    faqs = m.get("faqs") or []
+    i18n_keys = list((m.get("i18n") or {}).keys()) if isinstance(m.get("i18n"), dict) else []
+    lang_note = (m.get("language_note") or m.get("cultural_context") or "").strip()
+    website = m.get("website") or m.get("google_website_url") or "Chưa có"
+
+    lines = [
+        f"🏥 **Kiểm tra Clinic trên Website: {c.get('name')}**",
+        f"• **Slug / Link**: `https://asianhealthhub.com/clinics/{slug}`",
+        f"• **Trạng thái**: `{c.get('status', 'published')}` | **Chuyên khoa**: `{c.get('specialty') or 'N/A'}`",
+        f"• **Địa chỉ**: {c.get('address') or ''}, {c.get('city') or ''}, {c.get('state') or ''} {c.get('zip_code') or ''}",
+        f"• **SĐT**: `{c.get('phone') or 'N/A'}` | **Website**: {website}",
+        "",
+        "🗣 **Ngôn ngữ & Xác thực**:",
+        f"• **Languages**: `{', '.join(langs)}`",
+        f"• **Đã xác thực trên web (`languages_verified`)**: {'✅ Có' if m.get('languages_verified') else '⚠️ Chưa có bằng chứng trực tiếp trên web'}",
+    ]
+    if lang_ev:
+        lines.append(f"• **Bằng chứng (`languages_evidence`)**: {'; '.join(str(x) for x in lang_ev[:3])}")
+    lines.extend(
+        [
+            "",
+            "🖼 **Hình ảnh (Gallery)**:",
+            f"• **Số lượng ảnh**: `{len(imgs)}` ảnh (Nguồn: `{img_src}`)",
+            "",
+            "📋 **Kiểm tra các mục trên trang Detail**:",
+            f"• **About / Description**: {'✅ Có (' + str(len(c.get('description') or '')) + ' ký tự)' if c.get('description') else '❌ Thiếu'}",
+            f"• **Hộp Language Support dưới About**: {'✅ Có — ' + lang_note[:140] + ('...' if len(lang_note) > 140 else '') if lang_note else '❌ Thiếu'}",
+            f"• **What to know / Differentiators / Before you book**: `{len(wtk)}` / `{len(diff)}` / `{len(byb)}` mục",
+            f"• **Services**: `{len(svcs)}` dịch vụ",
+            f"• **Pricing**: `{len(pricing)}` mục giá {'(hiển thị)' if pricing else '(đang ẩn vì web không công khai giá)'}",
+            f"• **Insurance**: `{len(ins)}` hãng bảo hiểm",
+            f"• **Team (Bác sĩ/Nhân sự)**: `{len(team)}` người",
+            f"• **Reviews**: `{m.get('rating') or 'N/A'}★` (`{m.get('rating_count') or 0}` tổng, `{len(revs)}` thẻ review)",
+            f"• **FAQs**: `{len(faqs)}` câu hỏi",
+            f"• **Bản dịch đa ngôn ngữ (`i18n`)**: `{', '.join(i18n_keys) if i18n_keys else 'Chưa có (sẽ tạo khi rescan)'}`",
+        ]
+    )
+    if len(rows) > 1:
+        others = ", ".join(f"`{r['slug']}`" for r in rows[1:])
+        lines.append(f"\n🔎 *Các kết quả gần giống khác trong DB*: {others}")
+
+    lines.append(
+        f"\n💡 Để quét lại website, tải lại ảnh chuẩn và trích xuất toàn bộ các mục + bản dịch VI/KO/ZH bằng `gpt-6-luna` cho phòng khám này, hãy nhắn:\n"
+        f"`quét lại clinic {slug}` hoặc gõ `/rescan_clinic {slug}`"
+    )
+    return "\n".join(lines)
+
+
+def rescan_clinic_job(target: str) -> str:
+    from rescan_all_clinics import rescan_one_clinic
+
+    rows = _find_clinic_rows(target)
+    if not rows:
+        return f"❌ Không tìm thấy phòng khám nào khớp với “{target}” trong DB."
+    c = rows[0]
+    info = rescan_one_clinic(c)
+    return (
+        f"✅ **Đã quét & cập nhật toàn diện phòng khám bằng `gpt-6-luna`!**\n\n"
+        f"• **Tên**: {info['name']} (`{info['slug']}`)\n"
+        f"• **Link**: https://asianhealthhub.com/clinics/{info['slug']}\n"
+        f"• **Trạng thái**: `{info['status']}` | **Chuyên khoa**: `{info['specialty']}`\n"
+        f"• **Ngôn ngữ**: `{info['languages']}` (Xác thực web: `{info['languages_verified']}`)\n"
+        f"• **Hình ảnh Gallery**: `{info['photos_count']}` ảnh (Nguồn: `{info['photos_source']}`)\n"
+        f"• **Hộp Language Support**: `{'Đã cập nhật' if info['has_language_note'] else 'N/A'}`\n"
+        f"• **Bản dịch đa ngôn ngữ (VI/KO/ZH)**: `{'Đã tạo đầy đủ' if info['has_i18n'] else 'N/A'}`\n\n"
+        f"👉 Gõ `/inspect_clinic {info['slug']}` để xem chi tiết từng mục sau khi cập nhật."
+    )
+
+
+def rescan_all_clinics_job(limit: int = 0) -> str:
+    import subprocess
+    import sys
+
+    cmd = [sys.executable, "rescan_all_clinics.py", "--draft-hospitals"]
+    if limit and limit > 0:
+        cmd.append(f"--sample={limit}")
+    else:
+        cmd.extend(["--all", "--resume"])
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    return out[-3500:].strip() or "✅ Đã hoàn tất quét lại danh sách phòng khám."

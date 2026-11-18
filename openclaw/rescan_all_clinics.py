@@ -98,8 +98,15 @@ def db_query(sql: str, params: list[Any] | None = None) -> list[dict]:
         conn = psycopg2.connect(DB_URL)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                pg_sql = re.sub(r"\$(\d+)", "%s", sql)
-                cur.execute(pg_sql, tuple(params))
+                pg_params: list[Any] = []
+
+                def _sub_param(m: re.Match) -> str:
+                    idx = int(m.group(1)) - 1
+                    pg_params.append(params[idx])
+                    return "%s"
+
+                pg_sql = re.sub(r"\$(\d+)", _sub_param, sql)
+                cur.execute(pg_sql, tuple(pg_params))
                 rows = [dict(r) for r in cur.fetchall()] if cur.description else []
             conn.commit()
             return rows
@@ -149,22 +156,24 @@ def sanitize_language_mentions(text: Optional[str], allowed_languages: list[str]
 
 
 def draft_unverified_hospitals() -> int:
-    """Move all Hospital records (and clinics with no Asian languages) to status = 'draft'."""
+    """Move all Hospital records without verified Asian language evidence on their website to status = 'draft'."""
     rows = db_query("SELECT id, slug, name, specialty, languages, status, metadata FROM clinics")
     drafted = 0
+    restored = 0
     for r in rows:
         spec = (r.get("specialty") or "").strip().lower()
-        langs = normalize_language_list(r.get("languages") or [])
-        asian_langs = [l for l in langs if l not in ("English", "Spanish")]
         meta = r.get("metadata") or {}
         is_hospital = spec == "hospital" or "hospital" in (r.get("name") or "").lower()
         verified_on_site = bool(meta.get("languages_verified") and meta.get("languages_evidence"))
 
-        should_draft = (is_hospital and not verified_on_site) or (len(asian_langs) == 0)
-        if should_draft and r.get("status") != "draft":
-            db_query("UPDATE clinics SET status = $1 WHERE id = $2", ["draft", r["id"]])
-            drafted += 1
-    print(f"[+] Draft check complete: moved {drafted} unverified hospital / non-Asian-language records to 'draft'.")
+        if is_hospital and not verified_on_site:
+            if r.get("status") != "draft":
+                db_query("UPDATE clinics SET status = $1 WHERE id = $2", ["draft", r["id"]])
+                drafted += 1
+        elif not is_hospital and r.get("status") == "draft":
+            db_query("UPDATE clinics SET status = $1 WHERE id = $2", ["published", r["id"]])
+            restored += 1
+    print(f"[+] Hospital draft check complete: {drafted} hospitals moved to 'draft' ({restored} non-hospital clinics restored to 'published').")
     return drafted
 
 
@@ -501,10 +510,9 @@ def rescan_one_clinic(clinic: dict) -> dict:
         if isinstance(extracted.get("i18n"), dict):
             meta["i18n"] = extracted["i18n"]
 
-    # Check if clinic should be draft (Hospital without verified Asian language on website, or no Asian languages)
-    asian_langs = [l for l in verified_langs if l not in ("English", "Spanish")]
+    # Check if clinic should be draft (Hospital without verified Asian language on website)
     is_hospital = (new_specialty or "").lower() == "hospital" or "hospital" in (clinic.get("name") or "").lower()
-    new_status = "draft" if (is_hospital and not detected_site_langs) or not asian_langs else "published"
+    new_status = "draft" if (is_hospital and not detected_site_langs) else "published"
 
     db_query(
         """

@@ -27,8 +27,8 @@ _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
 load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
 
-INTENT_MODEL = os.environ.get("OPENCLAW_INTENT_MODEL", "deepseek/deepseek-v4-flash")
-FALLBACK_MODEL = os.environ.get("OPENCLAW_AGENT_MODEL", "deepseek/deepseek-v4-flash")
+INTENT_MODEL = os.environ.get("OPENCLAW_TEXT_MODEL", os.environ.get("OPENCLAW_INTENT_MODEL", "openai/gpt-6-luna"))
+FALLBACK_MODEL = os.environ.get("OPENCLAW_TEXT_FALLBACK_MODEL", "deepseek/deepseek-v4-flash")
 
 # Vietnamese detection regexes for quick fallback
 VI_DIACRITICS_RE = re.compile(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]", re.IGNORECASE)
@@ -133,7 +133,19 @@ ALLOWED ACTIONS:
   parameters: {"commit_message": str}
 - rollback_code: Discard uncommitted edits in src/ and public/.
   parameters: {}
-- find_clinics: Search Google Places to discover & scrape clinics in the US.
+- inspect_clinic: Check, inspect, view, or verify an EXISTING clinic already on our website / database (languages, photos count, sections, status, URL). Does NOT require approval (requires_approval: false).
+  English phrases: "check clinic anchor dental", "inspect clinic X", "check clinic X on our website", "show clinic details for X".
+  Vietnamese phrases: "kiểm tra clinics anchor dental", "kiểm tra phòng khám X", "kiểm tra phòng khám X trên trang web của mình", "xem thông tin phòng khám X".
+  parameters: {"target": str (clean clinic name or slug, e.g. "anchor dental")}
+- rescan_clinic: Re-scan, re-scrape, refresh, or update all fields, photos, verified languages, and VI/KO/ZH translations for one existing clinic in our database using gpt-6-luna.
+  English phrases: "rescan clinic anchor dental", "refresh clinic X", "update clinic data for X".
+  Vietnamese phrases: "quét lại clinic anchor dental", "cập nhật lại phòng khám X", "làm mới dữ liệu clinic X".
+  parameters: {"target": str (clean clinic name or slug)}
+- rescan_all_clinics: Re-scan and enrich all clinics in the website database (or a sample batch).
+  English phrases: "rescan all clinics", "rescan 10 clinics".
+  Vietnamese phrases: "quét lại toàn bộ clinics", "quét lại 10 phòng khám".
+  parameters: {"limit": int (0 for all, or N for sample)}
+- find_clinics: Search Google Places to discover & import NEW clinics in the US (ONLY when the user explicitly wants to find/import new clinics from Google Places, NEVER when they say "kiểm tra" / "check" / "trên trang web của mình").
   parameters: {"query": str (in English), "limit": int (default 1), "required_languages": list, "facility_types": list}
 - scrape_clinic_url: Scrape and import one specific clinic website URL.
   parameters: {"clinic_name": str, "url": str}
@@ -253,6 +265,26 @@ def run_intent_agent(
                 is_rejection=True,
                 requires_approval=False,
                 parameters=pending_action,
+            )
+
+    # 1b. Deterministic fast-path for inspecting/checking an existing clinic on our website
+    inspect_match = re.match(
+        r"^(?:không phải[,.\s]+)?(?:tôi muốn\s+|vui lòng\s+|hãy\s+)?(?:kiểm tra|kiem tra|check|inspect|xem thông tin|xem)\s+"
+        r"(?:clinics?|phòng khám|phong kham)\s+(.+?)(?:\s+trên\s+(?:trang\s+)?web(?:site)?(?:\s+của\s+mình|\s+của\s+tôi)?)?$",
+        clean_text.strip("?.! "),
+        flags=re.IGNORECASE,
+    )
+    if inspect_match:
+        target_clinic = inspect_match.group(1).strip(" \"'“”")
+        if target_clinic and target_clinic.lower() not in {"claims", "claim", "newsletter", "newsletter list", "all", "toàn bộ"}:
+            lang = detect_quick_language(clean_text)
+            return IntentResult(
+                action="inspect_clinic",
+                lang=lang,
+                confidence=1.0,
+                parameters={"target": target_clinic, "name": f"inspect_clinic: {target_clinic[:36]}"},
+                requires_approval=False,
+                reason="User asked to inspect/check a specific clinic on the website.",
             )
 
     # 2. Call the LLM Intent Agent

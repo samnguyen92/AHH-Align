@@ -59,6 +59,9 @@ from jobs import (
     connect_gsc_job,
     connect_ga4_job,
     check_anomalies_job,
+    inspect_clinic_job,
+    rescan_clinic_job,
+    rescan_all_clinics_job,
 )
 from dev_agent import capture_page_screenshot
 
@@ -429,6 +432,9 @@ class TelegramBot:
             "/status - check env, Supabase counts, and log path\n"
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
             "/find_clinics <query> | [limit] - scout Google Places, scrape websites, extract clinic data, and save new clinics\n"
+            "/inspect_clinic <name|slug> - inspect an existing clinic on our website (languages, gallery, sections, i18n)\n"
+            "/rescan_clinic <name|slug> - deep re-scan & re-extract all fields/photos/i18n of an existing clinic via gpt-6-luna\n"
+            "/rescan_all_clinics [limit] - rescan & enrich all clinics in the directory\n"
             "/scrape_clinic_url <clinic name> | <url> - scrape one known clinic website and save/update it\n"
             "/clinic_quality [threshold] - show clinic data quality scores and lowest-scoring clinics\n"
             "/directory_audit - show Track C entity/field/insurance/price coverage & Track E supply gaps\n"
@@ -2275,6 +2281,26 @@ Return JSON:
                 lambda: stats_question_job(question, period=period, lang=lang),
                 action_type=action_type,
             )
+        elif action_type == "inspect_clinic":
+            target = action.get("target") or action.get("query") or ""
+            lang = action.get("lang") or self.chat_lang.get(chat_id, "vi")
+            self.send_message(chat_id, inspect_clinic_job(target, lang=lang))
+        elif action_type == "rescan_clinic":
+            target = action.get("target") or action.get("query") or ""
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: rescan_clinic_job(target),
+                action_type=action_type,
+            )
+        elif action_type == "rescan_all_clinics":
+            limit = int(action.get("limit") or 0)
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: rescan_all_clinics_job(limit=limit),
+                action_type=action_type,
+            )
         elif action_type == "stats_report":
             arg = action.get("arg", "")
             lang = action.get("lang") or self.chat_lang.get(chat_id, "en")
@@ -2488,6 +2514,22 @@ Return JSON:
                 self.send_message(chat_id, ask_openclaw_agent(question))
         elif command == "/run_batch":
             self.run_job(chat_id, "run_batch", run_batch_job, action_type="run_batch")
+        elif command in {"/inspect_clinic", "/check_clinic"}:
+            target = re.sub(r"^/(?:inspect_clinic|check_clinic)(?:@\w+)?", "", text, count=1).strip()
+            if not target:
+                self.send_message(chat_id, "Use: /inspect_clinic <name|slug>")
+            else:
+                self.send_message(chat_id, inspect_clinic_job(target, lang=self.chat_lang.get(chat_id, "vi")))
+        elif command == "/rescan_clinic":
+            target = re.sub(r"^/rescan_clinic(?:@\w+)?", "", text, count=1).strip()
+            if not target:
+                self.send_message(chat_id, "Use: /rescan_clinic <name|slug>")
+            else:
+                self.run_job(chat_id, f"rescan_clinic: {target[:40]}", lambda: rescan_clinic_job(target), action_type="rescan_clinic")
+        elif command == "/rescan_all_clinics":
+            arg = re.sub(r"^/rescan_all_clinics(?:@\w+)?", "", text, count=1).strip()
+            limit = int(arg) if arg.isdigit() else 0
+            self.run_job(chat_id, "rescan_all_clinics", lambda: rescan_all_clinics_job(limit=limit), action_type="rescan_all_clinics")
         elif command == "/find_clinics":
             payload = re.sub(r"^/find_clinics(?:@\w+)?", "", text, count=1).strip()
             query, limit = self.parse_find_clinics_payload(payload)
@@ -2693,6 +2735,14 @@ Return JSON:
             else:
                 msg = "There is no pending action to cancel." if intent_res.lang != "vi" else "Không có thao tác nào đang chờ để hủy."
                 self.send_message(chat_id, msg)
+            return
+
+        # 2b. Immediate read-only action: inspect_clinic (does not require approval)
+        if intent_res.action == "inspect_clinic":
+            with self._pending_lock:
+                self.pending_actions.pop(chat_id, None)
+            target = (intent_res.parameters or {}).get("target") or (intent_res.parameters or {}).get("query") or text
+            self.send_message(chat_id, inspect_clinic_job(str(target), lang=intent_res.lang))
             return
 
         # 3. Requires Approval (New Action detected by IntentAgent)
