@@ -5,6 +5,8 @@ from openai import OpenAI
 from pg_client import create_client
 from dotenv import load_dotenv
 
+from image_generator import generate_image_value
+from image_style import mosaic_prompt
 from generate_insights import (
     create_clients,
     save_generated_image,
@@ -112,15 +114,11 @@ def main():
     # Image generation
     cover_image_url = ""
     try:
-        image_prompt = (
-            f"A realistic documentary-style photograph of an Asian American father and son walking outdoors in a park or speaking with a doctor, "
-            f"warm summer lighting, everyday life, healthcare concept. Context: {data['title']}"
+        image_prompt = mosaic_prompt(
+            "pulse_cover",
+            f"An Asian American father and son outdoors in soft garden light or speaking with a caring doctor. Context: {data['title']}",
         )
-        image_response = client.chat.completions.create(
-            model=IMAGE_MODEL,
-            messages=[{"role": "user", "content": image_prompt}],
-        )
-        image_value = extract_image_value(image_response.choices[0].message)
+        image_value = generate_image_value(client, image_prompt, kind="pulse_cover")
         base_slug = generate_slug(data["title"])
         slug = make_unique_slug(supabase, base_slug)
         cover_image_url = save_generated_image(image_value, slug, "cover")

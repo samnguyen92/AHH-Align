@@ -7,6 +7,8 @@ import instructor
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
+from languages import detect_languages, normalize_language_list, verify_languages
+
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
 load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
@@ -283,26 +285,18 @@ def _with_pipeline_compatibility(extracted: dict) -> dict:
         if value not in (None, "")
     }
 
-    # Merge languages from team members to clinic level
-    languages_set = set(extracted.get("languages") or [])
+    # Merge languages from (already verified) team members to clinic level, canonical names, stable order
+    merged = list(extracted.get("languages") or [])
     for member in team_members:
-        if isinstance(member, dict) and member.get("languages_spoken"):
-            for lang in member["languages_spoken"]:
-                if isinstance(lang, str) and lang.strip():
-                    languages_set.add(lang.strip())
-    
-    # Remove empty/null values and ensure proper capitalization
-    cleaned_languages = []
-    for lang in languages_set:
-        cleaned = lang.strip().title()
-        if cleaned and cleaned not in cleaned_languages:
-            cleaned_languages.append(cleaned)
-            
+        if isinstance(member, dict):
+            merged.extend(member.get("languages_spoken") or [])
+    cleaned_languages = normalize_language_list(merged)
+
     # True only when a non-English language is backed by evidence in the source (see _verify_against_source).
     extracted["languages_verified"] = any(lang.lower() != "english" for lang in cleaned_languages)
     if not cleaned_languages:
         cleaned_languages = ["English"]
-        
+
     extracted["languages"] = cleaned_languages
 
     for field in ["address", "city", "state", "zip_code"]:
@@ -333,20 +327,6 @@ def _with_pipeline_compatibility(extracted: dict) -> dict:
     return extracted
 
 
-LANGUAGE_ALIASES = {
-    "vietnamese": ["vietnamese", "tiếng việt", "tieng viet", "việt"],
-    "chinese": ["chinese", "mandarin", "cantonese", "中文", "华语", "國語", "国语", "粵語", "广东话", "普通话"],
-    "mandarin": ["mandarin", "chinese", "中文", "普通话", "國語", "国语"],
-    "cantonese": ["cantonese", "chinese", "粵語", "广东话", "廣東話"],
-    "korean": ["korean", "한국어", "한국", "韓國", "한의"],
-    "spanish": ["spanish", "español", "espanol", "se habla"],
-    "tagalog": ["tagalog", "filipino", "pilipino"],
-    "hindi": ["hindi", "हिन्दी"],
-    "japanese": ["japanese", "日本語"],
-    "english": ["english"],
-}
-
-
 def _normalize_insurance_name(name: str) -> str:
     return "".join(ch for ch in name.lower() if ch.isalnum() or ch == " ").strip()
 
@@ -359,13 +339,24 @@ def _verify_against_source(extracted: dict, source_text: str) -> dict:
     source = source_text.lower()
     dropped: dict = {}
 
-    kept_languages, dropped_languages = [], []
-    for lang in extracted.get("languages") or []:
-        aliases = LANGUAGE_ALIASES.get(str(lang).strip().lower(), [str(lang).strip().lower()])
-        (kept_languages if any(alias in source for alias in aliases) else dropped_languages).append(lang)
+    # Languages: evidence-based on the page's VISIBLE text (no CSS/script noise, no generic-word leakage).
+    # Deterministic detection is merged with the LLM's candidates; the LLM can never add an unverified language.
+    candidates = list(extracted.get("languages") or [])
+    for member in extracted.get("team_members") or []:
+        candidates.extend((member or {}).get("languages_spoken") or [])
+    detected = detect_languages(source_text)
+    kept_languages, evidence, dropped_languages = verify_languages(candidates, source_text)
+    for name, quote in detected.items():
+        if name not in kept_languages:
+            kept_languages.append(name)
+            evidence[name] = quote
     extracted["languages"] = kept_languages
+    extracted["languages_evidence"] = [f"{name}: {quote}" for name, quote in evidence.items()]
     if dropped_languages:
         dropped["languages"] = dropped_languages
+    for member in extracted.get("team_members") or []:
+        if isinstance(member, dict) and member.get("languages_spoken"):
+            member["languages_spoken"] = [n for n in normalize_language_list(member["languages_spoken"]) if n in evidence]
 
     insurance = extracted.get("insurance")
     if isinstance(insurance, dict):

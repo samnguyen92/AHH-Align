@@ -20,7 +20,7 @@ export async function saveLocalFile(
   await fs.promises.mkdir(targetDir, { recursive: true });
 
   const filePath = path.join(targetDir, fileName);
-  const data = buffer instanceof Buffer ? buffer : Buffer.from(buffer);
+  const data = Buffer.isBuffer(buffer) ? buffer : Buffer.from(new Uint8Array(buffer));
   await fs.promises.writeFile(filePath, data);
 
   const stats = await fs.promises.stat(filePath);

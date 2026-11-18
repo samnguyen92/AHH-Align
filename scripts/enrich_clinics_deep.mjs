@@ -164,7 +164,7 @@ Return ONLY valid JSON matching this structure:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-v4-flash',
+        model: process.env.OPENCLAW_TEXT_MODEL || 'openai/gpt-6-luna',
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' },
         temperature: 0.2,

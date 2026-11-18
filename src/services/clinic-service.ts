@@ -17,6 +17,8 @@ import {
   stateToSlug,
 } from '@/lib/local-seo';
 import { resolveSearchIntent } from '@/lib/medical-taxonomy';
+import { clinicFamilies, expandLanguageFilter, isDirectoryFamily } from '@/lib/languages';
+import { getStateName, normalizeStateCode } from '@/lib/states';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -61,9 +63,17 @@ export async function searchClinics(
       }
     }
 
-    // 2. State filter
+    // 2. State filter (supports 2-letter code "TX" or full name "Texas", or comma-separated)
     if (params.state) {
-      query = query.eq('state', params.state.toUpperCase());
+      const states = params.state
+        .split(',')
+        .map((s) => normalizeStateCode(s) ?? s.trim().toUpperCase())
+        .filter(Boolean);
+      if (states.length === 1) {
+        query = query.eq('state', states[0]);
+      } else if (states.length > 1) {
+        query = query.in('state', states);
+      }
     }
 
     // 3. Specialty filter (hỗ trợ chọn 1 hoặc nhiều specialties)
@@ -85,10 +95,12 @@ export async function searchClinics(
         .split(',')
         .map((l) => l.trim())
         .filter(Boolean);
-      if (langs.length === 1) {
-        query = query.contains('languages', [langs[0]]);
-      } else if (langs.length > 1) {
-        query = query.overlaps('languages', langs);
+      // "Chinese" must also match clinics stored as Mandarin/Cantonese/...; the registry decides the family.
+      const expanded = [...new Set(langs.flatMap((l) => expandLanguageFilter(l)))];
+      if (expanded.length === 1) {
+        query = query.contains('languages', [expanded[0]]);
+      } else if (expanded.length > 1) {
+        query = query.overlaps('languages', expanded);
       }
     }
 
@@ -156,9 +168,11 @@ export async function searchClinics(
       }
 
       if (intent.matchedLanguage) {
-        const cleanLang = sanitizePostgrestPattern(intent.matchedLanguage);
-        if (cleanLang) {
-          orClauses.add(`metadata->>search_text.ilike.%${cleanLang.toLowerCase()}%`);
+        for (const variant of expandLanguageFilter(intent.matchedLanguage)) {
+          const cleanLang = sanitizePostgrestPattern(variant);
+          if (cleanLang) {
+            orClauses.add(`metadata->>search_text.ilike.%${cleanLang.toLowerCase()}%`);
+          }
         }
       }
 
@@ -696,10 +710,10 @@ export async function getAvailableLanguages(): Promise<string[]> {
     }
 
     // Flatten mảng languages từ tất cả clinics, loại bỏ trùng lặp
-    const allLanguages = (data ?? []).flatMap(
-      (row: { languages: string[] }) => row.languages
+    const allLanguages: string[] = (data ?? []).flatMap(
+      (row: { languages?: string[] | null }) => row.languages ?? []
     );
-    const uniqueLanguages = [...new Set(allLanguages)].sort();
+    const uniqueLanguages: string[] = [...new Set(allLanguages)].sort();
 
     return uniqueLanguages;
   } catch (err) {
@@ -861,44 +875,31 @@ export interface CityFilterOption extends FilterOption {
   state: string;
 }
 
+export interface StateFilterOption extends FilterOption {
+  name: string;
+}
+
 export interface SearchFilterOptions {
   specialties: FilterOption[];
   languages: FilterOption[];
   cities: CityFilterOption[];
+  states: StateFilterOption[];
   insurances: FilterOption[];
   priceTiers: FilterOption[];
 }
-
-const ASIAN_LANGUAGES = new Set([
-  'Vietnamese',
-  'Korean',
-  'Chinese',
-  'Japanese',
-  'Tagalog',
-  'Hindi',
-  'Mandarin',
-  'Cantonese',
-  'Toisanese',
-  'Thai',
-  'Bengali',
-  'Punjabi',
-  'Urdu',
-  'Tamil',
-  'Telugu',
-  'Gujarati'
-]);
 
 export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
   const supabase = createServerAnonClient();
 
   if (!supabase) {
-    return { specialties: [], languages: [], cities: [], insurances: [], priceTiers: [] };
+    return { specialties: [], languages: [], cities: [], states: [], insurances: [], priceTiers: [] };
   }
 
   try {
     const { data, error } = await supabase
       .from('clinics')
-      .select('specialty, languages, city, state, metadata');
+      .select('specialty, languages, city, state, metadata, status')
+      .neq('status', 'draft');
 
     if (error) {
       throw error;
@@ -907,36 +908,36 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
     const specialtyCounts: Record<string, number> = {};
     const languageCounts: Record<string, number> = {};
     const cityCounts: Record<string, { state: string; count: number }> = {};
+    const stateCounts: Record<string, number> = {};
     const insuranceCounts: Record<string, number> = {};
     const priceTierCounts: Record<string, number> = {};
 
-    (data ?? []).forEach((clinic) => {
+    (data ?? []).forEach((clinic: any) => {
       // 1. Specialty
       if (clinic.specialty) {
         const spec = clinic.specialty.trim();
         specialtyCounts[spec] = (specialtyCounts[spec] || 0) + 1;
       }
 
-      // 2. Languages
+      // 2. Languages: one facet per directory family (Mandarin + Cantonese + Chinese -> Chinese), counted once per clinic
       if (clinic.languages && Array.isArray(clinic.languages)) {
-        clinic.languages.forEach((lang: string) => {
-          if (lang) {
-            const l = lang.trim();
-            const normalizedLang = l.charAt(0).toUpperCase() + l.slice(1).toLowerCase();
-            if (ASIAN_LANGUAGES.has(normalizedLang)) {
-              languageCounts[normalizedLang] = (languageCounts[normalizedLang] || 0) + 1;
-            }
-          }
-        });
+        clinicFamilies(clinic.languages)
+          .filter(isDirectoryFamily)
+          .forEach((family) => {
+            languageCounts[family] = (languageCounts[family] || 0) + 1;
+          });
       }
 
-      // 3. City
-      if (clinic.city && clinic.state) {
+      // 3. State & City
+      const normState = normalizeStateCode(clinic.state);
+      if (normState) {
+        stateCounts[normState] = (stateCounts[normState] || 0) + 1;
+      }
+      if (clinic.city && normState) {
         const city = clinic.city.trim();
-        const state = clinic.state.trim().toUpperCase();
-        const key = `${city}, ${state}`;
+        const key = `${city}, ${normState}`;
         if (!cityCounts[key]) {
-          cityCounts[key] = { state, count: 0 };
+          cityCounts[key] = { state: normState, count: 0 };
         }
         cityCounts[key].count += 1;
       }
@@ -978,6 +979,10 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
       })
       .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
 
+    const states = Object.entries(stateCounts)
+      .map(([code, count]) => ({ value: code, name: getStateName(code, 'en'), count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
     const insurances = Object.entries(insuranceCounts)
       .map(([value, count]) => ({ value, count }))
       .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
@@ -988,10 +993,10 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
       .map(([value, count]) => ({ value, count }))
       .sort((a, b) => (tierOrder[a.value] || 9) - (tierOrder[b.value] || 9));
 
-    return { specialties, languages, cities, insurances, priceTiers };
+    return { specialties, languages, cities, states, insurances, priceTiers };
   } catch (err) {
     console.error('[clinic-service] getSearchFilterOptions error:', err);
-    return { specialties: [], languages: [], cities: [], insurances: [], priceTiers: [] };
+    return { specialties: [], languages: [], cities: [], states: [], insurances: [], priceTiers: [] };
   }
 }
 

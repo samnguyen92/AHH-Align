@@ -222,8 +222,8 @@ export async function getPublishedArticleSlugs(limit = 100): Promise<string[]> {
     if (error) throw error;
 
     return (data || [])
-      .map((article) => article.slug)
-      .filter((slug): slug is string => Boolean(slug));
+      .map((article: { slug?: string | null }) => article.slug)
+      .filter((slug: string | null | undefined): slug is string => Boolean(slug));
   } catch (err) {
     console.error('[article-service] getPublishedArticleSlugs error:', err);
     return [];
@@ -316,9 +316,9 @@ export async function getArticleCategories(): Promise<string[]> {
 
     if (error) throw error;
 
-    const categories = (data || [])
-      .map((a) => a.category)
-      .filter((c): c is string => !!c);
+    const categories: string[] = (data || [])
+      .map((a: { category?: string | null }) => a.category)
+      .filter((c: string | null | undefined): c is string => !!c);
       
     return [...new Set(categories)].sort();
   } catch (err) {
@@ -345,9 +345,9 @@ export async function getArticleTags(): Promise<string[]> {
 
     if (error) throw error;
 
-    const tags = (data || [])
-      .flatMap((article) => article.tags ?? [])
-      .filter((tag): tag is string => Boolean(tag));
+    const tags: string[] = (data || [])
+      .flatMap((article: { tags?: string[] | null }) => article.tags ?? [])
+      .filter((tag: string | null | undefined): tag is string => Boolean(tag));
 
     return [...new Set(tags)].sort();
   } catch (err) {

@@ -56,12 +56,15 @@ export const metadata: Metadata = {
 };
 
 import Script from 'next/script';
+import { LocaleProvider } from '@/lib/i18n/context';
+import { getServerLocale } from '@/lib/i18n/server';
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const initialLocale = await getServerLocale();
   const organizationJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Organization',
@@ -85,7 +88,7 @@ export default function RootLayout({
   const gaId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
 
   return (
-    <html lang="en" className={`${dmSans.variable} ${geist.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+    <html lang={initialLocale} className={`${dmSans.variable} ${geist.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -93,9 +96,8 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Geist+Mono:wght@100..900&display=swap"
           rel="stylesheet"
         />
-        {/* Homepage native-script words only (subset by the text parameter), so CJK fonts stay a few KB. */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@600&family=Noto+Sans+SC:wght@600&text=%E4%B8%AD%E5%A5%BD%E6%82%A8%E6%96%87%EA%B5%AD%EB%85%95%EC%84%B8%EC%95%88%EC%96%B4%EC%9A%94%ED%95%98%ED%95%9C&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
       </head>
@@ -118,7 +120,9 @@ export default function RootLayout({
         )}
         <JsonLd data={[organizationJsonLd, websiteJsonLd]} />
         <PageViewTracker />
-        <SiteChrome>{children}</SiteChrome>
+        <LocaleProvider initialLocale={initialLocale}>
+          <SiteChrome>{children}</SiteChrome>
+        </LocaleProvider>
       </body>
     </html>
   );

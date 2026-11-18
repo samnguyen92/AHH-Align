@@ -3,8 +3,10 @@
 // A pill search bar that floats at the bottom of the screen once the visitor has
 // scrolled past the hero, and steps aside again when the footer comes into view.
 import { useEffect, useRef, useState } from 'react';
+import { useLocale } from '@/lib/i18n/context';
 
 export function FloatingSearch({ action = '/search' }: { action?: string }) {
+  const { t } = useLocale();
   const [shown, setShown] = useState(false);
   const form = useRef<HTMLFormElement | null>(null);
 
@@ -61,17 +63,17 @@ export function FloatingSearch({ action = '/search' }: { action?: string }) {
           <circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" />
           <path d="M13.5 13.5L17 17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
-        <label htmlFor={'site-fsearch-q'} className="sr-only">Search clinics</label>
+        <label htmlFor={'site-fsearch-q'} className="sr-only">{t.footer.floatingPlaceholder}</label>
         <input
           id={'site-fsearch-q'}
           name="query"
           type="search"
-          placeholder="Clinic or city"
+          placeholder={t.footer.floatingPlaceholder}
           autoComplete="off"
           enterKeyHint="search"
         />
         <button type="submit">
-          Search
+          {t.footer.searchBtn}
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>

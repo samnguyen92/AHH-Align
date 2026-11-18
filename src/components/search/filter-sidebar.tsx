@@ -28,8 +28,7 @@ const SPECIALTIES = [
 const LANGUAGES = [
   'Vietnamese',
   'Korean',
-  'Chinese (Mandarin)',
-  'Chinese (Cantonese)',
+  'Chinese',
   'Japanese',
   'Tagalog',
   'Hindi',

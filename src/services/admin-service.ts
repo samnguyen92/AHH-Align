@@ -319,7 +319,7 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
     roleByUserId.set(row.user_id, row.role);
   });
 
-  return usersResult.data.users.map((user) => {
+  return usersResult.data.users.map((user: any) => {
     const metadata = user.user_metadata ?? {};
     const name =
       typeof metadata.name === 'string'

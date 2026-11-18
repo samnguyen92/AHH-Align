@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/services/supabase-server';
 import { getBearerToken, getUserFromAccessToken } from '@/services/auth-service';
+import { normalizeLanguageList } from '@/lib/languages';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,10 +44,12 @@ export async function PATCH(request: NextRequest) {
 
   const currentMetadata =
     clinic.metadata && typeof clinic.metadata === 'object' ? clinic.metadata : {};
-  const nextMetadata =
+  const baseMetadata =
     body.metadata && typeof body.metadata === 'object'
       ? { ...currentMetadata, ...body.metadata }
       : currentMetadata;
+  // languages typed by the owner are authoritative: scrapers must not overwrite them with a weaker guess
+  const nextMetadata = Array.isArray(body.languages) ? { ...baseMetadata, languages_source: 'manual' } : baseMetadata;
 
   const update = {
     name: body.name,
@@ -57,7 +60,7 @@ export async function PATCH(request: NextRequest) {
     zip_code: body.zip_code,
     phone: body.phone,
     specialty: body.specialty,
-    languages: Array.isArray(body.languages) ? body.languages : [],
+    languages: Array.isArray(body.languages) ? normalizeLanguageList(body.languages, { keepUnknown: true }) : [],
     is_telehealth_available: Boolean(body.is_telehealth_available),
     metadata: nextMetadata,
     claimed_by: clinic.claimed_by ?? user.id,

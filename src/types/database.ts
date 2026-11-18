@@ -42,10 +42,14 @@ export interface ClinicMetadata {
   about_highlight?: string;
   short_description?: string;
   review_summary?: string;
-  what_to_know?: Array<{ title: string; detail: string }>;
-  differentiators?: Array<{ title: string; detail: string }>;
-  before_you_book?: Array<{ title: string; detail: string }>;
   completeness_score?: number;
+  images_source?: 'website' | 'google' | 'mixed' | 'ai' | 'none' | string;
+  primary_image_source?: 'website' | 'google' | 'ai' | 'none' | string;
+  image_sources?: Record<string, string>;
+  languages_verified?: boolean;
+  languages_evidence?: string[];
+  languages_detected?: Record<string, string>;
+  languages_source?: 'website' | 'manual' | string;
   faqs?: ClinicFaq[];
   website?: string;
   appointment_url?: string;
@@ -185,7 +189,9 @@ export interface InsuranceInfo {
 export interface TeamMember {
   name: string;
   role?: string | null;
+  credentials?: string | null;
   languages_spoken?: string[];
+  bio?: string | null;
   bio_snippet?: string | null;
   image_url?: string | null;
   avatar_url?: string | null;

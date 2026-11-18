@@ -13,11 +13,8 @@ load_dotenv(".env")
 load_dotenv("../.env.local")
 
 from image_generator import generate_image_value, build_article_prompt
-NATURAL_PHOTO_STYLE = (
-    "Shot on Sony A7R IV, 50mm lens, f/2.8 depth of field. "
-    "Natural skin texture, subtle wrinkles, unretouched, candid, highly detailed, "
-    "photorealistic, everyday life."
-)
+from image_style import MOSAIC_STYLE
+NATURAL_PHOTO_STYLE = MOSAIC_STYLE
 BAD_IMAGE_MARKERS = ["/Users/", "source.unsplash.com"]
 
 
@@ -78,7 +75,7 @@ def generate_article_image(client: OpenAI, article: dict, image_index: int = 1, 
         f"{article.get('title')}. Summary: {article.get('excerpt') or article.get('category') or 'healthcare guide'}. "
         f"Image role: {image_role}; make it visually distinct from the other article images"
     )
-    image_value = generate_image_value(client, build_article_prompt(topic))
+    image_value = generate_image_value(client, build_article_prompt(topic), kind="hero" if image_index == 1 else "article")
     suffix = f"repair-{image_index}-{run_id}" if run_id else f"repair-{image_index}"
     return save_generated_image(image_value, article["slug"], suffix)
 

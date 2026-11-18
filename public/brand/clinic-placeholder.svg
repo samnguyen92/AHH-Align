@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Photo coming soon">
+  <rect width="800" height="600" fill="#E6EFE9"/>
+  <g fill="none" stroke="#B9CDC1" stroke-width="2">
+    <circle cx="640" cy="120" r="220" opacity=".5"/>
+    <circle cx="640" cy="120" r="150" opacity=".5"/>
+    <circle cx="120" cy="560" r="180" opacity=".5"/>
+  </g>
+  <g transform="translate(400 280)">
+    <circle r="54" fill="#D3E2D9"/>
+    <path d="M-5.5 -26h11v20.5h20.5v11H5.5V26h-11V5.5h-20.5v-11h20.5z" fill="#7FA392"/>
+  </g>
+  <text x="400" y="376" text-anchor="middle" font-family="system-ui,-apple-system,Segoe UI,sans-serif" font-size="20" fill="#6E8B7C" letter-spacing=".5">Photo coming soon</text>
+</svg>

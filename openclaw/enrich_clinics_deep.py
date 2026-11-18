@@ -25,6 +25,8 @@ from psycopg2.extras import RealDictCursor
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from scrape_gmaps_photos import get_photos
 from scrape_deep_website import crawl_site
+from clinic_photos import build_gallery
+from languages import detect_languages
 
 ROOT_DIR = Path("/app") if Path("/app/public").exists() else Path(__file__).resolve().parent.parent
 UPLOADS_DIR = ROOT_DIR / "public" / "uploads" / "generated-clinics" / "google-places"
@@ -150,8 +152,9 @@ Return ONLY valid JSON matching this structure:
   "services_offered": []
 }}"""
 
+    text_model = os.environ.get("OPENCLAW_TEXT_MODEL") or ENV.get("OPENCLAW_TEXT_MODEL") or "openai/gpt-6-luna"
     req_body = json.dumps({
-        "model": "deepseek/deepseek-v4-flash",
+        "model": text_model,
         "messages": [{"role": "user", "content": prompt}],
         "response_format": {"type": "json_object"},
         "temperature": 0.2
@@ -191,7 +194,7 @@ def calculate_score(m: dict, photos_count: int) -> int:
 
     return min(100, score)
 
-def enrich_clinic(conn, clinic: dict):
+def enrich_clinic(conn, clinic: dict, images_only: bool = False):
     print("\n" + "=" * 55)
     print(f"[*] Processing: {clinic['name']} ({clinic.get('city')}, {clinic.get('state')})")
     print("=" * 55)
@@ -201,44 +204,7 @@ def enrich_clinic(conn, clinic: dict):
     website = meta.get("website") or meta.get("source_url") or meta.get("google_website_url")
     place_id = meta.get("google_place_id")
 
-    # 1. Scrape real Google Maps photos
-    print(f"   [*] Fetching real Google Maps photos for place ID {place_id or 'N/A'}...")
-    candidate_urls = []
-    if place_id:
-        try:
-            g_photos = get_photos(place_id, max_photos=15)
-            print(f"   [+] Found {len(g_photos)} Google Maps photos.")
-            candidate_urls.extend(g_photos)
-        except Exception as e:
-            print(f"   [!] Error getting Google Maps photos: {e}")
-
-    # Download photos
-    saved_urls = []
-    seen_hashes = set()
-    p_idx = 1
-
-    for img_url in candidate_urls:
-        if len(saved_urls) >= 10:
-            break
-        buf = download_photo(img_url)
-        if not buf:
-            continue
-        h = hashlib.md5(buf).hexdigest()
-        if h in seen_hashes:
-            continue
-        seen_hashes.add(h)
-
-        ext = detect_extension(buf)
-        fname = f"{slug}-google-{p_idx}.{ext}"
-        fpath = UPLOADS_DIR / fname
-        with open(fpath, "wb") as f:
-            f.write(buf)
-        saved_urls.append(f"/uploads/generated-clinics/google-places/{fname}")
-        p_idx += 1
-
-    print(f"   [+] Successfully saved {len(saved_urls)} real photos to disk.")
-
-    # 2. Deep crawl website
+    # 1. Deep crawl the OFFICIAL website first (text + photos)
     print(f"   [*] Deep crawling website: {website}...")
     crawl_result = {"pages": []}
     if website:
@@ -248,16 +214,81 @@ def enrich_clinic(conn, clinic: dict):
         except Exception as e:
             print(f"   [!] Deep crawl error: {e}")
 
+    # 2. Photos: website -> Google -> (none = neutral placeholder on the site)
+    def fetch_google():
+        if not place_id:
+            return []
+        print(f"   [*] Fetching Google Maps photos for place ID {place_id}...")
+        try:
+            return get_photos(place_id, max_photos=15)
+        except Exception as e:
+            print(f"   [!] Error getting Google Maps photos: {e}")
+            return []
+
+    gallery = build_gallery(
+        slug,
+        crawl_result.get("pages", []),
+        ROOT_DIR,
+        existing_google_urls=meta.get("images") or [],
+        google_fetcher=fetch_google,
+    )
+    saved_urls = gallery["images"]
+    print(f"   [+] Photo source: {gallery['images_source']} ({len(saved_urls)} photos)")
+
+    # Language evidence from the VISIBLE text of every crawled page (footer included)
+    detected_languages: dict = {}
+    for page_data in crawl_result.get("pages", []):
+        for name, quote in detect_languages(page_data.get("full_text") or page_data.get("content") or "").items():
+            detected_languages.setdefault(name, quote)
+
+    verified_langs = list(clinic.get("languages") or ["English"])
+    if detected_languages and meta.get("languages_source") != "manual":
+        verified_langs = ["English", *[lang for lang in detected_languages.keys() if lang != "English"]]
+        clinic = {**clinic, "languages": verified_langs}
+        print(f"   [+] Verified website languages: {verified_langs}")
+
+    if images_only:
+        # Photos + language evidence only: no LLM call, no change to status/pricing/FAQ/score.
+        new_meta = dict(meta)
+        if saved_urls:
+            new_meta["images"] = saved_urls
+            new_meta["image_sources"] = gallery["sources"]
+        if saved_urls or not new_meta.get("images"):
+            new_meta["images_source"] = gallery["images_source"]
+            new_meta["primary_image_source"] = gallery["primary_image_source"]
+        new_meta["languages_detected"] = detected_languages
+        if detected_languages:
+            new_meta["languages_verified"] = True
+            new_meta["languages_evidence"] = [f"{k}: {v}" for k, v in detected_languages.items()]
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE clinics SET languages = %s, metadata = %s WHERE id = %s",
+                (verified_langs, json.dumps(new_meta), clinic["id"]),
+            )
+        conn.commit()
+        print("   [✓] Photos & verified languages updated (images-only mode)")
+        return
+
     # 3. AI extraction
     print(f"   [*] Extracting Pricing, FAQs, and NEXT HEALTH data via AI...")
     extracted = extract_with_openrouter(clinic, crawl_result)
 
     new_meta = dict(meta)
 
-    # Images
+    # Images (never replace an existing gallery with an empty one)
     if saved_urls:
         new_meta["images"] = saved_urls
+        new_meta["image_sources"] = gallery["sources"]
+        new_meta["images_source"] = gallery["images_source"]
+        new_meta["primary_image_source"] = gallery["primary_image_source"]
+    elif not new_meta.get("images"):
+        new_meta["images_source"] = "none"
+        new_meta["primary_image_source"] = "none"
     new_meta["gallery_images"] = []
+    new_meta["languages_detected"] = detected_languages
+    if detected_languages:
+        new_meta["languages_verified"] = True
+        new_meta["languages_evidence"] = [f"{k}: {v}" for k, v in detected_languages.items()]
 
     if extracted:
         # Pricing
@@ -289,8 +320,8 @@ def enrich_clinic(conn, clinic: dict):
 
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE clinics SET metadata = %s, status = %s WHERE id = %s",
-            (json.dumps(new_meta), status, clinic["id"])
+            "UPDATE clinics SET languages = %s, metadata = %s, status = %s WHERE id = %s",
+            (verified_langs, json.dumps(new_meta), status, clinic["id"])
         )
     conn.commit()
     print("   [✓] Clinic updated in PostgreSQL!")
@@ -300,6 +331,7 @@ def main():
     target_slug = None
     sample_count = 0
     is_all = False
+    images_only = "--images-only" in args
 
     for a in args:
         if a.startswith("--slug="):
@@ -318,7 +350,7 @@ def main():
                 if not rows:
                     print(f"Clinic not found with slug: {target_slug}")
                     return
-                enrich_clinic(conn, rows[0])
+                enrich_clinic(conn, rows[0], images_only)
             elif sample_count > 0:
                 print(f"[*] Running sample test on {sample_count} diverse clinics...")
                 cur.execute("""
@@ -329,7 +361,7 @@ def main():
                 """, (sample_count,))
                 rows = cur.fetchall()
                 for c in rows:
-                    enrich_clinic(conn, c)
+                    enrich_clinic(conn, c, images_only)
             elif is_all:
                 print("[*] Running on all top 100 clinics...")
                 cur.execute("""
@@ -341,12 +373,13 @@ def main():
                 rows = cur.fetchall()
                 for idx, c in enumerate(rows):
                     print(f"\n[{idx + 1}/{len(rows)}]")
-                    enrich_clinic(conn, c)
+                    enrich_clinic(conn, c, images_only)
             else:
                 print("Usage:")
                 print("  python enrich_clinics_deep.py --slug=metro-acupuncture")
                 print("  python enrich_clinics_deep.py --sample=10")
                 print("  python enrich_clinics_deep.py --all")
+                print("  add --images-only to refresh photos (website -> Google) without LLM extraction")
     finally:
         conn.close()
 

@@ -4,6 +4,7 @@ import re
 import unicodedata
 from dotenv import load_dotenv
 from pg_client import create_client
+from languages import normalize_language_list
 from normalize import (
     clean_value,
     compute_quality,
@@ -197,7 +198,7 @@ def insert_clinic(clinic_data: dict):
             clinic_data.get("specialty"),
             f"{(clinic_data.get('google_metadata') or {}).get('google_primary_type') or ''} {clinic_data.get('name') or ''}",
         ),
-        "languages": clinic_data.get("languages", ["English"]),
+        "languages": normalize_language_list(clinic_data.get("languages") or []) or ["English"],
         "metadata": incoming_metadata,
         "is_telehealth_available": clinic_data.get("is_telehealth_available", False)
     }
@@ -221,9 +222,13 @@ def insert_clinic(clinic_data: dict):
             for field in ("description", "address", "city", "state", "zip_code", "phone", "specialty"):
                 if clean_value(db_payload.get(field)) is None and clean_value(existing_row.get(field)):
                     db_payload[field] = existing_row[field]
-            old_langs = existing_row.get("languages") or []
+            old_langs = normalize_language_list(existing_row.get("languages") or [])
             new_langs = db_payload.get("languages") or []
-            if new_langs == ["English"] and old_langs:
+            old_meta = existing_row.get("metadata") or {}
+            # A re-scrape that finds nothing must not wipe languages that were verified earlier or typed by the
+            # owner/admin, but it also must not preserve unverified guesses (e.g. a wrong "Vietnamese").
+            trusted_old = bool(old_meta.get("languages_verified")) or old_meta.get("languages_source") == "manual"
+            if new_langs == ["English"] and old_langs and trusted_old:
                 db_payload["languages"] = old_langs
             existing_metadata = existing_row.get("metadata") or {}
             merged_metadata = {**existing_metadata, **incoming_metadata}

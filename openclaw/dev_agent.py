@@ -161,6 +161,50 @@ def tool_write_source_file(path: str, content: str) -> str:
         return f"Error writing {path}: {exc}"
 
 
+
+def tool_generate_mosaic_image(subject: str, kind: str = "web", filename: str = "") -> str:
+    """
+    Generate an editorial photo in the Asian Health Hub Mosaic style (soft natural light, sage-green/cream palette,
+    using the redesign's photos in public/brand/photos/ as style references) and save it under public/brand/photos/.
+    """
+    import re
+    import urllib.request
+    from image_generator import generate_image_value
+    from image_style import mosaic_prompt
+
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        return "Error: OPENROUTER_API_KEY is not set."
+    slug = re.sub(r"[^a-z0-9-]+", "-", (filename or subject or "mosaic").lower()).strip("-")[:48] or "mosaic-gen"
+    if not slug.endswith((".png", ".jpg", ".webp")):
+        slug = f"{slug}.png"
+    rel_path = f"public/brand/photos/{slug}"
+    abs_path = _resolve_safe_path(rel_path, for_write=True)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key, timeout=120.0)
+    prompt = mosaic_prompt(kind if kind in {"hero", "article", "pulse_cover", "portrait", "clinic_interior", "web"} else "web", subject)
+    image_value = generate_image_value(client, prompt, kind=kind)
+    if not image_value:
+        return "Error: Image generation failed across configured models."
+
+    try:
+        if image_value.startswith("data:image/"):
+            _, encoded = image_value.split(",", 1)
+            raw_bytes = base64.b64decode(encoded)
+        elif image_value.startswith("http"):
+            with urllib.request.urlopen(image_value, timeout=30) as resp:
+                raw_bytes = resp.read()
+        else:
+            return f"Error: Unexpected image payload format."
+        with open(abs_path, "wb") as fh:
+            fh.write(raw_bytes)
+        public_url = f"/brand/photos/{slug}"
+        return f"Successfully generated Mosaic-style image at {rel_path} (use src='{public_url}' in JSX/TSX)."
+    except Exception as exc:
+        return f"Error saving generated image: {exc}"
+
+
 def run_typecheck() -> Dict[str, Any]:
     """Run `npx tsc --noEmit` in PROJECT_ROOT to verify TypeScript integrity."""
     try:
@@ -326,6 +370,26 @@ DEV_AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "generate_mosaic_image",
+            "description": "Generate a brand-aligned AI photograph in the Asian Health Hub Mosaic style (soft natural window/garden light, sage-green & warm cream palette, warm Asian American portraits, referencing public/brand/photos/*) and save it to public/brand/photos/. Use whenever the user asks to generate or replace a hero image, section photo, blog cover, or webpage visual.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subject": {"type": "string", "description": "Scene description to generate in Mosaic style."},
+                    "kind": {
+                        "type": "string",
+                        "enum": ["hero", "article", "pulse_cover", "portrait", "clinic_interior", "web"],
+                        "description": "Preset kind matching the visual placement.",
+                    },
+                    "filename": {"type": "string", "description": "Output filename slug inside public/brand/photos/, e.g. 'hero-care.png'."},
+                },
+                "required": ["subject"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_typecheck",
             "description": "Run `npx tsc --noEmit` to verify there are no TypeScript compilation errors.",
             "parameters": {"type": "object", "properties": {}},
@@ -336,9 +400,10 @@ DEV_AGENT_TOOLS = [
 DEV_AGENT_SYSTEM_PROMPT = """You are the Autonomous Senior Web-Dev & UI/UX Engineer for Asian Health Hub.
 Tech stack:
 - Next.js 16.2.6 (App Router) in `src/app/`
-- React components in `src/components/` (`src/components/lg/` for Longevity design system, `src/components/clinic/` for clinic profiles, `src/components/search/` for `/search`)
-- Styling: `src/app/longevity.css` (main Longevity design system CSS) and `src/app/globals.css` (Tailwind v4 + global rules).
-- Brand palette: Deep Forest Green `#024E44`, Dark Ink `#0D1F1C`, Warm Cream `#F6FAF8`, Accent Lime `#D4F268`.
+- React components in `src/components/site/` (Mosaic redesign: `home.tsx`, `directory.tsx`, `clinic.tsx`, `post.tsx`, `ui.tsx`, `kit.tsx`, `site.css`) and `src/lib/site-data.ts`.
+- Styling: `src/components/site/site.css`, `src/app/longevity.css`, and `src/app/globals.css`.
+- Visual & Image Style (Mosaic): All AI-generated images (hero, insight, blog, pulse, web sections) MUST use the `generate_mosaic_image` tool so they match the Mosaic photography in `public/brand/photos/*` (soft natural window/dappled-garden light, calm sage-green `#E6EFE9` and warm cream palette, intimate warm Asian American subjects, creamy bokeh, fine film grain, zero text/logos).
+- Clinic Photos Rule: Clinic cards/profiles use ONLY real clinic photos (`website -> Google Places -> neutral placeholder /brand/clinic-placeholder.svg`), never stock/demo photos.
 
 Workflow rules:
 1. First locate and read the relevant files using `search_codebase` and `read_source_file`.
@@ -373,6 +438,18 @@ def _execute_tool_call(name: str, args: Dict[str, Any], modified_files: List[str
         res = tool_write_source_file(path, args.get("content", ""))
         if res.startswith("Successfully") and path not in modified_files:
             modified_files.append(path)
+        return res
+    if name == "generate_mosaic_image":
+        res = tool_generate_mosaic_image(
+            args.get("subject", ""),
+            args.get("kind", "web"),
+            args.get("filename", ""),
+        )
+        if res.startswith("Successfully"):
+            for token in res.split():
+                if token.startswith("public/brand/photos/"):
+                    modified_files.append(token)
+                    break
         return res
     if name == "run_typecheck":
         tc = run_typecheck()

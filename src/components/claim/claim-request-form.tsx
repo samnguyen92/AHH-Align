@@ -31,7 +31,7 @@ export function ClaimRequestForm({ clinic }: ClaimRequestFormProps) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setIsAuthenticated(!!data.session);
-      setUser(data.session?.user ?? null);
+      setUser((data.session as { user?: { id: string; email?: string } } | null)?.user ?? null);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {

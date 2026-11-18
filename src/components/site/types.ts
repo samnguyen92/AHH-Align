@@ -14,7 +14,7 @@ export type HomeClinic = {
   reviews: number;
   langs: string[];
   telehealth: boolean;
-  image: string;
+  image: string | null;
   fallback: string;
 };
 
@@ -22,6 +22,7 @@ export type HomeData = {
   counts: HomeCounts;
   specialties: { name: string; count: number; href: string }[];
   clinics: HomeClinic[];
+  states: { code: string; name: string; count: number; href: string }[];
   cities: { name: string; state: string; count: number; href: string }[];
   guides: { title: string; category: string; slug: string; excerpt: string; image: string | null; fallback: string }[];
 };
@@ -53,7 +54,7 @@ export type DirClinic = {
   langs: string[];
   telehealth: boolean;
   accepting: boolean | null;
-  image: string;
+  image: string | null;
   fallback: string;
 };
 
@@ -66,12 +67,15 @@ export type DirectoryData = {
   clinics: DirClinic[];
   languages: { value: string; native: string; lang: string; count: number }[];
   specialties: { value: string; count: number }[];
+  states: { value: string; name: string; count: number }[];
   cities: { value: string; state: string; count: number }[];
 };
 
 export type ClinicPageData = {
   clinic: Clinic;
-  photo: string;
+  photo: string | null;
+  photos: string[];
+  photoFallback: string;
   langs: string[];
   similar: DirClinic[];
 };

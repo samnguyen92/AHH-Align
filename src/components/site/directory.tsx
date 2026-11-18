@@ -1,12 +1,15 @@
 'use client';
 
 // The clinic directory (/search), organised for scanning: one heading and search,
-// the language switch (the first decision), filters in a sidebar, then a calm, even grid of results.
+// the language switch (the first decision), filters in a sidebar (Specialty, State, More), then a calm grid of results.
 import Link from 'next/link';
 import { Check, Search, SlidersHorizontal, Star, X } from 'lucide-react';
 import type { DirClinic, DirectoryData, DirectoryParams } from './types';
 import { SiteImg } from './img';
 import { INK, DIRECTORY, card, focusRing, clinicHref } from './kit';
+import { useLocale } from '@/lib/i18n/context';
+import { translateLanguage, translateSpecialty, type SupportedLocale } from '@/lib/i18n';
+import { getStateLabel, getStateName } from '@/lib/states';
 
 const KEYS: (keyof DirectoryParams)[] = [
   'query', 'language', 'specialty', 'city', 'state', 'insurance', 'telehealth', 'acceptingNew', 'openWeekend', 'minRating', 'priceTier', 'sort',
@@ -28,40 +31,27 @@ function hrefWith(params: DirectoryParams, updates: Partial<DirectoryParams>) {
 const toggle = (params: DirectoryParams, key: keyof DirectoryParams, value: string) =>
   hrefWith(params, { [key]: params[key] === value ? undefined : value });
 
-const SORTS: [NonNullable<DirectoryParams['sort']>, string][] = [
-  ['rating', 'Top rated'],
-  ['reviews', 'Most reviewed'],
-  ['newest', 'Newest'],
-];
+function headingFor(p: DirectoryParams, locale: SupportedLocale, findLabel: string) {
+  const locPlace = p.state ? getStateName(p.state, locale) : p.city;
+  const spec = p.specialty ? translateSpecialty(p.specialty, locale) : '';
+  const lang = p.language ? translateLanguage(p.language, locale) : '';
 
-const TOGGLES: [keyof DirectoryParams, string, string][] = [
-  ['acceptingNew', 'true', 'Accepting new patients'],
-  ['telehealth', 'true', 'Offers telehealth'],
-  ['openWeekend', 'true', 'Open weekends'],
-  ['minRating', '4.5', 'Rated 4.5 and up'],
-  ['insurance', 'Medicare', 'Accepts Medicare'],
-  ['insurance', 'Medicaid', 'Accepts Medicaid / Medi-Cal'],
-  ['priceTier', '$', 'Sliding-scale fees'],
-];
+  if (!lang && !spec && !locPlace) return findLabel;
 
-const LABELS: Partial<Record<keyof DirectoryParams, (v: string) => string>> = {
-  query: (v) => `“${v}”`,
-  language: (v) => v,
-  specialty: (v) => v,
-  city: (v) => v,
-  state: (v) => v,
-  insurance: (v) => v,
-  telehealth: () => 'Telehealth',
-  openWeekend: () => 'Open weekends',
-  priceTier: () => 'Sliding-scale fees',
-  acceptingNew: () => 'Accepting new patients',
-  minRating: (v) => `${v}+ stars`,
-};
-
-function headingFor(p: DirectoryParams) {
+  if (locale === 'vi') {
+    const parts = ['Phòng khám', spec && spec.toLowerCase(), lang && `nói ${lang}`, locPlace && `tại ${locPlace}`].filter(Boolean);
+    return parts.join(' ');
+  }
+  if (locale === 'ko') {
+    const parts = [locPlace, lang && `${lang} 가능`, spec, '병원'].filter(Boolean);
+    return parts.join(' ');
+  }
+  if (locale === 'zh') {
+    const parts = [locPlace, lang && `提供${lang}服务的`, spec, '诊所'].filter(Boolean);
+    return parts.join('');
+  }
   const lead = [p.language && `${p.language}-speaking`, p.specialty].filter(Boolean).join(' ');
-  if (!lead && !p.city) return 'Find a clinic';
-  return `${lead ? `${lead} clinics` : 'Clinics'}${p.city ? ` in ${p.city}` : ''}`;
+  return `${lead ? `${lead} clinics` : 'Clinics'}${locPlace ? ` in ${locPlace}` : ''}`;
 }
 
 /** a sidebar option: a row that reads like a checkbox list */
@@ -91,16 +81,19 @@ function FilterGroup({ title, children }: { title: string; children: React.React
 }
 
 function ResultCard({ c }: { c: DirClinic }) {
+  const { locale, t } = useLocale();
   return (
     <Link href={clinicHref(c.slug)} className={`group flex flex-col rounded-xl md:rounded-2xl ${focusRing}`}>
       <div className={`${card} aspect-[4/3]`}>
         <SiteImg src={c.image} fallback={c.fallback} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
         {c.accepting && (
-          <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-[#024E44] backdrop-blur-md">Accepting new patients</span>
+          <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-xs font-semibold text-[#024E44] backdrop-blur-md">
+            {t.directory.acceptingNewPatients}
+          </span>
         )}
       </div>
       <div className="px-1 pt-3">
-        <p className="text-xs font-semibold opacity-60">{c.specialty}</p>
+        <p className="text-xs font-semibold opacity-60">{translateSpecialty(c.specialty, locale)}</p>
         <h3 className="mt-1 text-lg font-bold leading-tight group-hover:underline">{c.name}</h3>
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-sm">
           {c.rating && (
@@ -114,9 +107,15 @@ function ResultCard({ c }: { c: DirClinic }) {
         </p>
         <p className="mt-2.5 flex flex-wrap gap-1">
           {c.langs.map((l) => (
-            <span key={l} className="rounded-full bg-[#E3F1EC] px-2.5 py-0.5 text-xs font-semibold text-[#024E44]">{l}</span>
+            <span key={l} className="rounded-full bg-[#E3F1EC] px-2.5 py-0.5 text-xs font-semibold text-[#024E44]">
+              {translateLanguage(l, locale)}
+            </span>
           ))}
-          {c.telehealth && <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-semibold">Telehealth</span>}
+          {c.telehealth && (
+            <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-semibold">
+              {t.directory.telehealthBadge}
+            </span>
+          )}
         </p>
       </div>
     </Link>
@@ -133,26 +132,70 @@ export type DirectoryIntro = {
 };
 
 export function DirectoryPage({ data, intro }: { data: DirectoryData; intro?: DirectoryIntro }) {
+  const { locale, t } = useLocale();
   const p = data.params;
   const from = data.total ? (data.page - 1) * data.pageSize + 1 : 0;
   const to = Math.min(data.total, data.page * data.pageSize);
   const active = KEYS.filter((k) => k !== 'sort' && p[k]);
   const sort = p.sort ?? 'rating';
 
+  const sorts: [NonNullable<DirectoryParams['sort']>, string][] = [
+    ['rating', t.directory.sortTopRated],
+    ['reviews', t.directory.sortMostReviewed],
+    ['newest', t.directory.sortNewest],
+  ];
+
+  const toggles: [keyof DirectoryParams, string, string][] = [
+    ['acceptingNew', 'true', t.directory.acceptingNewPatients],
+    ['telehealth', 'true', t.directory.offersTelehealth],
+    ['openWeekend', 'true', t.directory.openWeekends],
+    ['minRating', '4.5', t.directory.rated45Up],
+    ['insurance', 'Medicare', t.directory.acceptsMedicare],
+    ['insurance', 'Medicaid', t.directory.acceptsMedicaid],
+    ['priceTier', '$', t.directory.slidingScale],
+  ];
+
+  const chipLabel = (k: keyof DirectoryParams, v: string): string => {
+    if (k === 'query') return `“${v}”`;
+    if (k === 'language') return translateLanguage(v, locale);
+    if (k === 'specialty') return translateSpecialty(v, locale);
+    if (k === 'state') return getStateLabel(v, locale);
+    if (k === 'city') return v;
+    if (k === 'insurance') return v;
+    if (k === 'telehealth') return t.directory.telehealthBadge;
+    if (k === 'openWeekend') return t.directory.openWeekends;
+    if (k === 'priceTier') return t.directory.slidingScale;
+    if (k === 'acceptingNew') return t.directory.acceptingNewPatients;
+    if (k === 'minRating') return `${v}+ ★`;
+    return v;
+  };
+
   const filters = (
     <>
-      <FilterGroup title="Specialty">
+      <FilterGroup title={t.directory.specialty}>
         {data.specialties.map((s) => (
-          <Option key={s.value} href={toggle(p, 'specialty', s.value)} on={p.specialty === s.value} label={s.value} count={s.count} />
+          <Option
+            key={s.value}
+            href={toggle(p, 'specialty', s.value)}
+            on={p.specialty === s.value}
+            label={translateSpecialty(s.value, locale)}
+            count={s.count}
+          />
         ))}
       </FilterGroup>
-      <FilterGroup title="City">
-        {data.cities.map((c) => (
-          <Option key={`${c.value}-${c.state}`} href={toggle(p, 'city', c.value)} on={p.city === c.value} label={`${c.value}, ${c.state}`} count={c.count} />
+      <FilterGroup title={t.directory.state}>
+        {data.states.map((s) => (
+          <Option
+            key={s.value}
+            href={toggle(p, 'state', s.value)}
+            on={(p.state ?? '').toUpperCase() === s.value.toUpperCase()}
+            label={getStateLabel(s.value, locale)}
+            count={s.count}
+          />
         ))}
       </FilterGroup>
-      <FilterGroup title="More">
-        {TOGGLES.map(([k, v, label]) => (
+      <FilterGroup title={t.directory.more}>
+        {toggles.map(([k, v, label]) => (
           <Option key={`${k}-${v}`} href={toggle(p, k, v)} on={p[k] === v} label={label} />
         ))}
       </FilterGroup>
@@ -171,11 +214,14 @@ export function DirectoryPage({ data, intro }: { data: DirectoryData; intro?: Di
                 ← {intro.back.label}
               </Link>
             )}
-            <p className="text-xs font-semibold uppercase tracking-widest opacity-55">{intro?.eyebrow ?? 'Directory'}</p>
+            <p className="text-xs font-semibold uppercase tracking-widest opacity-55">{intro?.eyebrow ?? t.directory.eyebrow}</p>
             <div className="mt-3 flex flex-col gap-2 md:flex-row md:items-end md:justify-between md:gap-8">
-              <h1 className="max-w-[20ch] text-[clamp(2.25rem,5vw,4.5rem)] font-bold leading-[0.95] tracking-tight">{intro?.title ?? headingFor(p)}</h1>
+              <h1 className="max-w-[20ch] text-[clamp(2.25rem,5vw,4.5rem)] font-bold leading-[0.95] tracking-tight">
+                {intro?.title ?? headingFor(p, locale, t.directory.findAClinic)}
+              </h1>
               <p className="shrink-0 text-sm font-semibold opacity-70 md:pb-2 md:text-base">
-                <span className="tabular-nums">{data.total}</span> {data.total === 1 ? 'clinic' : 'clinics'}
+                <span className="tabular-nums">{data.total}</span>{' '}
+                {data.total === 1 ? t.directory.clinicSingular : t.directory.clinicPlural}
               </p>
             </div>
             {intro?.lede && <p className="mt-4 max-w-[60ch] text-sm leading-relaxed opacity-75 md:text-base">{intro.lede}</p>}
@@ -184,23 +230,23 @@ export function DirectoryPage({ data, intro }: { data: DirectoryData; intro?: Di
                 p[k] ? <input key={k} type="hidden" name={k} value={p[k]} /> : null,
               )}
               <Search className="h-5 w-5 shrink-0 opacity-50" aria-hidden="true" />
-              <label htmlFor="dir-q" className="sr-only">Search clinics</label>
+              <label htmlFor="dir-q" className="sr-only">{t.directory.searchPlaceholder}</label>
               <input
                 id="dir-q"
                 name="query"
                 type="search"
                 defaultValue={p.query}
-                placeholder="Search clinics"
+                placeholder={t.directory.searchPlaceholder}
                 className="h-11 min-w-0 flex-1 bg-transparent text-base font-medium outline-none placeholder:text-[#0D1F1C]/45"
               />
               <button type="submit" className={`h-12 shrink-0 rounded-full bg-[#024E44] px-6 text-sm font-bold text-white btn-fx ${focusRing}`}>
-                Search
+                {t.directory.searchBtn}
               </button>
             </form>
 
             {/* language: the first decision, so it is a full-width switch, not a filter */}
             <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4" role="group" aria-label="Language">
-              {[{ value: '', native: 'All languages', lang: undefined as string | undefined, count: undefined as number | undefined }, ...data.languages].map((l) => {
+              {[{ value: '', native: t.directory.allLanguages, lang: undefined as string | undefined, count: undefined as number | undefined }, ...data.languages].map((l) => {
                 const on = (p.language ?? '') === l.value;
                 return (
                   <Link
@@ -235,7 +281,7 @@ export function DirectoryPage({ data, intro }: { data: DirectoryData; intro?: Di
             {/* phones: filters fold away behind one button */}
             <details className="group lg:hidden">
               <summary className={`flex min-h-12 cursor-pointer list-none items-center gap-2 px-4 text-sm font-bold [&::-webkit-details-marker]:hidden ${focusRing}`}>
-                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" /> Filters
+                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" /> {t.directory.filtersBtn}
                 {active.length > 0 && <span className="rounded-full bg-[#024E44] px-2 text-xs text-white">{active.length}</span>}
               </summary>
               <div className="px-2 pb-4">{filters}</div>
@@ -247,12 +293,14 @@ export function DirectoryPage({ data, intro }: { data: DirectoryData; intro?: Di
           <section aria-labelledby="dir-results" className="min-w-0 rounded-xl bg-stone-50 p-4 md:rounded-2xl md:p-6">
             <div className="flex flex-col gap-3 border-b border-[#0D1F1C]/10 pb-4 sm:flex-row sm:items-center sm:justify-between">
               <h2 id="dir-results" className="text-sm font-semibold">
-                {data.total ? `Showing ${from}–${to} of ${data.total}` : 'No clinics match'}
+                {data.total
+                  ? `${t.directory.showing} ${from}–${to} ${t.directory.of} ${data.total} ${data.total === 1 ? t.directory.clinicSingular : t.directory.clinicPlural}`
+                  : t.directory.noClinicsFound}
               </h2>
               <div className="flex items-center gap-2 text-sm">
-                <span className="hidden opacity-60 sm:inline">Sort</span>
-                <div className="flex gap-1 rounded-full bg-stone-100 p-1" role="group" aria-label="Sort">
-                  {SORTS.map(([v, label]) => (
+                <span className="hidden opacity-60 sm:inline">{t.directory.sortLabel}</span>
+                <div className="flex gap-1 rounded-full bg-stone-100 p-1" role="group" aria-label={t.directory.sortLabel}>
+                  {sorts.map(([v, label]) => (
                     <Link
                       key={v}
                       href={hrefWith(p, { sort: v === 'rating' ? undefined : v })}
@@ -276,11 +324,11 @@ export function DirectoryPage({ data, intro }: { data: DirectoryData; intro?: Di
                     href={hrefWith(p, { [k]: undefined })}
                     className={`inline-flex min-h-9 items-center gap-1.5 rounded-full bg-[#E3F1EC] pl-3.5 pr-2.5 text-sm font-semibold text-[#024E44] transition-colors hover:bg-[#D3EAE2] ${focusRing}`}
                   >
-                    {LABELS[k]?.(p[k] as string) ?? p[k]}
+                    {chipLabel(k, p[k] as string)}
                     <X className="h-3.5 w-3.5" aria-label="Remove" />
                   </Link>
                 ))}
-                <Link href={DIRECTORY} className="ml-1 text-sm font-semibold underline underline-offset-4">Clear all</Link>
+                <Link href={DIRECTORY} className="ml-1 text-sm font-semibold underline underline-offset-4">{t.directory.clearAll}</Link>
               </div>
             )}
 
@@ -292,19 +340,21 @@ export function DirectoryPage({ data, intro }: { data: DirectoryData; intro?: Di
               </div>
             ) : (
               <div className="mt-6 rounded-xl bg-white p-6 md:rounded-2xl md:p-10">
-                <h3 className="text-2xl font-bold md:text-3xl">No clinics match all of these filters</h3>
-                <p className="mt-2 text-sm opacity-75 md:text-base">Remove one filter above, or start again.</p>
+                <h3 className="text-2xl font-bold md:text-3xl">{t.directory.noClinicsFound}</h3>
+                <p className="mt-2 text-sm opacity-75 md:text-base">{t.directory.noClinicsSub}</p>
                 <Link href={DIRECTORY} className={`mt-6 inline-flex rounded-full bg-[#0D1F1C] px-6 py-3 text-sm font-bold text-white ${focusRing}`}>
-                  See all clinics
+                  {t.directory.resetFilters}
                 </Link>
               </div>
             )}
 
             {data.totalPages > 1 && (
               <nav className="mt-10 flex items-center justify-between gap-3 border-t border-[#0D1F1C]/10 pt-6" aria-label="Pages">
-                <PageLink href={data.page > 1 ? hrefWith(p, { page: String(data.page - 1) }) : null} label="Previous" />
-                <span className="text-sm font-semibold tabular-nums opacity-70">Page {data.page} of {data.totalPages}</span>
-                <PageLink href={data.page < data.totalPages ? hrefWith(p, { page: String(data.page + 1) }) : null} label="Next" />
+                <PageLink href={data.page > 1 ? hrefWith(p, { page: String(data.page - 1) }) : null} label={t.directory.prevPage} />
+                <span className="text-sm font-semibold tabular-nums opacity-70">
+                  {data.page} / {data.totalPages}
+                </span>
+                <PageLink href={data.page < data.totalPages ? hrefWith(p, { page: String(data.page + 1) }) : null} label={t.directory.nextPage} />
               </nav>
             )}
           </section>

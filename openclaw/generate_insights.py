@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from storage import upload_image_value
 from progress import report_progress
 from image_generator import generate_image_value, build_article_prompt, IMAGE_MODEL, IMAGE_FALLBACK_MODEL
+from image_style import MOSAIC_STYLE, MOSAIC_NEGATIVE, apply_mosaic_style
 
 # Load env vars
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,18 +28,9 @@ load_dotenv(".env")
 load_dotenv(".env.local")
 
 
-NATURAL_PHOTO_STYLE = (
-    "Natural documentary healthcare photography, available window or overhead clinic light, "
-    "35mm editorial framing, realistic color, mild film grain, imperfect everyday composition, "
-    "natural skin texture, subtle wrinkles, pores, flyaway hair, unretouched candid faces, "
-    "believable hands, ordinary clothing, real clinic or home details."
-)
-REALISTIC_PHOTO_NEGATIVE_STYLE = (
-    "Do not make it look like AI art, a stock-photo setup, advertising, a 3D render, or an illustration. "
-    "Avoid plastic skin, waxy faces, over-smoothed features, perfect symmetry, exaggerated smiles, "
-    "glamour lighting, hyper-sharp HDR, surreal depth of field, distorted hands, extra fingers, "
-    "fake medical equipment, unreadable gibberish text, logos, watermarks, captions, posters, and signage."
-)
+# Image look is defined once in image_style.py (Mosaic redesign style); these names are kept for existing callers.
+NATURAL_PHOTO_STYLE = MOSAIC_STYLE
+REALISTIC_PHOTO_NEGATIVE_STYLE = MOSAIC_NEGATIVE
 TEXT_MODEL = os.environ.get("OPENCLAW_TEXT_MODEL", "openai/gpt-6-luna")
 CONTENT_WORD_TARGETS = {
     "insight": {"min": 1200, "max": 1500, "label": "1,200-1,500 words"},
@@ -886,7 +878,7 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
     - Every prompt must describe a realistic healthcare or everyday patient scene with natural light, real people when relevant, believable clinic/home details, and human warmth.
     - Every prompt must include this natural photo style: {NATURAL_PHOTO_STYLE}
     - Do not request illustrations, icons, diagrams, vector art, 3D renderings, cartoons, infographics, posters, text overlays, floating UI, or symbolic/metaphorical scenes.
-    - Every prompt must be visually distinct and must say: photorealistic, documentary-style editorial photography, no text, no logos, no watermarks.
+    - Every prompt must be visually distinct and must say: photorealistic, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks.
 
     Output ONLY valid JSON in this exact structure:
     {{
@@ -899,9 +891,9 @@ def build_topic_prompt(topic: str, mode: str = "insight") -> str:
       "primary_keyword": "primary keyword here",
       "secondary_keywords": ["keyword one", "keyword two"],
       "image_prompts": [
-        "Photorealistic hero image prompt for this exact article, documentary-style editorial photography, no text, no logos, no watermarks",
-        "Photorealistic inline supporting image prompt for section one, documentary-style editorial photography, no text, no logos, no watermarks",
-        "Photorealistic inline supporting image prompt for section two, documentary-style editorial photography, no text, no logos, no watermarks"
+        "Photorealistic hero image prompt for this exact article, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks",
+        "Photorealistic inline supporting image prompt for section one, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks",
+        "Photorealistic inline supporting image prompt for section two, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks"
       ]
     }}
     """
@@ -949,10 +941,10 @@ def build_source_url_prompt(source_url: str, source_text: str, mode: str = "insi
     {guide_generation_rules}
     - Include a final "## References" section with the source URL and any other source names clearly supported by the reference text.
     - Provide 3-5 photorealistic editorial photo prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections.
-    - Image prompts must feel like believable documentary healthcare photography: real people when relevant, natural light, realistic clinic/home environments, grounded emotion, and no staged stock-photo exaggeration.
+    - Image prompts must follow the Asian Health Hub Mosaic look: soft natural window or garden light, a calm sage-green and warm cream palette, warm close portraits of Asian American people of varied ages with genuine expressions, clean uncluttered backgrounds, and no stock-photo exaggeration.
     - Every prompt must include this natural photo style: {NATURAL_PHOTO_STYLE}
     - Do not request illustrations, icons, diagrams, vector art, 3D renderings, cartoons, infographics, posters, text overlays, floating UI, or symbolic/metaphorical scenes.
-    - All image prompts must specify: photorealistic, documentary-style editorial photography, no text, no logos, no watermarks.
+    - All image prompts must specify: photorealistic, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks.
     - The article should be in Markdown format.
     - Do not include a top-level H1 title inside `content`; the website already renders the title above the article.
     - Start `content` with the opening paragraph or the first H2 section.
@@ -1025,10 +1017,10 @@ def build_context_prompt(reference_label: str, reference_text: str, instruction:
     {guide_generation_rules}
     - Include a final "## References" section using the source URLs or source names from the memory when available.
     - Provide 3-5 photorealistic editorial photo prompts, choosing the count based on article depth and section variety. The first is the hero image; the remaining prompts are inline supporting images for different major sections.
-    - Image prompts must feel like believable documentary healthcare photography: real people when relevant, natural light, realistic clinic/home environments, grounded emotion, and no staged stock-photo exaggeration.
+    - Image prompts must follow the Asian Health Hub Mosaic look: soft natural window or garden light, a calm sage-green and warm cream palette, warm close portraits of Asian American people of varied ages with genuine expressions, clean uncluttered backgrounds, and no stock-photo exaggeration.
     - Every prompt must include this natural photo style: {NATURAL_PHOTO_STYLE}
     - Do not request illustrations, icons, diagrams, vector art, 3D renderings, cartoons, infographics, posters, text overlays, floating UI, or symbolic/metaphorical scenes.
-    - All image prompts must specify: photorealistic, documentary-style editorial photography, no text, no logos, no watermarks.
+    - All image prompts must specify: photorealistic, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks.
     - The article should be in Markdown format.
     - Do not include a top-level H1 title inside `content`; the website already renders the title above the article.
     - Start `content` with the opening paragraph or the first H2 section.
@@ -1118,7 +1110,7 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
     - Every prompt must describe a realistic healthcare or everyday patient scene with natural light, real people when relevant, believable clinic/home details, and human warmth.
     - Every prompt must include this natural photo style: {NATURAL_PHOTO_STYLE}
     - Do not request illustrations, icons, diagrams, vector art, 3D renderings, cartoons, infographics, posters, text overlays, floating UI, or symbolic/metaphorical scenes.
-    - Every prompt must be visually distinct and must say: photorealistic, documentary-style editorial photography, no text, no logos, no watermarks.
+    - Every prompt must be visually distinct and must say: photorealistic, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks.
 
     Output ONLY valid JSON in this exact structure:
     {{
@@ -1131,9 +1123,9 @@ def build_rewrite_prompt(article: dict, instruction: str, mode: str = "insight")
       "primary_keyword": "primary keyword here",
       "secondary_keywords": ["keyword one", "keyword two"],
       "image_prompts": [
-        "Photorealistic hero image prompt for this exact rewritten article, documentary-style editorial photography, no text, no logos, no watermarks",
-        "Photorealistic inline supporting image prompt for section one, documentary-style editorial photography, no text, no logos, no watermarks",
-        "Photorealistic inline supporting image prompt for section two, documentary-style editorial photography, no text, no logos, no watermarks"
+        "Photorealistic hero image prompt for this exact rewritten article, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks",
+        "Photorealistic inline supporting image prompt for section one, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks",
+        "Photorealistic inline supporting image prompt for section two, warm Mosaic-style editorial photography (soft natural light, sage-green and cream palette, warm Asian American subjects), no text, no logos, no watermarks"
       ]
     }}
     """
@@ -1214,53 +1206,9 @@ def normalize_image_prompts(data: dict) -> List[str]:
     return [enforce_photorealistic_image_prompt(prompt) for prompt in cleaned[:5]]
 
 def enforce_photorealistic_image_prompt(prompt: str) -> str:
-    """Normalize model-provided prompts away from illustration and toward credible photo output."""
-    text = str(prompt or "").strip()
-    replacements = {
-        "medical illustration": "medical documentary photograph",
-        "healthcare illustration": "healthcare documentary photograph",
-        "professional illustration": "professional editorial photograph",
-        "detailed illustration": "detailed documentary photograph",
-        "illustration": "photograph",
-        "illustrated": "photographed",
-        "cartoon": "documentary photo",
-        "vector": "photo",
-        "3D render": "photo",
-        "3d render": "photo",
-        "rendering": "photograph",
-        "infographic": "real scene",
-        "cinematic": "documentary",
-        "dramatic lighting": "natural available light",
-        "studio lighting": "available clinic or home light",
-        "perfect lighting": "imperfect natural light",
-        "glossy": "unretouched",
-        "polished": "natural",
-    }
-    for old, new in replacements.items():
-        text = re.sub(re.escape(old), new, text, flags=re.IGNORECASE)
+    """Normalize model-provided prompts into the Mosaic photo style (see image_style.py)."""
+    return apply_mosaic_style(prompt, "article")
 
-    required_style = (
-        "Realistic documentary-style editorial healthcare photograph of one plausible moment; "
-        "real people when relevant, believable clinic or home environment, natural available light, "
-        "authentic human expressions, subtle natural imperfections, realistic skin texture, candid composition, "
-        "no staged stock-photo posing. "
-        f"{NATURAL_PHOTO_STYLE}"
-    )
-
-    lowered = text.lower()
-    if "photorealistic" not in lowered and "documentary-style" not in lowered:
-        text = f"{required_style} Scene: {text}"
-    if "do not make it look like ai art" not in text.lower():
-        text = f"{text}. {REALISTIC_PHOTO_NEGATIVE_STYLE}"
-    if "natural documentary healthcare photography" not in text.lower():
-        text = f"{text}. {NATURAL_PHOTO_STYLE}"
-    if "no text" not in text.lower():
-        text = f"{text}, no text"
-    if "no logos" not in text.lower():
-        text = f"{text}, no logos"
-    if "no watermarks" not in text.lower():
-        text = f"{text}, no watermarks"
-    return text
 
 def generate_article_images(client: OpenAI, data: dict, slug: str) -> List[str]:
     """Generate all article images in parallel (max 2 concurrent) with the configured image model + fallback."""
@@ -1277,7 +1225,7 @@ def generate_article_images(client: OpenAI, data: dict, slug: str) -> List[str]:
             suffix = f"{suffixes[index]}-{run_id}"
             print(f"[*] Generating image {index + 1}/{total} via {IMAGE_MODEL} (fallback {IMAGE_FALLBACK_MODEL}): {prompt}")
             try:
-                image_value = generate_image_value(client, build_article_prompt(prompt))
+                image_value = generate_image_value(client, build_article_prompt(prompt), kind="hero" if index == 0 else "article")
                 url = save_generated_image(image_value, slug, suffix)
                 return index, url or ""
             except Exception as exc:

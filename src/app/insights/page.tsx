@@ -9,6 +9,113 @@ import {
   slugifyArticleCategory,
 } from '@/services/article-service';
 import type { Article } from '@/types/database';
+import { getServerLocale } from '@/lib/i18n/server';
+import type { SupportedLocale } from '@/lib/states';
+
+const INSIGHTS_COPY: Record<
+  SupportedLocale,
+  {
+    eyebrow: string;
+    heroTitle: string;
+    heroSub: string;
+    allArticles: string;
+    quickInsights: string;
+    inDepthGuides: string;
+    featuredStory: string;
+    noArticles: string;
+    topics: string;
+    allTopics: string;
+    latestInsights: string;
+    latestInsightsSub: string;
+    guidesTitle: string;
+    guidesSub: string;
+    closingTitle: string;
+    forClinics: string;
+    claimTitle: string;
+    claimNow: string;
+  }
+> = {
+  en: {
+    eyebrow: 'Health Guides',
+    heroTitle: 'Health guides for your family',
+    heroSub: 'Written for Vietnamese, Korean and Chinese American families',
+    allArticles: 'All Articles',
+    quickInsights: 'Quick Insights',
+    inDepthGuides: 'In-Depth Guides',
+    featuredStory: 'Featured story',
+    noArticles: 'No published articles yet.',
+    topics: 'Topics',
+    allTopics: 'All topics',
+    latestInsights: 'Latest insights',
+    latestInsightsSub: 'Short reads for patients and caregivers',
+    guidesTitle: 'In-depth guides',
+    guidesSub: 'Step by step, from insurance to screenings',
+    closingTitle: 'Ready to speak with a doctor in your language?',
+    forClinics: 'For clinics',
+    claimTitle: 'Claim your free profile',
+    claimNow: 'Claim Now',
+  },
+  vi: {
+    eyebrow: 'Cẩm nang sức khỏe',
+    heroTitle: 'Cẩm nang y tế cho gia đình bạn',
+    heroSub: 'Biên soạn cho các gia đình người Việt, Hàn và Hoa tại Mỹ',
+    allArticles: 'Tất cả bài viết',
+    quickInsights: 'Kiến thức nhanh',
+    inDepthGuides: 'Hướng dẫn chuyên sâu',
+    featuredStory: 'Bài viết nổi bật',
+    noArticles: 'Chưa có bài viết nào.',
+    topics: 'Chủ đề',
+    allTopics: 'Tất cả chủ đề',
+    latestInsights: 'Bài viết mới nhất',
+    latestInsightsSub: 'Kiến thức thiết thực cho bệnh nhân và người chăm sóc',
+    guidesTitle: 'Hướng dẫn chuyên sâu',
+    guidesSub: 'Từng bước chi tiết, từ bảo hiểm đến tầm soát bệnh',
+    closingTitle: 'Sẵn sàng gặp bác sĩ nói ngôn ngữ của bạn?',
+    forClinics: 'Dành cho phòng khám',
+    claimTitle: 'Xác nhận hồ sơ miễn phí',
+    claimNow: 'Xác nhận ngay',
+  },
+  ko: {
+    eyebrow: '건강 가이드',
+    heroTitle: '우리 가족을 위한 건강 가이드',
+    heroSub: '미국 내 한인·베트남계·중국계 가정을 위해 쉽게 정리한 의료 가이드',
+    allArticles: '전체 글',
+    quickInsights: '핵심 인사이트',
+    inDepthGuides: '심층 가이드',
+    featuredStory: '주요 아티클',
+    noArticles: '등록된 글이 없습니다.',
+    topics: '주제',
+    allTopics: '전체 주제',
+    latestInsights: '최신 건강 인사이트',
+    latestInsightsSub: '환자와 보호자를 위한 핵심 건강 정보',
+    guidesTitle: '심층 의료 가이드',
+    guidesSub: '보험 안내부터 건강검진까지 단계별 안내',
+    closingTitle: '모국어로 소통하는 의사를 찾고 계신가요?',
+    forClinics: '병원 관계자용',
+    claimTitle: '무료 프로필 인증',
+    claimNow: '지금 신청하기',
+  },
+  zh: {
+    eyebrow: '健康指南',
+    heroTitle: '为您的家庭编写的就医与健康指南',
+    heroSub: '专为在美华人、越南裔与韩裔家庭打造',
+    allArticles: '全部文章',
+    quickInsights: '健康快讯',
+    inDepthGuides: '深度指南',
+    featuredStory: '精选文章',
+    noArticles: '暂无已发布文章。',
+    topics: '主题',
+    allTopics: '全部主题',
+    latestInsights: '最新健康资讯',
+    latestInsightsSub: '面向患者与家人的实用医疗读物',
+    guidesTitle: '深度就医指南',
+    guidesSub: '从医保报销到预防筛查的详细步骤',
+    closingTitle: '准备好寻找能用母语沟通的医生了吗？',
+    forClinics: '诊所入驻',
+    claimTitle: '免费认领诊所主页',
+    claimNow: '立即认领',
+  },
+};
 
 export const dynamic = 'force-dynamic';
 
@@ -202,11 +309,18 @@ export default async function InsightsPage({
   const articleLimit = categorySlug || tagSlug ? 60 : 7;
 
   const filters = { categorySlug, tagSlug };
-  const [latestInsights, latestGuides, articleTags] = await Promise.all([
+  const [locale, latestInsights, latestGuides, articleTags] = await Promise.all([
+    getServerLocale(),
     selectedMode === 'guide' ? Promise.resolve([]) : getPublishedArticlesByMode('insight', filters, articleLimit),
     selectedMode === 'insight' ? Promise.resolve([]) : getPublishedArticlesByMode('guide', filters, articleLimit),
     getArticleTags(),
   ]);
+  const copy = INSIGHTS_COPY[locale] ?? INSIGHTS_COPY.en;
+  const catFilters = [
+    { label: copy.allArticles, slug: null },
+    { label: copy.quickInsights, slug: 'insight' },
+    { label: copy.inDepthGuides, slug: 'guide' },
+  ];
 
   const heroArticle = latestInsights[0] ?? latestGuides[0];
   const topics = [...new Set([...articleTags, ...DEFAULT_HOT_TAGS])]
@@ -219,18 +333,12 @@ export default async function InsightsPage({
       {/* Hero: title tile, then the featured story */}
       <Grid className="md:grid-cols-2">
         <Tile tone="stone" as="header" className={`flex min-h-[28rem] flex-col justify-between gap-10 ${pad}`}>
-          <Caption>Health Guides</Caption>
+          <Caption>{copy.eyebrow}</Caption>
           <div>
-            <Display as="h1">
-              Health
-              <br />
-              guides for
-              <br />
-              your family
-            </Display>
-            <Caption className="mt-5 opacity-75">Written for Vietnamese, Korean and Chinese American families</Caption>
+            <Display as="h1">{copy.heroTitle}</Display>
+            <Caption className="mt-5 opacity-75">{copy.heroSub}</Caption>
             <nav className="mt-7 flex flex-wrap gap-1.5" aria-label="Article type">
-              {CATEGORY_FILTERS.map((filter) => {
+              {catFilters.map((filter) => {
                 const isActive = (!filter.slug && !categorySlug && !tagSlug) || filter.slug === selectedMode;
                 return (
                   <Link
@@ -253,7 +361,7 @@ export default async function InsightsPage({
             <ArticlePhoto article={heroArticle} i={5} eager />
             <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/5 to-transparent" />
             <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-bold backdrop-blur-md md:left-5 md:top-5">
-              Featured story
+              {copy.featuredStory}
             </span>
             <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-6 rounded-xl bg-black/30 p-4 text-white backdrop-blur-xl md:bottom-5 md:left-5 md:right-5 md:rounded-2xl md:p-5">
               <div className="min-w-0">
@@ -264,20 +372,19 @@ export default async function InsightsPage({
           </Link>
         ) : (
           <Tile tone="mint" className={pad}>
-            <Caption>No published articles yet.</Caption>
+            <Caption>{copy.noArticles}</Caption>
           </Tile>
         )}
       </Grid>
 
       {/* Topics */}
-      {/* phones: one row that scrolls sideways; wider screens: the chips wrap beside the label */}
       <Tile tone="stone" className="py-4 md:flex md:items-center md:gap-4 md:px-7 md:py-5">
-        <span className="block px-4 text-xs font-semibold uppercase tracking-widest opacity-55 md:shrink-0 md:px-0">Topics</span>
+        <span className="block px-4 text-xs font-semibold uppercase tracking-widest opacity-55 md:shrink-0 md:px-0">{copy.topics}</span>
         <nav
           className="mt-3 flex gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] md:mt-0 md:flex-wrap md:overflow-visible md:px-0 [&::-webkit-scrollbar]:hidden"
           aria-label="Filter by topic"
         >
-          {[{ label: 'All topics', slug: '' }, ...topics].map((topic) => {
+          {[{ label: copy.allTopics, slug: '' }, ...topics].map((topic) => {
             const on = topic.slug ? tagSlug === topic.slug : !categorySlug && !tagSlug;
             return (
               <Link
@@ -297,8 +404,8 @@ export default async function InsightsPage({
 
       {selectedMode !== 'guide' && (
         <ArticleSection
-          title="Latest insights"
-          description="Short reads for patients and caregivers"
+          title={copy.latestInsights}
+          description={copy.latestInsightsSub}
           articles={latestInsights}
           viewAllHref={categoryHref('insights')}
           showAll={Boolean(categorySlug || tagSlug)}
@@ -307,8 +414,8 @@ export default async function InsightsPage({
 
       {selectedMode !== 'insight' && (
         <ArticleSection
-          title="In-depth guides"
-          description="Step by step, from insurance to screenings"
+          title={copy.guidesTitle}
+          description={copy.guidesSub}
           articles={latestGuides}
           viewAllHref={categoryHref('guides')}
           showAll={Boolean(categorySlug || tagSlug)}
@@ -326,7 +433,7 @@ export default async function InsightsPage({
           <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between gap-6 text-white md:bottom-7 md:left-7 md:right-7">
             <div>
               <h2 className="max-w-[18ch] text-[clamp(2rem,4.5vw,4.5rem)] font-bold leading-[0.95] tracking-tight">
-                Ready to speak with a doctor in your language?
+                {copy.closingTitle}
               </h2>
             </div>
             <ArrowCircle light />
@@ -334,16 +441,10 @@ export default async function InsightsPage({
         </Link>
         <Tile tone="mint" className={`flex min-h-[16rem] flex-col justify-between gap-6 ${pad}`}>
           <div>
-            <Caption className="text-[#024E44]">For clinics</Caption>
-            <h3 className="mt-3 text-2xl font-bold leading-tight md:text-3xl">
-              Claim
-              <br />
-              your free
-              <br />
-              profile
-            </h3>
+            <Caption className="text-[#024E44]">{copy.forClinics}</Caption>
+            <h3 className="mt-3 text-2xl font-bold leading-tight md:text-3xl">{copy.claimTitle}</h3>
           </div>
-          <Pill href="/claim" className="self-start">Claim Now</Pill>
+          <Pill href="/claim" className="self-start">{copy.claimNow}</Pill>
         </Tile>
       </Grid>
     </Page>

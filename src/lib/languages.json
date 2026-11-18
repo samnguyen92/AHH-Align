@@ -1,0 +1,26 @@
+{
+  "_doc": "Single source of truth for languages. Read by src/lib/languages.ts and openclaw/languages.py. To add a language: append ONE entry to 'languages'. 'family' groups variants into one directory facet (e.g. Mandarin+Cantonese -> Chinese). 'generic' = umbrella term that is NOT evidence for a specific variant. 'directory' = show as a directory facet. 'match' = 'word' (Latin, word-boundary) or 'substring' (CJK/Hangul/Vietnamese diacritics).",
+  "languages": [
+    { "name": "English", "family": "English", "aliases": ["english"], "native": "English", "directory": false },
+    { "name": "Vietnamese", "family": "Vietnamese", "aliases": ["vietnamese", "tiếng việt", "tieng viet", "người việt"], "native": "Tiếng Việt", "directory": true },
+    { "name": "Korean", "family": "Korean", "aliases": ["korean", "한국어", "한국말", "한국"], "native": "한국어", "directory": true },
+    { "name": "Chinese", "family": "Chinese", "generic": true, "aliases": ["chinese", "中文", "华语", "華語", "漢語", "汉语"], "native": "中文", "directory": true },
+    { "name": "Mandarin", "family": "Chinese", "aliases": ["mandarin", "putonghua", "普通话", "普通話", "國語", "国语", "官话"], "native": "普通话" },
+    { "name": "Cantonese", "family": "Chinese", "aliases": ["cantonese", "粵語", "粤语", "广东话", "廣東話", "廣州話"], "native": "粵語" },
+    { "name": "Toisanese", "family": "Chinese", "aliases": ["toisanese", "toishanese", "taishanese", "台山話", "台山话"], "native": "台山話" },
+    { "name": "Hokkien", "family": "Chinese", "aliases": ["hokkien", "minnan", "闽南语", "閩南語", "台語", "台语"], "native": "閩南語" },
+    { "name": "Fuzhounese", "family": "Chinese", "aliases": ["fuzhounese", "foochow", "福州話", "福州话"], "native": "福州話" },
+    { "name": "Japanese", "family": "Japanese", "aliases": ["japanese", "日本語"], "native": "日本語", "directory": true },
+    { "name": "Tagalog", "family": "Filipino", "aliases": ["tagalog", "filipino", "pilipino"], "native": "Tagalog", "directory": true },
+    { "name": "Hindi", "family": "Hindi", "aliases": ["hindi", "हिन्दी"], "native": "हिन्दी", "directory": true },
+    { "name": "Punjabi", "family": "Punjabi", "aliases": ["punjabi", "panjabi", "ਪੰਜਾਬੀ"], "native": "ਪੰਜਾਬੀ", "directory": true },
+    { "name": "Bengali", "family": "Bengali", "aliases": ["bengali", "bangla", "বাংলা"], "native": "বাংলা", "directory": true },
+    { "name": "Urdu", "family": "Urdu", "aliases": ["urdu", "اردو"], "native": "اردو", "directory": true },
+    { "name": "Gujarati", "family": "Gujarati", "aliases": ["gujarati", "ગુજરાતી"], "native": "ગુજરાતી", "directory": true },
+    { "name": "Tamil", "family": "Tamil", "aliases": ["tamil", "தமிழ்"], "native": "தமிழ்", "directory": true },
+    { "name": "Telugu", "family": "Telugu", "aliases": ["telugu", "తెలుగు"], "native": "తెలుగు", "directory": true },
+    { "name": "Thai", "family": "Thai", "aliases": ["thai", "ไทย"], "native": "ไทย", "directory": true },
+    { "name": "Khmer", "family": "Khmer", "aliases": ["khmer", "cambodian", "ខ្មែរ"], "native": "ខ្មែរ", "directory": true },
+    { "name": "Spanish", "family": "Spanish", "aliases": ["spanish", "español", "espanol"], "native": "Español", "directory": false }
+  ]
+}

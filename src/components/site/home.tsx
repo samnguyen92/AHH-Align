@@ -11,6 +11,9 @@ import { SiteImg } from './img';
 import { Arrow, INK, DIRECTORY, SPEC_INFO, card, focusRing, clinicHref, section } from './kit';
 import { STATE_SHAPES } from './state-shapes';
 import { Roll } from './ui';
+import { useLocale } from '@/lib/i18n/context';
+import { translateLanguage, translateSpecialty, translateSpecialtyBlurb } from '@/lib/i18n';
+import { getStateName } from '@/lib/states';
 
 const HERO_IMAGE = PHOTOS.hero;
 const SECTION2_IMAGE = PHOTOS.reception;
@@ -213,6 +216,7 @@ function SplashScreen({ total, onComplete }: { total: number; onComplete: () => 
 
 export function HomePage({ data }: { data: HomeData }) {
   const { counts } = data;
+  const { locale, t } = useLocale();
   const isMobile = useIsMobile();
   const reduced = useReducedMotion();
   const [showSplash, setShowSplash] = useState(false);
@@ -230,9 +234,15 @@ export function HomePage({ data }: { data: HomeData }) {
   const endSplash = useCallback(() => setShowSplash(false), []);
 
   const bars = [
-    { native: 'Tiếng Việt', lang: 'vi', name: 'Vietnamese-speaking clinics', count: counts.vi, href: '/search?language=Vietnamese' },
-    { native: '한국어', lang: 'ko', name: 'Korean-speaking clinics', count: counts.ko, href: '/search?language=Korean' },
-    { native: '中文', lang: 'zh', name: 'Chinese-speaking clinics', count: counts.zh, href: '/search?language=Chinese' },
+    { native: 'Tiếng Việt', lang: 'vi', name: translateLanguage('Vietnamese', locale), count: counts.vi, href: '/search?language=Vietnamese' },
+    { native: '한국어', lang: 'ko', name: translateLanguage('Korean', locale), count: counts.ko, href: '/search?language=Korean' },
+    { native: '中文', lang: 'zh', name: translateLanguage('Chinese', locale), count: counts.zh, href: '/search?language=Chinese' },
+  ];
+
+  const steps = [
+    { title: t.home.step1Title, text: t.home.step1Text },
+    { title: t.home.step2Title, text: t.home.step2Text },
+    { title: t.home.step3Title, text: t.home.step3Text },
   ];
 
   const s1Ref = useRef<HTMLElement | null>(null);
@@ -288,7 +298,7 @@ export function HomePage({ data }: { data: HomeData }) {
                   <span className="text-xs font-semibold leading-tight opacity-80 md:text-base">
                     <span className="hidden md:inline">{bar.name} · </span>
                     {bar.count}
-                    <span className="md:hidden"> clinics</span>
+                    <span className="md:hidden"> {t.home.clinicsCount}</span>
                   </span>
                 </span>
               </MaskedCard>
@@ -306,40 +316,36 @@ export function HomePage({ data }: { data: HomeData }) {
             {/* phones: everything stacked in the plain wall above the people, on a soft white wash */}
             <div className="pointer-events-none absolute inset-x-0 top-0 z-[5] h-3/5 bg-gradient-to-b from-white/80 via-white/45 to-transparent md:hidden" />
             <div className="absolute inset-x-4 top-5 z-10 md:hidden">
-              <span className="block text-xs font-semibold opacity-75">{counts.total} clinics across the United States</span>
-              <h1 className="mt-2 text-[2.75rem] font-bold leading-[0.9] tracking-tight">
-                Care in
-                <br />
-                your language
+              <span className="block text-xs font-semibold opacity-75">{counts.total} {t.home.heroBadge}</span>
+              <h1 className="mt-2 text-[2.4rem] font-bold leading-[0.95] tracking-tight">
+                {t.home.heroTitle}
               </h1>
               <p className="mt-3 max-w-[19rem] text-sm font-medium leading-snug">
-                Find clinics where staff speak Vietnamese, Korean or Chinese, then contact them directly. Free for every patient.
+                {t.home.heroSub}
               </p>
               <Link
                 href={DIRECTORY}
                 className={`btn-fx mt-4 inline-flex rounded-full bg-[#0D1F1C] px-6 py-3 text-sm font-bold text-white ${focusRing}`}
               >
-                <Roll>Find a Clinic</Roll>
+                <Roll>{t.nav.findClinic}</Roll>
               </Link>
             </div>
 
             {/* tablet and up: intro top left, headline bottom left, button bottom right */}
-            <p className="absolute left-7 top-7 z-10 hidden max-w-[20.625rem] text-sm font-semibold leading-5 md:block">
-              Find clinics where staff speak Vietnamese, Korean or Chinese, then contact them directly. Free for every patient.
+            <p className="absolute left-7 top-7 z-10 hidden max-w-[24rem] text-sm font-semibold leading-5 md:block">
+              {t.home.heroSub}
             </p>
             <div className="absolute bottom-8 left-4 z-10 hidden md:block">
-              <span className="mb-2 block text-sm font-semibold">{counts.total} clinics across the United States</span>
-              <h1 className="text-[clamp(2.75rem,9vw,9rem)] font-bold leading-[0.86] tracking-tight">
-                Care in
-                <br />
-                your language
+              <span className="mb-2 block text-sm font-semibold">{counts.total} {t.home.heroBadge}</span>
+              <h1 className="max-w-[16ch] text-[clamp(2.5rem,6vw,6.25rem)] font-bold leading-[0.92] tracking-tight">
+                {t.home.heroTitle}
               </h1>
             </div>
             <Link
               href={DIRECTORY}
               className={`absolute bottom-10 right-8 z-10 hidden btn-fx btn-fx--green rounded-full bg-white px-7 py-4 text-base font-bold md:block ${focusRing}`}
             >
-              <Roll>Find a Clinic</Roll>
+              <Roll>{t.nav.findClinic}</Roll>
             </Link>
           </MaskedCard>
         </section>
@@ -364,10 +370,10 @@ export function HomePage({ data }: { data: HomeData }) {
             >
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/45 via-black/10 to-black/40" />
               <h2 className="absolute left-5 top-4 z-10 text-2xl font-bold text-white md:left-7 md:top-6 md:text-4xl">
-                Your language, checked
+                {t.home.browseByLanguage}
               </h2>
               <p className="absolute bottom-4 left-5 right-5 z-10 text-xs font-semibold text-white md:bottom-6 md:left-7 md:text-sm">
-                Every listing shows which languages the clinic’s staff speak
+                {t.home.step2Text}
               </p>
             </MaskedCard>
             <MaskedCard
@@ -383,15 +389,13 @@ export function HomePage({ data }: { data: HomeData }) {
               {/* text and button share one row, centred on each other */}
               <div className="absolute bottom-4 left-5 right-4 z-10 flex items-center justify-between gap-4 md:bottom-6 md:left-7 md:right-6">
                 <p className="min-w-0 text-xs font-semibold leading-4 text-white md:text-sm md:leading-5">
-                  Taking your parents to a new doctor?
-                  <br />
-                  Pick their language and city, we’ll list the clinics.
+                  {t.home.browseByLanguageSub}
                 </p>
                 <Link
                   href={DIRECTORY}
                   className={`btn-fx btn-fx--green shrink-0 rounded-full bg-white px-5 py-3 text-base font-bold md:px-8 md:py-5 md:text-xl ${focusRing}`}
                 >
-                  <Roll>Search Clinics</Roll>
+                  <Roll>{t.home.searchBtn}</Roll>
                 </Link>
               </div>
             </MaskedCard>
@@ -421,19 +425,17 @@ export function HomePage({ data }: { data: HomeData }) {
               className="flex min-h-[12.5rem] flex-col justify-between rounded-xl bg-stone-50 p-5 md:col-span-2 md:rounded-2xl md:p-7"
               style={sClinics.getAnimStyle(0)}
             >
-              <h2 className="text-[clamp(2.75rem,6.5vw,6.5rem)] font-bold leading-[0.92] tracking-tight">
-                Top-rated
-                <br />
-                clinics
+              <h2 className="text-[clamp(2.5rem,5.5vw,5.5rem)] font-bold leading-[0.95] tracking-tight">
+                {t.home.featuredTitle}
               </h2>
-              <p className="text-xs font-semibold md:text-sm">Highly reviewed, with Vietnamese, Korean or Chinese-speaking staff</p>
+              <p className="text-xs font-semibold md:text-sm">{t.home.featuredEyebrow}</p>
             </div>
             <Link
               href={DIRECTORY}
               className={`group flex min-h-[12.5rem] flex-col justify-between rounded-xl bg-[#024E44] p-5 text-white md:col-span-2 md:rounded-2xl md:p-7 ${focusRing}`}
               style={sClinics.getAnimStyle(1)}
             >
-              <p className="text-xs font-semibold md:text-sm">The whole directory</p>
+              <p className="text-xs font-semibold md:text-sm">{t.home.seeAllClinics}</p>
               <div className="flex items-end justify-between">
                 <span className="text-[clamp(4rem,10vw,10rem)] font-bold leading-[0.8] tabular-nums">{counts.total}</span>
                 <span className="flex h-12 w-12 items-center justify-center rounded-full border border-white transition group-hover:bg-white group-hover:text-[#024E44] md:h-16 md:w-16">
@@ -450,7 +452,9 @@ export function HomePage({ data }: { data: HomeData }) {
               >
                 <SiteImg src={c.image} fallback={c.fallback} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold backdrop-blur-md">{c.specialty}</span>
+                <span className="absolute left-3 top-3 rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold backdrop-blur-md">
+                  {translateSpecialty(c.specialty, locale)}
+                </span>
                 <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-white/20 p-3 text-white backdrop-blur-xl md:rounded-2xl md:p-4">
                   <h3 className="text-lg font-bold leading-tight md:text-xl">{c.name}</h3>
                   <p className="mt-1 text-xs font-semibold opacity-90">
@@ -459,7 +463,9 @@ export function HomePage({ data }: { data: HomeData }) {
                   </p>
                   <p className="mt-2 flex flex-wrap gap-1">
                     {c.langs.map((l) => (
-                      <span key={l} className="rounded-full border border-white/70 px-2 py-0.5 text-xs font-semibold">{l}</span>
+                      <span key={l} className="rounded-full border border-white/70 px-2 py-0.5 text-xs font-semibold">
+                        {translateLanguage(l, locale)}
+                      </span>
                     ))}
                   </p>
                 </div>
@@ -485,8 +491,8 @@ export function HomePage({ data }: { data: HomeData }) {
                   </div>
                 ))}
               </div>
-              <h2 className="text-[clamp(2.75rem,7vw,7rem)] font-bold leading-[0.9] tracking-tight">Specialties</h2>
-              <p className="max-w-xs text-xs font-semibold md:text-right md:text-sm">Nine kinds of care, plus telehealth, each with clinics that speak your language</p>
+              <h2 className="text-[clamp(2.5rem,6vw,6rem)] font-bold leading-[0.9] tracking-tight">{t.home.specialtiesEyebrow}</h2>
+              <p className="max-w-xs text-xs font-semibold md:text-right md:text-sm">{t.home.specialtiesTitle}</p>
             </div>
             {data.specialties.map((s, i) => {
               const info = SPEC_INFO[s.name] ?? { icon: Stethoscope, blurb: 'Clinics that speak your language' };
@@ -514,11 +520,11 @@ export function HomePage({ data }: { data: HomeData }) {
                     <ArrowUpRight className="h-5 w-5 opacity-50 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" aria-hidden="true" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold leading-[1.05] md:text-2xl">{s.name}</h3>
-                    <p className="mt-1 text-xs font-medium opacity-70 md:text-sm">{info.blurb}</p>
+                    <h3 className="text-xl font-bold leading-[1.05] md:text-2xl">{translateSpecialty(s.name, locale)}</h3>
+                    <p className="mt-1 text-xs font-medium opacity-70 md:text-sm">{translateSpecialtyBlurb(s.name, info.blurb, locale)}</p>
                     <p className="mt-3 flex items-baseline gap-2">
                       <span className="text-[clamp(2.2rem,3.6vw,3.75rem)] font-bold leading-none tracking-tight">{s.count}</span>
-                      <span className="text-xs font-semibold opacity-70 md:text-sm">clinics</span>
+                      <span className="text-xs font-semibold opacity-70 md:text-sm">{t.home.clinicsCount}</span>
                     </p>
                   </div>
                 </Link>
@@ -541,8 +547,8 @@ export function HomePage({ data }: { data: HomeData }) {
                 <ArrowUpRight className="h-5 w-5 opacity-50 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" aria-hidden="true" />
               </div>
               <div>
-                <h3 className="text-xl font-bold leading-[1.05] md:text-2xl">Telehealth</h3>
-                <p className="mt-1 text-xs font-medium opacity-70 md:text-sm">Video visits from home, in your language</p>
+                <h3 className="text-xl font-bold leading-[1.05] md:text-2xl">{t.home.telehealthTitle}</h3>
+                <p className="mt-1 text-xs font-medium opacity-70 md:text-sm">{t.home.telehealthBlurb}</p>
               </div>
             </Link>
           </div>
@@ -551,7 +557,7 @@ export function HomePage({ data }: { data: HomeData }) {
         {/* ================= 5. How it works ================= */}
         <section ref={(el) => sSteps.attach(el)} className={`${section} md:h-screen`}>
           <div className="grid h-full grid-cols-1 gap-2 md:grid-cols-3 md:gap-3">
-            {STEPS.map((s, i) => (
+            {steps.map((s, i) => (
               <div
                 key={s.title}
                 className={`${card} flex min-h-[28.75rem] flex-col md:min-h-0 ${i === 1 ? 'bg-zinc-200' : 'bg-stone-50'}`}
@@ -573,56 +579,54 @@ export function HomePage({ data }: { data: HomeData }) {
           </div>
         </section>
 
-        {/* ================= 6. Cities ================= */}
+        {/* ================= 6. States ================= */}
         <section ref={(el) => sCities.attach(el)} className={`${section} md:h-screen`}>
           <div className="grid h-full grid-cols-2 gap-2 md:grid-cols-4 md:grid-rows-4 md:gap-3">
             <div
               className="col-span-2 flex min-h-[10rem] flex-col justify-between rounded-xl bg-[#0D1F1C] p-5 text-white md:row-span-2 md:rounded-2xl md:p-7"
               style={sCities.getAnimStyle(0)}
             >
-              <h2 className="text-[clamp(2.75rem,6.5vw,6.5rem)] font-bold leading-[0.9] tracking-tight">
-                Find care
-                <br />
-                near you
+              <h2 className="text-[clamp(2.5rem,5.5vw,5.5rem)] font-bold leading-[0.95] tracking-tight">
+                {t.home.statesTitle}
               </h2>
-              <p className="text-xs font-semibold opacity-80 md:text-sm">{data.cities.length} metro areas with five or more listed clinics</p>
+              <p className="text-xs font-semibold opacity-80 md:text-sm">{t.home.statesSub}</p>
             </div>
-            {data.cities.map((c, i) => {
-              const max = data.cities[0]?.count || c.count;
+            {data.states.map((s, i) => {
+              const max = data.states[0]?.count || s.count;
               // checkerboard of mint and warm cream so the grid reads as a pattern, not empty boxes
               const row = Math.floor((i + 2) / 4);
               const tone = (i + row) % 2 === 0 ? 'bg-[#E3F1EC]' : 'bg-[#FBF4EC]';
               return (
                 <Link
-                  key={`${c.name}-${c.state}`}
-                  href={c.href}
+                  key={s.code}
+                  href={s.href}
                   className={`group relative isolate flex min-h-[9.375rem] flex-col justify-between overflow-hidden rounded-xl ${tone} p-4 md:min-h-0 md:rounded-2xl md:p-5 ${focusRing}`}
                   style={sCities.getAnimStyle(1 + (i % 4))}
                 >
-                  {STATE_SHAPES[c.state] && (
+                  {STATE_SHAPES[s.code] && (
                     // the state's silhouette, oversized and faint, behind the numbers
                     <svg
                       viewBox="0 0 100 100"
                       className="pointer-events-none absolute -bottom-[28%] -right-[14%] -z-10 h-[150%] w-auto text-[#024E44] opacity-[0.09] transition-transform duration-700 group-hover:scale-105"
                       aria-hidden="true"
                     >
-                      <path d={STATE_SHAPES[c.state]} fill="currentColor" />
+                      <path d={STATE_SHAPES[s.code]} fill="currentColor" />
                     </svg>
                   )}
                   <div className="flex items-start justify-between gap-3">
                     <h3 className="text-lg font-bold leading-tight md:text-2xl">
-                      {c.name}
-                      <span className="block text-xs font-semibold opacity-60 md:text-sm">{c.state}</span>
+                      {getStateName(s.code, locale)}
+                      <span className="block text-xs font-semibold opacity-60 md:text-sm">{s.code}</span>
                     </h3>
                     <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[#0D1F1C]/20 text-sm transition group-hover:bg-[#0D1F1C] group-hover:text-white">↗</span>
                   </div>
                   <div>
                     <p className="flex items-baseline gap-2">
-                      <span className="text-[clamp(2.4rem,4.6vw,4.75rem)] font-bold leading-none tracking-tight">{c.count}</span>
-                      <span className="text-xs font-semibold opacity-70 md:text-sm">clinics</span>
+                      <span className="text-[clamp(2.4rem,4.6vw,4.75rem)] font-bold leading-none tracking-tight">{s.count}</span>
+                      <span className="text-xs font-semibold opacity-70 md:text-sm">{t.home.clinicsCount}</span>
                     </p>
                     <span className="mt-3 block h-1 w-full overflow-hidden rounded-full bg-[#0D1F1C]/10" aria-hidden="true">
-                      <span className="block h-full rounded-full bg-[#024E44]" style={{ width: `${Math.max(8, (c.count / max) * 100)}%` }} />
+                      <span className="block h-full rounded-full bg-[#024E44]" style={{ width: `${Math.max(8, (s.count / max) * 100)}%` }} />
                     </span>
                   </div>
                 </Link>
@@ -636,12 +640,10 @@ export function HomePage({ data }: { data: HomeData }) {
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
             <div className="flex flex-col gap-2 md:gap-3">
               <div className="flex min-h-[11.25rem] flex-[1.2] flex-col justify-between rounded-xl bg-[#FBF4EC] p-5 md:min-h-0 md:rounded-2xl md:p-7" style={sGuides.getAnimStyle(0)}>
-                <h2 className="text-[clamp(3rem,7vw,6.5rem)] font-bold leading-[0.95]">
-                  Health
-                  <br />
-                  Guides
+                <h2 className="text-[clamp(2.5rem,6vw,5.5rem)] font-bold leading-[0.95]">
+                  {t.nav.healthGuides}
                 </h2>
-                <p className="text-xs font-semibold text-[#B5521F] md:text-sm">Written for Vietnamese, Korean and Chinese American families</p>
+                <p className="text-xs font-semibold text-[#B5521F] md:text-sm">{t.home.guidesTitle}</p>
               </div>
               <div className="flex min-h-[8.75rem] flex-1 gap-2 md:min-h-0 md:gap-3" style={sGuides.getAnimStyle(1)}>
                 <div className="flex-1 overflow-hidden rounded-xl md:rounded-2xl">
@@ -655,17 +657,13 @@ export function HomePage({ data }: { data: HomeData }) {
               </div>
               <div className="flex min-h-[10rem] flex-[0.8] items-end justify-between gap-4 rounded-xl bg-[#E3F1EC] p-5 md:min-h-0 md:rounded-2xl md:p-7" style={sGuides.getAnimStyle(2)}>
                 <div>
-                  <p className="mb-2 text-xs font-semibold text-[#024E44] md:mb-3 md:text-sm">For clinics</p>
+                  <p className="mb-2 text-xs font-semibold text-[#024E44] md:mb-3 md:text-sm">{t.nav.forClinics}</p>
                   <h3 className="text-xl font-bold leading-6 md:text-3xl md:leading-8">
-                    Claim
-                    <br />
-                    Your Free
-                    <br />
-                    Profile
+                    {t.home.claimCta}
                   </h3>
                 </div>
                 <Link href="/claim" className={`btn-fx shrink-0 rounded-full bg-[#024E44] px-5 py-3 text-base font-bold text-white md:px-8 md:py-5 md:text-xl ${focusRing}`}>
-                  <Roll>Claim Now</Roll>
+                  <Roll>{t.home.claimCta}</Roll>
                 </Link>
               </div>
             </div>

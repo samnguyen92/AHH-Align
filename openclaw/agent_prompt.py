@@ -76,7 +76,8 @@ SECURITY RULES
 DATA QUALITY RULES
 - Clinic images should be stored in clinics.metadata.images as a list.
 - Article images should be stored in articles.seo_meta.og_image and articles.seo_meta.images when multiple generated images exist.
-- Prefer real clinic website images when scraped successfully; otherwise generate realistic editorial images with OPENCLAW_IMAGE_MODEL (fallback OPENCLAW_IMAGE_FALLBACK_MODEL).
+- Clinic photo priority is strictly: 1) Official clinic website photos, 2) Google Maps/Places photos, 3) Neutral placeholder (`/brand/clinic-placeholder.svg`). Never use fake stock/demo photos for clinics.
+- All AI-generated images (Insights, Guides, Blog, Pulse covers, Hero & Web sections) use the unified Mosaic style in `openclaw/image_style.py` (soft natural window/garden light, sage-green & warm cream palette, warm Asian American portraits, referencing `public/brand/photos/*`).
 - Avoid broken image URLs such as local /Users/... paths or unstable source.unsplash.com fallbacks.
 - Article slugs must be unique; if a title already exists, OpenClaw should create a unique slug suffix rather than failing.
 - Article and clinic slugs must be ASCII URL-safe. Avoid Vietnamese accents or other non-ASCII characters in slugs.

@@ -29,6 +29,71 @@ EXCLUDE_PATTERNS = [
     r'[?#]'
 ]
 
+
+# Image URLs that are never a photo of the clinic itself.
+_IMAGE_REJECT = re.compile(
+    r"(logo|icon|sprite|favicon|avatar|badge|banner-ad|payment|visa|mastercard|amex|paypal|pixel|tracking|spacer|"
+    r"facebook|instagram|twitter|yelp|google-?(?:maps|reviews)|gravatar|emoji|placeholder|loading|wp-content/plugins|"
+    r"\.svg(?:$|\?)|\.gif(?:$|\?)|data:image)",
+    re.IGNORECASE,
+)
+
+_SIGNALS_JS = r"""
+() => {
+  const abs = (u) => { try { return new URL(u, document.baseURI).href; } catch (e) { return null; } };
+  const out = { images: [], text: '', lang: document.documentElement.lang || '' };
+  const meta = (sel) => { const el = document.querySelector(sel); return el ? el.getAttribute('content') : null; };
+  for (const sel of ['meta[property="og:image"]', 'meta[name="twitter:image"]']) {
+    const u = meta(sel); if (u) out.images.push({ url: abs(u), w: 0, h: 0, alt: '', where: 'meta' });
+  }
+  const bestOfSrcset = (set) => {
+    let best = null, bw = 0;
+    for (const part of (set || '').split(',')) {
+      const [u, d] = part.trim().split(/\s+/);
+      const w = parseInt(d || '0', 10) || 0;
+      if (u && w >= bw) { best = u; bw = w; }
+    }
+    return best;
+  };
+  for (const img of document.images) {
+    const where = img.closest('header, nav, footer') ? 'chrome' : 'body';
+    const url = bestOfSrcset(img.srcset) || img.currentSrc || img.getAttribute('data-src') || img.src;
+    if (!url) continue;
+    out.images.push({ url: abs(url), w: img.naturalWidth || 0, h: img.naturalHeight || 0, alt: img.alt || '', where });
+  }
+  for (const el of document.querySelectorAll('[style*="background"], section, .hero, .banner, .slide, header')) {
+    const bg = getComputedStyle(el).backgroundImage;
+    const m = bg && bg.match(/url\(["']?([^"')]+)["']?\)/);
+    if (m && el.getBoundingClientRect().width >= 400) out.images.push({ url: abs(m[1]), w: 0, h: 0, alt: '', where: 'css' });
+  }
+  // Full visible text INCLUDING header/footer (language badges often live in the footer)
+  out.text = ((document.body && document.body.innerText) || '') + '\n' + (meta('meta[name="description"]') || '');
+  return out;
+}
+"""
+
+
+def collect_page_signals(page) -> dict:
+    """Images + full visible text (footer included) of the page currently loaded, before cleanup removes nodes."""
+    try:
+        data = page.evaluate(_SIGNALS_JS)
+    except Exception:
+        return {"images": [], "text": "", "lang": ""}
+    images = []
+    seen = set()
+    for item in data.get("images") or []:
+        url = (item.get("url") or "").split("#")[0]
+        if not url.startswith("http") or url in seen or _IMAGE_REJECT.search(url):
+            continue
+        if item.get("where") == "chrome":
+            continue
+        w, h = item.get("w") or 0, item.get("h") or 0
+        if w and (w < 400 or h < 250):  # known-small <img>; unknown sizes are verified after download
+            continue
+        seen.add(url)
+        images.append({"url": url, "w": w, "h": h, "alt": item.get("alt") or "", "where": item.get("where")})
+    return {"images": images, "text": (data.get("text") or "")[:20000], "lang": data.get("lang") or ""}
+
 def score_url(url: str, base_domain: str) -> tuple:
     parsed = urlparse(url)
     path = parsed.path.lower().rstrip('/')
@@ -109,12 +174,19 @@ def crawl_site(start_url: str, max_pages: int = 10) -> dict:
         # Step 1: Crawl homepage & harvest links
         try:
             page.goto(start_url, wait_until="domcontentloaded", timeout=12000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=4000)  # let lazy hero images resolve
+            except Exception:
+                pass
+            signals = collect_page_signals(page)
             homepage_text = extract_clean_text(page)
             collected_pages.append({
                 "url": start_url,
                 "title": page.title(),
                 "type": "home",
-                "content": homepage_text[:6000]
+                "content": homepage_text[:6000],
+                "full_text": signals["text"],
+                "images": signals["images"],
             })
 
             # Extract all internal hrefs
@@ -188,6 +260,7 @@ def crawl_site(start_url: str, max_pages: int = 10) -> dict:
         for target_url in target_urls:
             try:
                 page.goto(target_url, wait_until="domcontentloaded", timeout=12000)
+                signals = collect_page_signals(page)
                 content = extract_clean_text(page)
                 if len(content) > 100:
                     title = page.title()
@@ -208,7 +281,9 @@ def crawl_site(start_url: str, max_pages: int = 10) -> dict:
                         "url": target_url,
                         "title": title,
                         "type": p_type,
-                        "content": content
+                        "content": content,
+                        "full_text": signals["text"],
+                        "images": signals["images"],
                     })
             except Exception:
                 continue

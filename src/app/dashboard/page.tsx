@@ -57,7 +57,7 @@ export default async function DashboardPage() {
       .eq('proof_data->>email', userEmail);
 
     if (unclaimedApproved && unclaimedApproved.length > 0) {
-      const clinicIds = unclaimedApproved.map(c => c.clinic_id).filter(Boolean);
+      const clinicIds = unclaimedApproved.map((c: { clinic_id?: string | null }) => c.clinic_id).filter(Boolean);
       if (clinicIds.length > 0) {
         await supabase
           .from('clinics')

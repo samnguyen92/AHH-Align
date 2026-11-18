@@ -9,6 +9,8 @@ Client = object
 from dotenv import load_dotenv
 
 # Import helpers from generate_insights to reuse core clients, storage and image pipelines
+from image_generator import generate_image_value
+from image_style import mosaic_prompt
 from generate_insights import (
     create_clients,
     save_generated_image,
@@ -159,15 +161,11 @@ def create_pulse(topic: Optional[str] = None) -> None:
     cover_image_url = ""
     try:
         report_progress("🎨 Đang sinh ảnh bìa cho bản tin...")
-        image_prompt = (
-            f"A realistic documentary-style photograph of an Asian American family or an elder consulting a friendly doctor, "
-            f"warm lighting, everyday life, healthcare concept. Context: {data['title']}"
+        image_prompt = mosaic_prompt(
+            "pulse_cover",
+            f"An Asian American family or elder in a warm, caring healthcare moment. Newsletter issue: {data['title']}",
         )
-        image_response = client.chat.completions.create(
-            model=IMAGE_MODEL,
-            messages=[{"role": "user", "content": image_prompt}],
-        )
-        image_value = extract_image_value(image_response.choices[0].message)
+        image_value = generate_image_value(client, image_prompt, kind="pulse_cover")
         base_slug = generate_slug(data["title"])
         slug = make_unique_slug(supabase, base_slug)
         cover_image_url = save_generated_image(image_value, slug, "cover")

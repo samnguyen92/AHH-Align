@@ -4,11 +4,10 @@ import { getPublishedArticles } from '@/services/article-service';
 import { getSearchFilterOptions, searchClinics } from '@/services/clinic-service';
 import { getClinicFallbackImage, getSafeClinicImageSrc } from '@/lib/clinic-image';
 import { getSafeArticleImageSrc } from '@/lib/article-image';
+import { clinicFamilies } from '@/lib/languages';
 import type { Clinic } from '@/types/database';
 import type { ClinicPageData, DirClinic, DirectoryData, DirectoryParams, HomeData } from '@/components/site/types';
 
-/** The stored clinic photos are watermarked stock, so clinics show one of the site's own photos for now. */
-export const CLINIC_PHOTOS = [1, 2, 3, 4].map((n) => `/brand/photos/clinic-${n}.webp`);
 const GUIDE_PHOTOS = ['a3-guide-left', 'a4-guide-right', 'b3-steps'].map((n) => `/brand/photos/${n}.webp`);
 
 const SPECIALTIES = [
@@ -23,18 +22,15 @@ const SPECIALTIES = [
   'Orthopedics',
 ];
 
+/** Order of the language chips; other families still count but are not chips yet. */
+const DIRECTORY_ORDER = ['Vietnamese', 'Korean', 'Chinese'];
+
 const PAGE_SIZE = 12; // fills a 2- or 3-column grid evenly
 
-/** The three directory languages a clinic supports, from its free-text language list. */
+/** The directory languages a clinic supports (families, e.g. Mandarin/Cantonese -> Chinese), from its free-text list. */
 export function directoryLanguages(c: Clinic): string[] {
-  const out = new Set<string>();
-  for (const raw of c.languages ?? []) {
-    const l = (raw || '').toLowerCase();
-    if (l.includes('vietnam') || l.includes('tiếng việt')) out.add('Vietnamese');
-    else if (l.includes('korean') || l.includes('한국')) out.add('Korean');
-    else if (/chinese|mandarin|cantonese|toisan|taishan|fuzhou|hokkien|taiwanese|中文/.test(l)) out.add('Chinese');
-  }
-  return ['Vietnamese', 'Korean', 'Chinese'].filter((n) => out.has(n));
+  const families = new Set(clinicFamilies(c.languages));
+  return DIRECTORY_ORDER.filter((n) => families.has(n));
 }
 
 /** ALL-CAPS listing names read as shouting; title-case them. */
@@ -42,20 +38,29 @@ export function displayName(name: string) {
   return name === name.toUpperCase() ? name.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()) : name;
 }
 
-function hash(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
+/** The clinic's own photo (official website first, then Google - see openclaw/clinic_photos.py), or null. */
+export const realPhoto = (c: Clinic): string | null => getSafeClinicImageSrc(c.metadata?.images?.[0]);
+
+/** Deduplicated list of all valid real photos for a clinic (website photos first, then Google Places). */
+export function realPhotos(c: Clinic): string[] {
+  const candidates = [
+    ...(Array.isArray(c.metadata?.images) ? c.metadata.images : []),
+    ...(Array.isArray(c.metadata?.gallery_images) ? c.metadata.gallery_images : []),
+  ];
+  const out: string[] = [];
+  for (const raw of candidates) {
+    const safe = getSafeClinicImageSrc(raw);
+    if (safe && !out.includes(safe)) {
+      out.push(safe);
+    }
+  }
+  return out;
 }
 
-/** one of the site photos, stable per clinic */
-export const photoFor = (slug: string) => CLINIC_PHOTOS[hash(slug) % CLINIC_PHOTOS.length];
-
 const rating = (c: Clinic) => (typeof c.metadata?.rating === 'number' ? c.metadata.rating.toFixed(1) : null);
-const fallbackFor = (c: Clinic, i: number) =>
-  getSafeClinicImageSrc(c.metadata?.images?.[0]) || getClinicFallbackImage(c.specialty, c.slug || i);
+const fallbackFor = (c: Clinic) => getClinicFallbackImage(c.specialty, c.slug);
 
-function toDirClinic(c: Clinic, i: number): DirClinic {
+function toDirClinic(c: Clinic): DirClinic {
   return {
     id: c.id,
     slug: c.slug,
@@ -67,9 +72,8 @@ function toDirClinic(c: Clinic, i: number): DirClinic {
     langs: directoryLanguages(c),
     telehealth: !!c.is_telehealth_available,
     accepting: c.metadata?.accepting_new_patients ?? null,
-    // neighbours on a page never share a photo; the clinic page itself uses photoFor(slug)
-    image: CLINIC_PHOTOS[i % CLINIC_PHOTOS.length],
-    fallback: fallbackFor(c, i),
+    image: realPhoto(c),
+    fallback: fallbackFor(c),
   };
 }
 
@@ -99,7 +103,7 @@ export async function getHomeData(): Promise<HomeData> {
       return true;
     })
     .slice(0, 4)
-    .map((c, i) => ({
+    .map((c) => ({
       id: c.id,
       name: displayName(c.name),
       slug: c.slug,
@@ -109,14 +113,18 @@ export async function getHomeData(): Promise<HomeData> {
       reviews: c.metadata?.rating_count ?? 0,
       langs: directoryLanguages(c),
       telehealth: !!c.is_telehealth_available,
-      image: CLINIC_PHOTOS[i % CLINIC_PHOTOS.length],
-      fallback: fallbackFor(c, i),
+      image: realPhoto(c),
+      fallback: fallbackFor(c),
     }));
 
   return {
     counts: { total: clinicResult.total, vi: lang('Vietnamese'), ko: lang('Korean'), zh: lang('Chinese') },
     specialties: SPECIALTIES.map((name) => ({ name, count: spec(name), href: `/search?specialty=${encodeURIComponent(name)}` })),
     clinics,
+    states: filters.states
+      .filter((s) => s.count >= 1)
+      .slice(0, 12)
+      .map((s) => ({ code: s.value, name: s.name, count: s.count, href: `/search?state=${encodeURIComponent(s.value)}` })),
     cities: filters.cities
       .filter((c) => c.count >= 5)
       .slice(0, 12)
@@ -169,15 +177,19 @@ export async function getDirectoryData(params: DirectoryParams): Promise<Directo
       { value: 'Chinese', native: '中文', lang: 'zh', count: lang('Chinese') },
     ],
     specialties: filters.specialties.filter((s) => s.count > 0).slice(0, 14),
+    states: filters.states.filter((s) => s.count > 0).slice(0, 16),
     cities: filters.cities.filter((c) => c.count >= 5).slice(0, 12),
   };
 }
 
 export async function getClinicPageData(clinic: Clinic): Promise<ClinicPageData> {
   const similar = await searchClinics({ specialty: clinic.specialty || undefined, sort: 'reviews', limit: 8 });
+  const photos = realPhotos(clinic);
   return {
     clinic: { ...clinic, name: displayName(clinic.name) },
-    photo: photoFor(clinic.slug),
+    photo: photos[0] ?? null,
+    photos,
+    photoFallback: getClinicFallbackImage(clinic.specialty, clinic.slug),
     langs: directoryLanguages(clinic),
     similar: similar.data.filter((c) => c.slug !== clinic.slug).slice(0, 4).map(toDirClinic),
   };

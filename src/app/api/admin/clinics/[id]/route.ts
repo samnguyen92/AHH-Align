@@ -5,6 +5,7 @@ import { AUTH_COOKIE_NAME } from '@/lib/auth/session-cookie';
 import { getBearerToken, getUserFromAccessToken, isAdminUser } from '@/services/auth-service';
 import { getAdminClinicById } from '@/services/admin-service';
 import { createServerSupabaseClient } from '@/services/supabase-server';
+import { normalizeLanguageList } from '@/lib/languages';
 
 interface RouteProps {
   params: Promise<{ id: string }>;
@@ -77,6 +78,8 @@ export async function PATCH(request: Request, { params }: RouteProps) {
   const mergedMetadata = {
     ...currentMetadata,
     ...(metadata ?? {}),
+    // languages typed by an admin are authoritative: scrapers must not overwrite them with a weaker guess
+    ...(Array.isArray(languages) ? { languages_source: 'manual' } : {}),
   };
 
   const { data: updated, error: updateError } = await supabase
@@ -88,7 +91,7 @@ export async function PATCH(request: Request, { params }: RouteProps) {
       state: state ?? null,
       zip_code: zip_code ?? null,
       phone: phone ?? null,
-      languages: Array.isArray(languages) ? languages : current.languages,
+      languages: Array.isArray(languages) ? normalizeLanguageList(languages, { keepUnknown: true }) : current.languages,
       specialty: specialty ?? null,
       description: description ?? null,
       metadata: mergedMetadata,

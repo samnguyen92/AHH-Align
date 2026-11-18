@@ -4,6 +4,53 @@ import { getPublishedArticles } from '@/services/article-service';
 import NewsletterForm from '@/components/pulse/NewsletterForm';
 import { SiteImg } from '@/components/site/img';
 import { ArrowCircle, Caption, Display, Grid, Page, PhotoTile, Pill, Tile, pad, ring, tile } from '@/components/site/ui';
+import { getServerLocale } from '@/lib/i18n/server';
+import type { SupportedLocale } from '@/lib/states';
+
+const PULSE_COPY: Record<
+  SupportedLocale,
+  {
+    eyebrow: string;
+    heroSub: string;
+    pastIssues: string;
+    pastIssuesSub: string;
+    healthGuides: string;
+    seeAllGuides: string;
+  }
+> = {
+  en: {
+    eyebrow: 'Monthly newsletter · free',
+    heroSub: 'Clinic spotlights and health tips, once a month',
+    pastIssues: 'Past issues',
+    pastIssuesSub: 'Every issue so far',
+    healthGuides: 'Health guides',
+    seeAllGuides: 'See all guides',
+  },
+  vi: {
+    eyebrow: 'Bản tin hàng tháng · miễn phí',
+    heroSub: 'Điểm sáng phòng khám và lời khuyên sức khỏe mỗi tháng',
+    pastIssues: 'Các kỳ đã phát hành',
+    pastIssuesSub: 'Toàn bộ các số bản tin',
+    healthGuides: 'Cẩm nang sức khỏe',
+    seeAllGuides: 'Xem tất cả cẩm nang',
+  },
+  ko: {
+    eyebrow: '월간 뉴스레터 · 무료',
+    heroSub: '매월 전해드리는 추천 병원과 건강 정보',
+    pastIssues: '지난 호 보기',
+    pastIssuesSub: '발행된 전체 뉴스레터',
+    healthGuides: '건강 가이드',
+    seeAllGuides: '전체 가이드 보기',
+  },
+  zh: {
+    eyebrow: '每月健康通讯 · 免费订阅',
+    heroSub: '每月一期精选多语言诊所与家庭健康贴士',
+    pastIssues: '往期回顾',
+    pastIssuesSub: '查看已发布的全部期刊',
+    healthGuides: '健康指南',
+    seeAllGuides: '查看全部指南',
+  },
+};
 
 export const metadata: Metadata = {
   title: 'AHH Pulse',
@@ -89,10 +136,12 @@ const ISSUE_PHOTOS = ['h2-step-filter', 'c4-card-zh', 'h3-step-compare', 'clinic
 );
 
 export default async function PulsePage() {
-  const [dbNewslettersResult, rawLiveArticlesResult] = await Promise.all([
+  const [locale, dbNewslettersResult, rawLiveArticlesResult] = await Promise.all([
+    getServerLocale(),
     getPublishedArticles('pulse', 1, 100),
     getPublishedArticles(undefined, 1, 10),
   ]);
+  const copy = PULSE_COPY[locale] ?? PULSE_COPY.en;
   const dbNewsletters = dbNewslettersResult.data;
   const rawLiveArticles = rawLiveArticlesResult.data;
 
@@ -139,14 +188,14 @@ export default async function PulsePage() {
       {/* Hero: title and signup beside the photo */}
       <Grid className="md:grid-cols-2">
         <Tile tone="green" as="header" className={`flex min-h-[30rem] flex-col justify-between gap-10 ${pad}`}>
-          <Caption className="opacity-80">Monthly newsletter · free</Caption>
+          <Caption className="opacity-80">{copy.eyebrow}</Caption>
           <div>
             <Display as="h1">
               AHH
               <br />
               Pulse
             </Display>
-            <Caption className="mt-5 opacity-85">Clinic spotlights and health tips, once a month</Caption>
+            <Caption className="mt-5 opacity-85">{copy.heroSub}</Caption>
             <NewsletterForm />
           </div>
         </Tile>
@@ -156,12 +205,8 @@ export default async function PulsePage() {
       {/* Archive */}
       <Grid className="md:grid-cols-4">
         <Tile tone="zinc" className={`flex min-h-[14rem] flex-col justify-between gap-6 md:row-span-2 ${pad}`}>
-          <Display size="text-[clamp(2.5rem,5vw,5rem)]">
-            Past
-            <br />
-            issues
-          </Display>
-          <Caption className="opacity-75">Every issue so far</Caption>
+          <Display size="text-[clamp(2.5rem,5vw,5rem)]">{copy.pastIssues}</Display>
+          <Caption className="opacity-75">{copy.pastIssuesSub}</Caption>
         </Tile>
         {displayNewsletters.map((n, i) => (
           <Link
@@ -185,8 +230,8 @@ export default async function PulsePage() {
       {/* Related reading */}
       <Grid className="md:grid-cols-4">
         <Tile tone="mint" className={`flex min-h-[14rem] flex-col justify-between gap-6 ${pad}`}>
-          <h2 className="text-3xl font-bold leading-[1.02] tracking-tight md:text-4xl">Health guides</h2>
-          <Pill href="/insights" className="self-start">See all guides</Pill>
+          <h2 className="text-3xl font-bold leading-[1.02] tracking-tight md:text-4xl">{copy.healthGuides}</h2>
+          <Pill href="/insights" className="self-start">{copy.seeAllGuides}</Pill>
         </Tile>
         {displayInsights.map((insight, idx) => (
           <Link key={insight.title + idx} href={insight.href} className={`group relative min-h-[18rem] overflow-hidden ${tile} ${ring}`}>

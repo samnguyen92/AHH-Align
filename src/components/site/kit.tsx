@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Roll } from './ui';
 import { useEffect, useState } from 'react';
 import { Baby, Bone, Brain, Eye, Flower2, HeartPulse, Smile, Sparkles, Stethoscope, type LucideIcon } from 'lucide-react';
+import { LanguageSwitcher, useLocale } from '@/lib/i18n/context';
 
 export const HOME = '/';
 export const DIRECTORY = '/search';
@@ -62,6 +63,13 @@ export function useHideOnScrollDown(threshold = 80) {
 
 export function Navbar() {
   const pathname = usePathname();
+  const { t } = useLocale();
+  const navLinks: [string, string][] = [
+    [t.nav.directory, DIRECTORY],
+    [t.nav.healthGuides, '/insights'],
+    [t.nav.pulse, '/pulse'],
+    [t.nav.about, '/about'],
+  ];
   const isCurrent = (href: string) => (href === HOME ? pathname === HOME : pathname === href || pathname.startsWith(`${href}/`));
   const [open, setOpen] = useState(false);
   const scrolledAway = useHideOnScrollDown();
@@ -81,7 +89,7 @@ export function Navbar() {
       {/* Floating menu: a full-width bar inset and rounded like the cards; logo left, sections centred, actions right.
           Slides up out of view on scroll down. */}
       <header
-        className={`fixed left-3 right-3 top-2 z-50 flex items-center justify-between gap-6 rounded-xl md:rounded-2xl bg-white/85 py-2 pl-6 pr-3 shadow-[0_8px_30px_rgba(13,31,28,0.08)] ring-1 ring-black/5 backdrop-blur-md transition-transform duration-500 md:left-5 md:right-5 md:top-3 md:py-2.5 md:pl-7 md:pr-2.5 ${
+        className={`fixed left-3 right-3 top-2 z-50 flex items-center justify-between gap-4 rounded-xl md:rounded-2xl bg-white/85 py-2 pl-6 pr-3 shadow-[0_8px_30px_rgba(13,31,28,0.08)] ring-1 ring-black/5 backdrop-blur-md transition-transform duration-500 md:left-5 md:right-5 md:top-3 md:py-2.5 md:pl-7 md:pr-2.5 ${
           hidden ? '-translate-y-[130%]' : 'translate-y-0'
         }`}
         style={{ transitionTimingFunction: EASE }}
@@ -92,7 +100,7 @@ export function Navbar() {
         </Link>
         {/* section links, centred on the bar; below 1024px they live in the slide-out menu */}
         <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-0.5 lg:flex" aria-label="Main">
-          {NAV_LINKS.map(([label, href]) => (
+          {navLinks.map(([label, href]) => (
             <Link
               key={href}
               href={href}
@@ -104,15 +112,16 @@ export function Navbar() {
             </Link>
           ))}
         </nav>
-        <div className="ml-auto hidden items-center gap-4 md:flex">
+        <div className="ml-auto hidden items-center gap-3 md:flex">
+          <LanguageSwitcher variant="light" />
           <Link href="/claim" className="text-sm font-semibold underline-offset-4 hover:underline" style={{ color: INK }}>
-            For clinics
+            {t.nav.forClinics}
           </Link>
           <Link
             href={DIRECTORY}
             className="btn-fx btn-fx--green rounded-full border border-[#0D1F1C] px-5 py-2.5 text-sm font-semibold text-[#0D1F1C]"
           >
-            <Roll>Find a Clinic</Roll>
+            <Roll>{t.nav.findClinic}</Roll>
           </Link>
         </div>
         <button
@@ -138,10 +147,14 @@ export function Navbar() {
           style={{ transitionTimingFunction: EASE }}
         >
           <div className="flex h-full flex-col justify-center gap-1 px-8">
-            {NAV_LINKS.map(([label, href], i) => (
+            <div className="mb-4">
+              <LanguageSwitcher variant="light" />
+            </div>
+            {navLinks.map(([label, href], i) => (
               <Link
-                key={label}
+                key={href}
                 href={href}
+                onClick={() => setOpen(false)}
                 tabIndex={open ? 0 : -1}
                 className={`py-1 text-4xl font-bold transition-all duration-500 hover:text-[#024E44] ${open ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0'}`}
                 style={{ color: INK, transitionDelay: open ? `${100 + i * 60}ms` : '0ms', transitionTimingFunction: EASE }}
@@ -153,13 +166,14 @@ export function Navbar() {
               className={`mt-8 border-t border-neutral-200 pt-8 transition-all duration-500 ${open ? 'opacity-100' : 'opacity-0'}`}
               style={{ transitionDelay: open ? '450ms' : '0ms' }}
             >
-              <p className="mb-4 text-sm font-semibold" style={{ color: INK }}>Run a clinic?</p>
+              <p className="mb-4 text-sm font-semibold" style={{ color: INK }}>{t.nav.runClinic}</p>
               <Link
                 href="/claim"
+                onClick={() => setOpen(false)}
                 tabIndex={open ? 0 : -1}
                 className="btn-fx block w-full rounded-full bg-[#024E44] px-6 py-4 text-center text-sm font-semibold text-white"
               >
-                Claim Your Free Profile
+                {t.nav.claimFreeProfile}
               </Link>
             </div>
           </div>

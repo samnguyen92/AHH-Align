@@ -90,7 +90,7 @@ export async function semanticClinicSearch(
     throw clinicError;
   }
 
-  const clinicsById = new Map((clinics ?? []).map((clinic) => [clinic.id, clinic as Clinic]));
+  const clinicsById = new Map<string, Clinic>((clinics ?? []).map((clinic: any) => [String(clinic.id), clinic as Clinic]));
 
   return rows
     .map((row) => {
