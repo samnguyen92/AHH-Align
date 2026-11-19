@@ -159,9 +159,9 @@ ALLOWED ACTIONS:
   parameters: {"target": str}
 - repair_article_slugs: Convert non-ASCII article slugs to ASCII safe slugs.
   parameters: {}
-- delete_article: Delete one article from PostgreSQL.
+- delete_article: Delete one article from the database.
   parameters: {"target": str}
-- delete_clinic: Delete one clinic from PostgreSQL.
+- delete_clinic: Delete one clinic from the database.
   parameters: {"target": str}
 - change_clinic_feature_image: Change or rotate feature image of a clinic.
   parameters: {"target": str, "image_url": str or null}

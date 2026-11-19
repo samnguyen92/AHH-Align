@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 from typing import Any, List, Optional
 
 import psycopg2
@@ -30,6 +31,8 @@ from psycopg2.extras import Json, RealDictCursor
 
 CONNECT_TIMEOUT_SECONDS = int(os.environ.get("OPENCLAW_DB_CONNECT_TIMEOUT", "10"))
 STATEMENT_TIMEOUT_MS = int(os.environ.get("OPENCLAW_DB_STATEMENT_TIMEOUT_MS", "60000"))
+# A connection idle for longer than this is pinged before reuse (a silently dropped socket looks open).
+IDLE_PING_SECONDS = int(os.environ.get("OPENCLAW_DB_IDLE_PING_SECONDS", "30"))
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _FUNC_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
@@ -43,12 +46,29 @@ def _ident(name: str, kind: str = "identifier") -> str:
     return value
 
 
+# Used only when DATABASE_URL is NOT set: the usual locations of the project's database, so the same
+# code works inside the compose network (db:5432) and on the host (127.0.0.1:5433).
+_DEV_DEFAULTS = (
+    "postgresql://postgres:ahh_secure_pass_2026@db:5432/asian_health_hub",
+    "postgresql://postgres:ahh_secure_pass_2026@127.0.0.1:5433/asian_health_hub",
+    "postgresql://postgres:ahh_secure_pass_2026@localhost:5433/asian_health_hub",
+    "postgresql://postgres:ahh_secure_pass_2026@127.0.0.1:5432/asian_health_hub",
+    "postgresql://postgres:ahh_secure_pass_2026@localhost:5432/asian_health_hub",
+)
+
+
+def get_connection_strings(explicit_url: Optional[str] = None) -> List[str]:
+    """DSNs to try, in order.
+
+    An explicit URL (argument or DATABASE_URL) is used ALONE: if it is wrong we fail loudly instead of
+    silently connecting to some other database with a default password.
+    """
+    explicit = explicit_url or os.environ.get("DATABASE_URL")
+    return [explicit] if explicit else list(_DEV_DEFAULTS)
+
+
 def get_connection_string() -> str:
-    url = os.environ.get("DATABASE_URL")
-    if url:
-        return url
-    # Local development default only (docker-compose maps the DB to 127.0.0.1:5433).
-    return "postgresql://postgres:ahh_secure_pass_2026@localhost:5433/asian_health_hub"
+    return get_connection_strings()[0]
 
 
 class QueryResult:
@@ -309,15 +329,21 @@ class PGClient:
     """Hands out one psycopg2 connection per thread."""
 
     def __init__(self, db_url: str = None):
-        self.db_url = db_url or get_connection_string()
+        self.db_url = db_url  # None -> DATABASE_URL, else the development defaults
         self._local = threading.local()
 
     def _connect(self):
-        return psycopg2.connect(
-            self.db_url,
-            connect_timeout=CONNECT_TIMEOUT_SECONDS,
-            options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
-        )
+        last_error: Optional[BaseException] = None
+        for url in get_connection_strings(self.db_url):
+            try:
+                return psycopg2.connect(
+                    url,
+                    connect_timeout=CONNECT_TIMEOUT_SECONDS,
+                    options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
+                )
+            except psycopg2.OperationalError as exc:
+                last_error = exc
+        raise RuntimeError(f"Could not connect to PostgreSQL: {last_error}")
 
     def _is_array_column(self, cur, table: str, column: str) -> bool:
         key = (self.db_url, table)
@@ -342,6 +368,16 @@ class PGClient:
             except Exception:
                 pass
 
+    def _is_alive(self, conn) -> bool:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            conn.rollback()
+            return True
+        except Exception:
+            return False
+
     def _get_conn(self):
         conn = getattr(self._local, "conn", None)
         if conn is not None:
@@ -350,16 +386,22 @@ class PGClient:
             elif conn.get_transaction_status() == psycopg2.extensions.TRANSACTION_STATUS_UNKNOWN:
                 self._discard_conn()
                 conn = None
-            elif conn.get_transaction_status() == psycopg2.extensions.TRANSACTION_STATUS_INERROR:
-                # A previous caller left the transaction aborted: recover instead of failing every query.
-                try:
-                    conn.rollback()
-                except Exception:
-                    self._discard_conn()
-                    conn = None
+            else:
+                if conn.get_transaction_status() == psycopg2.extensions.TRANSACTION_STATUS_INERROR:
+                    # A previous caller left the transaction aborted: recover instead of failing every query.
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        self._discard_conn()
+                        conn = None
+                if conn is not None and time.monotonic() - getattr(self._local, "last_used", 0.0) > IDLE_PING_SECONDS:
+                    if not self._is_alive(conn):
+                        self._discard_conn()
+                        conn = None
         if conn is None:
             conn = self._connect()
             self._local.conn = conn
+        self._local.last_used = time.monotonic()
         return conn
 
     def close(self) -> None:

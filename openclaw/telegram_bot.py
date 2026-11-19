@@ -442,7 +442,7 @@ class TelegramBot:
             "OpenClaw AI Agent\n"
             "You can chat naturally. The bot will analyze your request, summarize the planned action, and only run the job after you reply `approve`.\n\n"
             "Commands\n"
-            "/status - check env, PostgreSQL counts, and log path\n"
+            "/status - check env, database counts, and log path\n"
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
             "/find_clinics <query> | [limit] - scout Google Places, scrape websites, extract clinic data, and save new clinics\n"
             "/inspect_clinic <name|slug> - inspect an existing clinic on our website (languages, gallery, sections, i18n)\n"
@@ -459,7 +459,7 @@ class TelegramBot:
             "/web_edit <instruction> - ask the Autonomous Web-Dev Agent to edit UI/design/code in src/\n"
             "/seo_audit [route] - audit Next.js metadata, JSON-LD schema, headings, alt tags, and DB SEO\n"
             "/seo_setup <instruction> - ask the SEO Agent to code/update metadata, JSON-LD, or sitemaps\n"
-            "/site_analyze [route] - run deep Playwright UX/speed probe + PostgreSQL conversion funnel analysis\n"
+            "/site_analyze [route] - run deep Playwright UX/speed probe + database conversion funnel analysis\n"
             "/preview [route] - capture live Desktop & Mobile screenshots of a page\n"
             "/dev_diff - view uncommitted code changes in src/ and public/\n"
             "/publish [commit msg] - typecheck, git commit & push to GitHub main, and rebuild live web container\n"
@@ -549,7 +549,7 @@ class TelegramBot:
             "name": f"{action_type}: {target[:48]}",
             "target": target,
             "summary": (
-                f"You want to delete this {label} from PostgreSQL, correct?\n\n"
+                f"You want to delete this {label} from the database, correct?\n\n"
                 f"Target: {target}\n\n"
                 "If you approve, OpenClaw will find exactly one record by id, slug, name, or title, then delete it.\n"
                 "This is a real destructive data operation. Reply `approve` to continue, or `cancel` if you are unsure."
@@ -572,7 +572,7 @@ class TelegramBot:
                 "You want OpenClaw to change the feature image for this clinic, correct?\n\n"
                 f"{summary_details}\n"
                 "If you approve, OpenClaw will find the clinic, and update its metadata to set/rotate the feature image.\n"
-                "This will update PostgreSQL data. Reply `approve` to continue."
+                "This will update database records. Reply `approve` to continue."
             ),
         }
 
@@ -584,7 +584,7 @@ class TelegramBot:
             "summary": (
                 "You want OpenClaw to retrieve the list of newsletter subscribers, correct?\n\n"
                 f"Limit: {limit} subscribers\n\n"
-                "If you approve, OpenClaw will query PostgreSQL and print the list of email subscribers with timestamps.\n"
+                "If you approve, OpenClaw will query the database and print the list of email subscribers with timestamps.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -621,7 +621,7 @@ class TelegramBot:
             "name": "check_claims",
             "summary": (
                 "You want OpenClaw to check pending profile claims and submissions, correct?\n\n"
-                "If you approve, OpenClaw will query PostgreSQL and print all pending clinic claim requests and new profile submissions.\n"
+                "If you approve, OpenClaw will query the database and print all pending clinic claim requests and new profile submissions.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -634,7 +634,7 @@ class TelegramBot:
             "summary": (
                 "You want to approve this clinic claim request or submission, correct?\n\n"
                 f"Target Request/Submission ID: {target}\n\n"
-                "If you approve, OpenClaw will mark the request as approved and link/create the clinic in PostgreSQL.\n"
+                "If you approve, OpenClaw will mark the request as approved and link/create the clinic in the database.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -647,7 +647,7 @@ class TelegramBot:
             "summary": (
                 "You want to reject this clinic claim request or submission, correct?\n\n"
                 f"Target Request/Submission ID: {target}\n\n"
-                "If you approve, OpenClaw will mark the request as rejected in PostgreSQL.\n"
+                "If you approve, OpenClaw will mark the request as rejected in the database.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -668,8 +668,8 @@ class TelegramBot:
                 "3. Regenerate the article according to the requested edits above.\n"
                 "4. Save the current article as a historical version in `seo_meta.versions`.\n"
                 "5. Keep the current slug/URL and publish the rewrite as the next version, such as v2 or v3.\n"
-                "6. Update content, excerpt, tags, and SEO metadata in PostgreSQL.\n\n"
-                "This may call OpenRouter and update PostgreSQL data.\n"
+                "6. Update content, excerpt, tags, and SEO metadata in the database.\n\n"
+                "This may call OpenRouter and update database records.\n"
                 "Reply `approve` to continue. Send a new request if you want to change the edit instructions."
             ),
         }

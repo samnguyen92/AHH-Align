@@ -212,3 +212,38 @@ def test_select_after_a_write_does_not_turn_it_into_a_select(client):
     client.table(TABLE).update({"email": "pgtest-sel2@example.com"}).eq("email", "pgtest-sel@example.com").select("id").execute()
     assert client.table(TABLE).select("id").eq("email", "pgtest-sel2@example.com").execute().data
     assert not client.table(TABLE).select("id").eq("email", "pgtest-sel@example.com").execute().data
+
+
+# ------------------------------------------------------------------ connection candidates / idle ping
+
+def test_explicit_database_url_is_used_alone(monkeypatch):
+    """A wrong DATABASE_URL must fail loudly, never fall back to another database with a default password."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u@example.invalid:1/x")
+    assert pg_client.get_connection_strings() == ["postgresql://u@example.invalid:1/x"]
+    assert pg_client.get_connection_strings("postgresql://other@h/db") == ["postgresql://other@h/db"]
+
+
+def test_without_a_url_the_docker_and_local_defaults_are_tried(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    urls = pg_client.get_connection_strings()
+    assert any("@db:5432" in u for u in urls) and any("127.0.0.1:5433" in u for u in urls)
+
+
+def test_unreachable_database_raises_a_clear_error():
+    bad = pg_client.PGClient("postgresql://postgres@127.0.0.1:1/none")
+    with pytest.raises(RuntimeError, match="Could not connect"):
+        bad.table(TABLE).select("id").execute()
+
+
+def test_idle_connection_is_pinged_and_replaced_before_use(client, monkeypatch):
+    """A socket dropped while idle looks open; the first query after the idle period must still work."""
+    client.table(TABLE).select("id").limit(1).execute()
+    pid = client._get_conn().get_backend_pid()
+    admin = psycopg2.connect(TEST_URL)
+    admin.autocommit = True
+    with admin.cursor() as cur:
+        cur.execute("SELECT pg_terminate_backend(%s)", (pid,))
+    admin.close()
+    monkeypatch.setattr(pg_client, "IDLE_PING_SECONDS", -1)  # treat the connection as idle
+    assert client.table(TABLE).select("id").limit(1).execute().data is not None  # no error, no retry needed
+    assert client._get_conn().get_backend_pid() != pid
