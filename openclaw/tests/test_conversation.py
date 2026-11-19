@@ -392,7 +392,7 @@ def test_end_to_end_in_the_bot_exactly_the_conversation_from_the_screenshot(bot,
     while time.time() < deadline and _languages()["languages"] == ["English"]:
         time.sleep(0.05)
     assert _languages()["languages"] == ["English", "Vietnamese"]
-    assert any("Updated" in m for m in bot.sent)
+    assert any("Đã cập nhật" in m for m in bot.sent)
     assert bot.chat_focus[1] == {"clinic": "pytest-edit-dental"}  # "clinics này" resolves next time
 
 

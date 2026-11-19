@@ -148,7 +148,7 @@ ALLOWED ACTIONS:
   English phrases: "add Vietnamese to clinic X", "remove Korean from X", "change the phone of X to 714-555-0100".
   Vietnamese phrases: "thêm tiếng Việt vào ngôn ngữ của clinic X", "đổi số điện thoại của X thành ...", "bỏ tiếng Hàn khỏi X".
   parameters: {"target": str (clinic name or slug; use focus if the user says "this clinic"),
-               "changes": {"languages": {"add": [str], "remove": [str], "set": [str]}, "phone": str, "address": str, "city": str, "state": str, "zip_code": str, "specialty": str, "description": str, "website": str, "language_note": str, "is_telehealth_available": bool}}
+               "changes": {"languages": {"add": [str], "remove": [str], "set": [str]}, "phone": str, "address": str, "city": str, "state": str, "zip_code": str, "specialty": str, "description": str, "website": str, "language_note": str, "about_highlight": str, "short_description": str, "cultural_context": str, "is_telehealth_available": bool}}
   Include only the keys the user asked to change. Language names in English ("Vietnamese", "Korean", "Chinese").
   confirmation_message: leave empty (the bot writes it).
 - undo_clinic_edit: Undo the last bot edit of a clinic (within 30 days).

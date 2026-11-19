@@ -12,6 +12,7 @@ audit_log, which is what makes undo possible.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
@@ -22,7 +23,7 @@ TEXT_COLUMNS = {
     "specialty": 120, "description": 4000,
 }
 BOOL_COLUMNS = {"is_telehealth_available"}
-METADATA_TEXT_KEYS = {"website": 300, "language_note": 600}
+METADATA_TEXT_KEYS = {"website": 300, "language_note": 1200, "about_highlight": 4000, "short_description": 800, "cultural_context": 1200}
 ALLOWED_FIELDS = set(TEXT_COLUMNS) | BOOL_COLUMNS | METADATA_TEXT_KEYS.keys() | {"languages"}
 
 # Spoken-language names are stored in English (that is what the site filters on).
@@ -39,7 +40,14 @@ LANGUAGE_ALIASES = {
 
 
 class ClinicEditError(Exception):
-    """A request the bot should explain to the user (not a crash)."""
+    """A request the bot should explain to the user (not a crash). str() is English; .text(lang) can be Vietnamese."""
+
+    def __init__(self, en: str, vi: str = "") -> None:
+        super().__init__(en)
+        self.en, self.vi = en, vi or en
+
+    def text(self, lang: str = "en") -> str:
+        return self.vi if lang == "vi" else self.en
 
 
 @dataclass
@@ -83,47 +91,76 @@ def _current_value(row: dict, name: str) -> Any:
     return row.get(name)
 
 
-def plan_clinic_edit(target: str, changes: Dict[str, Any]) -> EditPlan:
+# The pages say "The clinic's verified spoken languages are English and Spanish." in several text fields, and the
+# page shows the FIRST non-empty one (metadata.about_highlight before the description column). Changing only the
+# `languages` array would leave that text, which is what visitors read, unchanged.
+_LANG_SENTENCE = re.compile(r"(spoken languages (?:are|include)\s+)([^.\n]+?)(\.)", re.IGNORECASE)
+SYNCED_TEXT_FIELDS = ("description", "about_highlight", "short_description", "language_note", "cultural_context")
+
+
+def join_languages(languages: List[str]) -> str:
+    if len(languages) <= 1:
+        return "".join(languages)
+    return ", ".join(languages[:-1]) + " and " + languages[-1]
+
+
+def sync_language_sentence(text: str, languages: List[str]) -> str:
+    return _LANG_SENTENCE.sub(lambda m: f"{m.group(1)}{join_languages(languages)}{m.group(3)}", text or "")
+
+
+def _show(text: str, limit: int = 70) -> str:
+    text = " ".join(str(text or "—").split())
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def plan_clinic_edit(target: str, changes: Dict[str, Any], lang: str = "en") -> EditPlan:
+    vi = lang == "vi"
     if not isinstance(changes, dict) or not changes:
-        raise ClinicEditError("No change was given.")
+        raise ClinicEditError("No change was given.", "Chưa có thay đổi nào được nêu rõ.")
     unknown = [key for key in changes if key not in ALLOWED_FIELDS]
     if unknown:
         raise ClinicEditError(
-            f"Field(s) not editable from the bot: {', '.join(sorted(unknown))}. "
-            f"Editable: {', '.join(sorted(ALLOWED_FIELDS))}."
+            f"Field(s) not editable from the bot: {', '.join(sorted(unknown))}. Editable: {', '.join(sorted(ALLOWED_FIELDS))}.",
+            f"Trường không sửa được từ bot: {', '.join(sorted(unknown))}. Sửa được: {', '.join(sorted(ALLOWED_FIELDS))}.",
         )
 
     rows = _find_rows(target)
     if not rows:
-        raise ClinicEditError(f"No clinic matches “{target}”.")
+        raise ClinicEditError(f"No clinic matches “{target}”.", f"Không tìm thấy clinic nào khớp “{target}”.")
     exact = [r for r in rows if str(target).strip().lower() in {str(r.get("slug", "")).lower(), str(r.get("name", "")).lower()}]
     if len(rows) > 1 and len(exact) != 1:
         names = ", ".join(f"{r['name']} (`{r['slug']}`)" for r in rows)
-        raise ClinicEditError(f"“{target}” matches several clinics: {names}. Say which one (use the slug).")
+        raise ClinicEditError(
+            f"“{target}” matches several clinics: {names}. Say which one (use the slug).",
+            f"“{target}” khớp nhiều clinic: {names}. Bạn chọn giúp mình một clinic (dùng slug) nhé.",
+        )
     row = exact[0] if exact else rows[0]
+    metadata = row.get("metadata") or {}
 
     new_values: Dict[str, Any] = {}
     before: Dict[str, Any] = {}
     lines: List[str] = []
+    final_languages: List[str] = [str(x) for x in (row.get("languages") or [])]
     for key, raw in changes.items():
         if key == "languages":
-            current = [str(x) for x in (row.get("languages") or [])]
+            current = list(final_languages)
             if isinstance(raw, dict):
                 final = list(current)
                 if raw.get("set") is not None:
                     final = _normalize_language_list(raw["set"])
-                for lang in _normalize_language_list(raw.get("add")):
-                    if lang not in final:
-                        final.append(lang)
-                for lang in _normalize_language_list(raw.get("remove")):
-                    final = [x for x in final if x.lower() != lang.lower()]
+                for language in _normalize_language_list(raw.get("add")):
+                    if language not in final:
+                        final.append(language)
+                for language in _normalize_language_list(raw.get("remove")):
+                    final = [x for x in final if x.lower() != language.lower()]
             else:
                 final = _normalize_language_list(raw)
             if not final:
-                raise ClinicEditError("A clinic must keep at least one language.")
+                raise ClinicEditError("A clinic must keep at least one language.", "Một clinic phải còn ít nhất một ngôn ngữ.")
+            final_languages = final
             if final != current:
                 before[key], new_values[key] = current, final
-                lines.append(f"Languages: {', '.join(current) or '—'} → {', '.join(final)}")
+                lines.append(f"{'Ngôn ngữ' if vi else 'Languages'}: {', '.join(current) or '—'} → {', '.join(final)}")
         elif key in BOOL_COLUMNS:
             value = raw if isinstance(raw, bool) else str(raw).strip().lower() in {"true", "yes", "1", "có", "co"}
             if value != bool(row.get(key)):
@@ -133,19 +170,41 @@ def plan_clinic_edit(target: str, changes: Dict[str, Any]) -> EditPlan:
             limit = TEXT_COLUMNS.get(key) or METADATA_TEXT_KEYS[key]
             value = str(raw if raw is not None else "").strip()
             if len(value) > limit:
-                raise ClinicEditError(f"{key} is too long (max {limit} characters).")
+                raise ClinicEditError(f"{key} is too long (max {limit} characters).", f"{key} quá dài (tối đa {limit} ký tự).")
             current = _current_value(row, key)
             if value != (current or ""):
                 before[key], new_values[key] = current, value
-                shown_old = (str(current)[:80] + "…") if current and len(str(current)) > 80 else (current or "—")
-                shown_new = value[:80] + "…" if len(value) > 80 else (value or "—")
-                lines.append(f"{key}: {shown_old} → {shown_new}")
+                lines.append(f"{key}: {_show(current, 80)} → {_show(value, 80)}")
+
+    # Keep the text visitors actually read in step with the languages (unless the user rewrote that text themselves).
+    if "languages" in changes:
+        for field in SYNCED_TEXT_FIELDS:
+            if field in changes:
+                continue
+            current = _current_value(row, field) if field != "description" else row.get("description")
+            if not current:
+                continue
+            synced = sync_language_sentence(str(current), final_languages)
+            if synced != current:
+                before[field], new_values[field] = current, synced
+                old_sentence = _LANG_SENTENCE.search(str(current))
+                lines.append(
+                    f"{'Văn bản trên trang' if vi else 'Text on the page'} ({field}): "
+                    f"“…{old_sentence.group(0) if old_sentence else ''}” → “…{_LANG_SENTENCE.search(synced).group(0)}”"
+                )
 
     if not new_values:
-        raise ClinicEditError(f"Nothing to change: {row['name']} already has these values.")
+        raise ClinicEditError(
+            f"Nothing to change: {row['name']} already has these values.",
+            f"Không có gì để đổi: {row['name']} đã đúng như vậy rồi (cả ngôn ngữ lẫn đoạn văn bản trên trang).",
+        )
+    i18n_note = bool(metadata.get("i18n")) and any(k in new_values for k in SYNCED_TEXT_FIELDS + ("languages",))
     return EditPlan(
         clinic_id=str(row["id"]), slug=row.get("slug") or "", name=row.get("name") or "",
-        changes=new_values, before=before, lines=lines,
+        changes=new_values, before=before, lines=lines + ([
+            "Bản dịch VI/KO/ZH của các đoạn này chưa được cập nhật (chạy /rescan_clinic để tạo lại)." if vi
+            else "The VI/KO/ZH translations of these texts are NOT updated (run /rescan_clinic to regenerate them)."
+        ] if i18n_note else []),
         candidates=[r.get("slug", "") for r in rows if r is not row],
     )
 
@@ -188,8 +247,10 @@ def _write_values(plan_changes: Dict[str, Any], owner_confirmed: bool) -> tuple:
     return ", ".join(sets), params
 
 
-def apply_clinic_edit(plan: EditPlan, actor: str) -> str:
+def apply_clinic_edit(plan: EditPlan, actor: str, lang: str = "en") -> str:
     from psycopg2.extras import Json
+
+    vi = lang == "vi"
 
     for key in plan.changes:
         if key not in ALLOWED_FIELDS:
@@ -198,7 +259,7 @@ def apply_clinic_edit(plan: EditPlan, actor: str) -> str:
     with db.transaction() as tx:
         rows = tx.query("SELECT * FROM public.clinics WHERE id = %s FOR UPDATE", (plan.clinic_id,))
         if not rows:
-            raise ClinicEditError("That clinic no longer exists.")
+            raise ClinicEditError("That clinic no longer exists.", "Clinic này không còn tồn tại.")
         row = rows[0]
         for key, old in plan.before.items():
             now = _current_value(row, key)
@@ -206,7 +267,8 @@ def apply_clinic_edit(plan: EditPlan, actor: str) -> str:
                 now = [str(x) for x in (now or [])]
             if now != old and not (now in (None, "") and old in (None, "")):
                 raise ClinicEditError(
-                    f"{plan.name} was changed by someone else after the preview ({key}). Nothing was applied; ask again."
+                    f"{plan.name} was changed by someone else after the preview ({key}). Nothing was applied; ask again.",
+                    f"{plan.name} vừa được ai đó sửa sau khi xem trước ({key}). Chưa áp dụng gì cả, bạn yêu cầu lại giúp mình.",
                 )
         set_sql, params = _write_values(plan.changes, owner_confirmed=True)
         tx.query(f"UPDATE public.clinics SET {set_sql} WHERE id = %s", (*params, plan.clinic_id))
@@ -218,17 +280,24 @@ def apply_clinic_edit(plan: EditPlan, actor: str) -> str:
     from revalidate import revalidate_clinic
 
     live = revalidate_clinic(plan.slug)
-    return "\n".join([f"✅ Updated {plan.name}", *[f"• {line}" for line in plan.lines], live,
-                      f"↩️ Undo within {UNDO_WINDOW_DAYS} days: /clinic_undo {plan.slug}"])
+    return "\n".join([
+        f"✅ {'Đã cập nhật' if vi else 'Updated'} {plan.name}", *[f"• {line}" for line in plan.lines], live,
+        f"↩️ {'Hoàn tác trong' if vi else 'Undo within'} {UNDO_WINDOW_DAYS} {'ngày' if vi else 'days'}: /clinic_undo {plan.slug}",
+    ])
 
 
-def undo_clinic_edit(target: str, actor: str) -> str:
+def undo_clinic_edit(target: str, actor: str, lang: str = "en") -> str:
     from psycopg2.extras import Json
+
+    vi = lang == "vi"
 
     rows = _find_rows(target)
     exact = [r for r in rows if str(target).strip().lower() in {str(r.get("slug", "")).lower(), str(r.get("name", "")).lower()}]
     if not rows or (len(rows) > 1 and len(exact) != 1):
-        raise ClinicEditError(f"I need exactly one clinic to undo (got {len(rows)} for “{target}”). Use the slug.")
+        raise ClinicEditError(
+            f"I need exactly one clinic to undo (got {len(rows)} for “{target}”). Use the slug.",
+            f"Mình cần đúng một clinic để hoàn tác (tìm thấy {len(rows)} cho “{target}”). Bạn dùng slug nhé.",
+        )
     clinic = exact[0] if exact else rows[0]
     db = _db()
     with db.transaction() as tx:
@@ -239,7 +308,10 @@ def undo_clinic_edit(target: str, actor: str) -> str:
             (str(clinic["id"]), UNDO_WINDOW_DAYS),
         )
         if not logs:
-            raise ClinicEditError(f"No edit of {clinic['name']} to undo in the last {UNDO_WINDOW_DAYS} days.")
+            raise ClinicEditError(
+                f"No edit of {clinic['name']} to undo in the last {UNDO_WINDOW_DAYS} days.",
+                f"Không có thay đổi nào của {clinic['name']} để hoàn tác trong {UNDO_WINDOW_DAYS} ngày qua.",
+            )
         details = logs[0]["details"]
         details = json.loads(details) if isinstance(details, str) else details
         for key, new in details["after"].items():
@@ -249,7 +321,8 @@ def undo_clinic_edit(target: str, actor: str) -> str:
             if now != new:
                 raise ClinicEditError(
                     f"{clinic['name']} was edited again after that change ({key}), so I will not overwrite it. "
-                    "Change it directly instead."
+                    "Change it directly instead.",
+                    f"{clinic['name']} đã được sửa tiếp sau thay đổi đó ({key}), nên mình không ghi đè. Bạn sửa trực tiếp giúp mình nhé.",
                 )
         restore = {k: (v if v is not None else "") for k, v in details["before"].items()}
         set_sql, params = _write_values(restore, owner_confirmed=False)
@@ -263,4 +336,5 @@ def undo_clinic_edit(target: str, actor: str) -> str:
         )
     from revalidate import revalidate_clinic
 
-    return f"↩️ Restored {clinic['name']} to before the last edit.\n{revalidate_clinic(clinic.get('slug') or '')}"
+    restored = f"Đã khôi phục {clinic['name']} về trước lần sửa gần nhất." if vi else f"Restored {clinic['name']} to before the last edit."
+    return f"↩️ {restored}\n{revalidate_clinic(clinic.get('slug') or '')}"
