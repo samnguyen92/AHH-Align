@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getBearerToken, getPostLoginPath, getUserFromAccessToken, getUserRole } from '@/services/auth-service';
 import { createServerSupabaseClient } from '@/services/supabase-server';
+import { safeNextPath } from '@/lib/safe-redirect';
 
 function requestedNextPath(request: Request) {
   const url = new URL(request.url);
   const next = url.searchParams.get('next');
-  return next?.startsWith('/') ? next : null;
+  return safeNextPath(next);
 }
 
 function safeDestinationForRole(role: string | null, requestedPath: string | null, defaultPath: string) {

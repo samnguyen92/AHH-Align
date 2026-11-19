@@ -3,12 +3,33 @@ import crypto from 'crypto';
 import { getPool } from '@/lib/db/postgres';
 import { createSessionToken } from '@/lib/auth/token';
 import { AUTH_COOKIE_NAME } from '@/lib/auth/session-cookie';
+import { safeNextPath } from '@/lib/safe-redirect';
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
-  const nextPath = state ? decodeURIComponent(state) : '/dashboard';
+  // `state` is `<nonce>.<encoded next path>`; the nonce must match the httpOnly cookie
+  // set when the flow started, otherwise this is a forged/cross-site callback.
+  const [stateNonce, ...stateRest] = (state ?? '').split('.');
+  const cookieNonce = request.headers
+    .get('cookie')
+    ?.split(';')
+    .map((c) => c.trim())
+    .find((c) => c.startsWith('ahh-oauth-state='))
+    ?.slice('ahh-oauth-state='.length);
+
+  if (!stateNonce || !cookieNonce || stateNonce !== cookieNonce) {
+    return NextResponse.redirect(new URL('/auth/login?error=Google+login+failed', request.url));
+  }
+
+  let decodedNext = '/dashboard';
+  try {
+    decodedNext = decodeURIComponent(stateRest.join('.'));
+  } catch {
+    // keep default
+  }
+  const nextPath = safeNextPath(decodedNext, '/dashboard') as string;
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -52,6 +73,11 @@ export async function GET(request: Request) {
     }
 
     const profile = await profileRes.json();
+    // Only trust an email Google has verified; otherwise an attacker could register a Google
+    // account with someone else's address and be merged into that user's account.
+    if (profile.email_verified === false) {
+      return NextResponse.redirect(new URL('/auth/login?error=Google+email+is+not+verified', request.url));
+    }
     const email = profile.email ? String(profile.email).toLowerCase() : null;
     const name = profile.name || profile.given_name || null;
     const googleId = profile.sub;
@@ -99,8 +125,9 @@ export async function GET(request: Request) {
 
     // 5. Redirect and set cookie
     const isProd = process.env.NODE_ENV === 'production';
-    const redirectUrl = new URL(nextPath.startsWith('/') ? nextPath : '/dashboard', request.url);
+    const redirectUrl = new URL(nextPath, request.url);
     const response = NextResponse.redirect(redirectUrl);
+    response.cookies.set({ name: 'ahh-oauth-state', value: '', path: '/api/auth/google', maxAge: 0 });
 
     response.cookies.set({
       name: AUTH_COOKIE_NAME,

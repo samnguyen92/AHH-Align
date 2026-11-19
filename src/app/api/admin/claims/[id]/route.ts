@@ -37,6 +37,24 @@ export async function PATCH(request: NextRequest, { params }: AdminClaimRoutePro
     return NextResponse.json({ error: 'Claim request not found.' }, { status: 404 });
   }
 
+  // Only pending requests can be decided. Re-deciding an approved/rejected claim
+  // would silently change clinic ownership.
+  if (claim.status !== 'pending') {
+    return NextResponse.json(
+      { error: `Claim request is already ${claim.status}.` },
+      { status: 409 }
+    );
+  }
+
+  // A guest claim has no user account to own the clinic. Approving it would mark the
+  // clinic as claimed with no owner and block every later claim.
+  if (body.status === 'approved' && !claim.user_id) {
+    return NextResponse.json(
+      { error: 'This claim has no linked user account. Ask the claimant to sign up first.' },
+      { status: 422 }
+    );
+  }
+
   const { data: updatedClaim, error: updateError } = await supabase
     .from('claim_requests')
     .update({

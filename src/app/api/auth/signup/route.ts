@@ -11,7 +11,11 @@ export async function POST(request: Request) {
     const email = body.email ? String(body.email).trim().toLowerCase() : '';
     const password = body.password ? String(body.password) : '';
     const name = body.name ? String(body.name).trim() : '';
-    const requestedRole = body.role === 'admin' ? 'provider' : body.role || 'provider';
+    // Never trust a client-supplied role. Self-service signup can only produce a
+    // 'user' or 'provider'; elevated roles are granted by a superadmin via
+    // /api/admin/users/[id]/role.
+    const SELF_SERVICE_ROLES = new Set(['user', 'provider']);
+    const requestedRole = SELF_SERVICE_ROLES.has(body.role) ? (body.role as string) : 'provider';
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });

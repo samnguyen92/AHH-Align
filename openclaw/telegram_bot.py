@@ -91,6 +91,11 @@ class TelegramBot:
             for value in allowed_ids.split(",")
             if value.strip().isdigit()
         }
+        if not self.allowed_user_ids:
+            print(
+                "[!] TELEGRAM_ALLOWED_USER_IDS is empty: the bot will REFUSE every user until at least one "
+                "Telegram user id is configured in openclaw/.env (get yours from @userinfobot)."
+            )
         self.offset = 0
         self.running_jobs: dict[str, threading.Thread] = {}
         self.pending_actions: dict[int, dict] = {}
@@ -372,7 +377,8 @@ class TelegramBot:
         return "\n".join(lines)
 
     def is_allowed(self, user_id: int) -> bool:
-        return not self.allowed_user_ids or user_id in self.allowed_user_ids
+        # Deny by default: an empty allow-list must never mean "everyone".
+        return bool(self.allowed_user_ids) and user_id in self.allowed_user_ids
 
     def get_updates(self) -> list[dict]:
         response = self.request(

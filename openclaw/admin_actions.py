@@ -334,6 +334,12 @@ def approve_claim(identifier: str) -> None:
                 print(f"[!] Claim request '{identifier}' is already '{claim.get('status')}'.")
                 return
 
+            # A guest claim has no user account to own the clinic; approving it would mark the clinic
+            # as claimed with no owner and block every later claim.
+            if not claim.get("user_id"):
+                print(f"[!] Claim request '{identifier}' has no linked user account. Ask the claimant to sign up first.")
+                return
+
             supabase.table("claim_requests").update({"status": "approved"}).eq("id", identifier).execute()
             supabase.table("clinics").update({
                 "is_claimed": True,
