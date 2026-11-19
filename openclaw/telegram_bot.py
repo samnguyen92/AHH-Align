@@ -14,6 +14,10 @@ from agent_prompt import OPENCLAW_AGENT_SYSTEM_PROMPT
 from intent_agent import run_intent_agent
 from jobs import (
     JobFailed,
+    approve_all_draft_clinics_job,
+    approve_clinic_job,
+    list_draft_clinics_job,
+    reject_clinic_job,
     check_status,
     delete_article_job,
     delete_clinic_job,
@@ -445,6 +449,9 @@ class TelegramBot:
             "/rescan_clinic <name|slug> - deep re-scan & re-extract all fields/photos/i18n of an existing clinic via gpt-6-luna\n"
             "/rescan_all_clinics [limit] - rescan & enrich all clinics in the directory\n"
             "/scrape_clinic_url <clinic name> | <url> - scrape one known clinic website and save/update it\n"
+            "/drafts [limit] - list clinics waiting for review (new clinics start as drafts, hidden from the website)\n"
+            "/approve_clinic <slug|id|name|all> - publish a draft clinic (or all drafts)\n"
+            "/reject_clinic <slug|id|name> - archive a clinic so it is hidden from the website\n"
             "/clinic_quality [threshold] - show clinic data quality scores and lowest-scoring clinics\n"
             "/directory_audit - show Track C entity/field/insurance/price coverage & Track E supply gaps\n"
             "/search_audit - run the Track D 30-query search benchmark suite\n"
@@ -515,6 +522,24 @@ class TelegramBot:
                 urls.append(url)
 
         return urls
+
+    def build_approve_all_drafts_action(self) -> dict:
+        try:
+            from admin_actions import count_draft_clinics
+
+            count_text = str(count_draft_clinics())
+        except Exception as exc:  # the confirmation must still work if the count fails
+            print(f"[!] Could not count draft clinics: {exc!r}")
+            count_text = "all"
+        return {
+            "type": "approve_all_draft_clinics",
+            "name": "approve_all_draft_clinics",
+            "summary": (
+                f"You want to PUBLISH {count_text} draft clinic(s) so they become visible on the website.\n\n"
+                "Some drafts may have UNVERIFIED languages. Review them first with /drafts if you are unsure.\n"
+                "Reply `approve` to publish them, or `cancel`."
+            ),
+        }
 
     def build_delete_action(self, item_type: str, target: str) -> dict:
         action_type = "delete_article" if item_type == "article" else "delete_clinic"
@@ -796,6 +821,12 @@ class TelegramBot:
             self.run_job(chat_id, action["name"], lambda: delete_article_job(action["target"]), action_type=action_type)
         elif action_type == "delete_clinic":
             self.run_job(chat_id, action["name"], lambda: delete_clinic_job(action["target"]), action_type=action_type)
+        elif action_type == "approve_all_draft_clinics":
+            self.run_job(chat_id, action["name"], approve_all_draft_clinics_job, action_type=action_type)
+        elif action_type == "approve_clinic":
+            self.run_job(chat_id, action["name"], lambda: approve_clinic_job(action["target"]), action_type=action_type)
+        elif action_type == "reject_clinic":
+            self.run_job(chat_id, action["name"], lambda: reject_clinic_job(action["target"]), action_type=action_type)
         elif action_type == "change_clinic_feature_image":
             self.run_job(
                 chat_id,
@@ -1240,6 +1271,29 @@ class TelegramBot:
             else:
                 self.pending_actions[chat_id] = self.build_delete_action("article", target)
                 self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command == "/drafts":
+            raw_limit = text.removeprefix("/drafts").strip()
+            limit = int(raw_limit) if raw_limit.isdigit() else 20
+            self.run_job(chat_id, "drafts", lambda: list_draft_clinics_job(limit), action_type="drafts")
+        elif command == "/approve_clinic":
+            target = text.removeprefix("/approve_clinic").strip()
+            if not target:
+                self.send_message(chat_id, "Use: /approve_clinic <slug|id|name|all>")
+            elif target.lower() == "all":
+                self.pending_actions[chat_id] = self.build_approve_all_drafts_action()
+                self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+            else:
+                self.run_job(
+                    chat_id, f"approve_clinic: {target[:40]}", lambda: approve_clinic_job(target), action_type="approve_clinic"
+                )
+        elif command == "/reject_clinic":
+            target = text.removeprefix("/reject_clinic").strip()
+            if not target:
+                self.send_message(chat_id, "Use: /reject_clinic <slug|id|name>")
+            else:
+                self.run_job(
+                    chat_id, f"reject_clinic: {target[:40]}", lambda: reject_clinic_job(target), action_type="reject_clinic"
+                )
         elif command == "/delete_clinic":
             target = text.removeprefix("/delete_clinic").strip()
             if not target:
@@ -1408,6 +1462,15 @@ class TelegramBot:
                 self.pending_actions.pop(chat_id, None)
             target = (intent_res.parameters or {}).get("target") or (intent_res.parameters or {}).get("query") or text
             self.send_message(chat_id, inspect_clinic_job(str(target), lang=intent_res.lang))
+            return
+
+        # 2c. Immediate read-only action: list_drafts (does not require approval)
+        if intent_res.action == "list_drafts":
+            with self._pending_lock:
+                self.pending_actions.pop(chat_id, None)
+            raw_limit = (intent_res.parameters or {}).get("limit")
+            limit = int(raw_limit) if str(raw_limit).isdigit() else 20
+            self.run_job(chat_id, "drafts", lambda: list_draft_clinics_job(limit), action_type="drafts")
             return
 
         # 3. Requires Approval (New Action detected by IntentAgent)

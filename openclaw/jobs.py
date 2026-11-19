@@ -305,6 +305,30 @@ def tail_log(lines: int = 40) -> str:
     return "".join(content[-lines:]).strip() or "No OpenClaw log yet."
 
 
+def list_draft_clinics_job(limit: int = 20) -> str:
+    from admin_actions import list_draft_clinics
+
+    return _run_with_captured_output("list_draft_clinics", lambda: list_draft_clinics(limit))
+
+
+def approve_clinic_job(identifier: str) -> str:
+    from admin_actions import set_clinic_status
+
+    return _run_with_captured_output("approve_clinic", lambda: set_clinic_status(identifier, "published"))
+
+
+def reject_clinic_job(identifier: str) -> str:
+    from admin_actions import set_clinic_status
+
+    return _run_with_captured_output("reject_clinic", lambda: set_clinic_status(identifier, "archived"))
+
+
+def approve_all_draft_clinics_job() -> str:
+    from admin_actions import approve_all_draft_clinics
+
+    return _run_with_captured_output("approve_all_draft_clinics", approve_all_draft_clinics)
+
+
 def list_newsletter_subscribers_job(limit: int = 50) -> str:
     from admin_actions import list_newsletter_subscribers
 

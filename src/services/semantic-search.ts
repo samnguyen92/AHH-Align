@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/services/supabase-server';
 import type { Clinic } from '@/types/database';
+import { onlyPublic } from './clinic-service';
 
 const EMBEDDING_MODEL =
   process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
@@ -81,10 +82,13 @@ export async function semanticClinicSearch(
   }
 
   const clinicIds = rows.map((row) => row.clinic_id);
-  const { data: clinics, error: clinicError } = await supabase
-    .from('clinics')
-    .select('*')
-    .in('id', clinicIds);
+  // Embeddings exist for every clinic; only published ones may be returned to visitors.
+  const { data: clinics, error: clinicError } = await onlyPublic(
+    supabase
+      .from('clinics')
+      .select('*')
+      .in('id', clinicIds)
+  );
 
   if (clinicError) {
     throw clinicError;

@@ -130,6 +130,13 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
     q = compute_quality(data)
     missing_str = f" (missing: {', '.join(q['missing'])})" if q["missing"] else ""
     _log(f"[+] Saved clinic: {data.get('name')} — Quality score: {q['score']}/100{missing_str}", progress_callback)
+    saved_info = data.get("_saved") or {}
+    if saved_info.get("created"):
+        _log(
+            "[📝] Saved as a DRAFT: it is not visible on the website yet. "
+            "Review with /drafts, publish with /approve_clinic <slug>.",
+            progress_callback,
+        )
     _log("[*] Single URL pipeline complete.", progress_callback)
     return True
 

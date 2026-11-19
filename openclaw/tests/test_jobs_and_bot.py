@@ -157,3 +157,77 @@ def test_google_places_request_failure_is_graceful_and_does_not_log_the_api_key(
     printed = capsys.readouterr().out
     assert "network down" in printed
     assert "SECRET123" not in printed
+
+
+# --------------------------------------------------------------------------- review commands
+
+def test_drafts_command_lists_clinics_waiting_for_review(bot, monkeypatch):
+    monkeypatch.setattr(telegram_bot, "list_draft_clinics_job", lambda limit=20: f"3 drafts (limit {limit})")
+    bot.handle_command(1, "/drafts 5")
+    assert _wait_for(bot, lambda s: any("3 drafts (limit 5)" in m for m in s))
+
+
+def test_approve_clinic_runs_the_approve_job_for_that_target(bot, monkeypatch):
+    seen = []
+    monkeypatch.setattr(telegram_bot, "approve_clinic_job", lambda target: seen.append(target) or "published it")
+    bot.handle_command(1, "/approve_clinic anchor-dental")
+    assert _wait_for(bot, lambda s: any("published it" in m for m in s))
+    assert seen == ["anchor-dental"]
+
+
+def test_reject_clinic_runs_the_reject_job(bot, monkeypatch):
+    seen = []
+    monkeypatch.setattr(telegram_bot, "reject_clinic_job", lambda target: seen.append(target) or "archived it")
+    bot.handle_command(1, "/reject_clinic bad-clinic")
+    assert _wait_for(bot, lambda s: any("archived it" in m for m in s))
+    assert seen == ["bad-clinic"]
+
+
+def test_approve_clinic_without_a_target_shows_usage(bot):
+    bot.handle_command(1, "/approve_clinic")
+    assert any("Use: /approve_clinic" in m for m in bot.sent)
+
+
+def test_approve_all_asks_for_confirmation_and_does_not_publish_yet(bot, monkeypatch):
+    called = []
+    monkeypatch.setattr(telegram_bot, "approve_all_draft_clinics_job", lambda: called.append(1) or "done")
+    monkeypatch.setattr("admin_actions.count_draft_clinics", lambda: 7)
+
+    bot.handle_command(1, "/approve_clinic all")
+
+    assert bot.pending_actions[1]["type"] == "approve_all_draft_clinics"
+    assert "7 draft clinic" in bot.sent[-1] and "approve" in bot.sent[-1].lower()
+    assert called == []  # nothing published before the user confirms
+
+    bot.run_pending_action(1, bot.pending_actions.pop(1))
+    assert _wait_for(bot, lambda s: any("done" == m for m in s))
+    assert called == [1]
+
+
+def test_approve_all_confirmation_survives_a_failing_count(bot, monkeypatch):
+    def broken():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr("admin_actions.count_draft_clinics", broken)
+    bot.handle_command(1, "/approve_clinic all")
+    assert bot.pending_actions[1]["type"] == "approve_all_draft_clinics"
+
+
+def test_natural_language_list_drafts_runs_immediately(bot, monkeypatch):
+    import intent_agent
+
+    monkeypatch.setattr(telegram_bot, "list_draft_clinics_job", lambda limit=20: "drafts from chat")
+    monkeypatch.setattr(
+        telegram_bot,
+        "run_intent_agent",
+        lambda *a, **k: intent_agent.IntentResult(action="list_drafts", requires_approval=False, parameters={"limit": 3}),
+    )
+    bot.handle_chat(1, "clinic nào đang chờ duyệt?")
+    assert _wait_for(bot, lambda s: any("drafts from chat" in m for m in s))
+    assert 1 not in bot.pending_actions
+
+
+def test_help_lists_the_review_commands(bot):
+    text = bot.help_text()
+    for cmd in ("/drafts", "/approve_clinic", "/reject_clinic"):
+        assert cmd in text
