@@ -254,6 +254,9 @@ def set_clinic_status(identifier: str, new_status: str) -> None:
     print(f"[+] '{row.get('name')}' ({row.get('slug')}): {row.get('status')} -> {new_status}")
     if new_status == "published":
         print(f"    Live at /clinics/{row.get('slug')}")
+    from revalidate import revalidate_clinic
+
+    print(f"    {revalidate_clinic(row.get('slug') or '')}")
 
 
 def approve_all_draft_clinics() -> None:

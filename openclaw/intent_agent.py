@@ -29,6 +29,7 @@ load_dotenv(os.path.join(_OPENCLAW_DIR, "..", ".env.local"))
 
 INTENT_MODEL = os.environ.get("OPENCLAW_TEXT_MODEL", os.environ.get("OPENCLAW_INTENT_MODEL", "openai/gpt-6-luna"))
 FALLBACK_MODEL = os.environ.get("OPENCLAW_TEXT_FALLBACK_MODEL", "deepseek/deepseek-v4-flash")
+INTENT_MAX_TOKENS = int(os.environ.get("OPENCLAW_INTENT_MAX_TOKENS", "2000"))
 
 # Vietnamese detection regexes for quick fallback
 VI_DIACRITICS_RE = re.compile(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]", re.IGNORECASE)
@@ -105,10 +106,16 @@ You are the Dedicated Intent Agent for OpenClaw, the AI operations bot for Asian
 Your job is to analyze the user's incoming message, understand the intent, extract parameters, detect the language, and compose the exact confirmation message.
 
 CRITICAL LANGUAGE RULES:
-1. DEFAULT LANGUAGE IS ENGLISH ("lang": "en").
-2. ONLY use Vietnamese ("lang": "vi") when the user explicitly writes in Vietnamese (has Vietnamese words or diacritics).
-3. If the user asks in English (e.g. "Tell me stats of the site in English", "What's the analytics of the site", "Edit homepage"), you MUST set "lang": "en" and write the "confirmation_message" or "direct_reply" entirely in fluent English.
-4. If the user asks in Vietnamese (e.g. "thống kê tuần này cho tôi", "sửa giao diện"), you MUST set "lang": "vi" and write the "confirmation_message" or "direct_reply" in natural Vietnamese.
+1. Reply in the language of the user's LATEST message. Vietnamese words or diacritics -> "lang": "vi". English -> "lang": "en".
+2. If the latest message is too short to tell (e.g. "ok", "approve"), keep "previous_detected_lang".
+3. Write "confirmation_message" and "direct_reply" entirely in that language, in natural, friendly, concise wording. Never mention internal action names such as "rescan_clinic".
+
+CONVERSATION RULES:
+- You receive "recent_conversation" (the last turns, oldest first) and "focus" (the clinic being discussed). Use them to resolve references such as "this clinic", "clinics này", "nó", "cái đó".
+- If "active_pending_action" exists and the user's message changes or corrects it (e.g. "no need to rescan, just update the languages"), return the NEW action (it replaces the pending one). If the user clearly declines in any wording, set "is_rejection": true. If the user clearly agrees in any wording ("ừ làm đi", "go ahead"), set "is_approval": true.
+- If something needed is missing or ambiguous, use action "chat" and ASK one short clarifying question in "direct_reply". Do not guess a clinic name.
+- If the user asks for something this bot cannot do, use action "chat" and say honestly what you cannot do and which command or action is closest. Never answer with a generic greeting to a concrete request.
+- For "chat", "direct_reply" must actually answer the user (never a generic "how can I help").
 
 ALLOWED ACTIONS:
 - stats_question: Check website stats, traffic, views, sessions, visits, post count, clinic count, data quality, zero-result searches, SEO metrics.
@@ -137,6 +144,16 @@ ALLOWED ACTIONS:
   English phrases: "check clinic anchor dental", "inspect clinic X", "check clinic X on our website", "show clinic details for X".
   Vietnamese phrases: "kiểm tra clinics anchor dental", "kiểm tra phòng khám X", "kiểm tra phòng khám X trên trang web của mình", "xem thông tin phòng khám X".
   parameters: {"target": str (clean clinic name or slug, e.g. "anchor dental")}
+- update_clinic: Change details of ONE existing clinic: spoken languages, phone, address, city, state, zip code, specialty, description, website, telehealth flag. The owner has usually already verified the fact, so do NOT rescan. Requires approval; the bot builds the exact before/after preview itself.
+  English phrases: "add Vietnamese to clinic X", "remove Korean from X", "change the phone of X to 714-555-0100".
+  Vietnamese phrases: "thêm tiếng Việt vào ngôn ngữ của clinic X", "đổi số điện thoại của X thành ...", "bỏ tiếng Hàn khỏi X".
+  parameters: {"target": str (clinic name or slug; use focus if the user says "this clinic"),
+               "changes": {"languages": {"add": [str], "remove": [str], "set": [str]}, "phone": str, "address": str, "city": str, "state": str, "zip_code": str, "specialty": str, "description": str, "website": str, "language_note": str, "is_telehealth_available": bool}}
+  Include only the keys the user asked to change. Language names in English ("Vietnamese", "Korean", "Chinese").
+  confirmation_message: leave empty (the bot writes it).
+- undo_clinic_edit: Undo the last bot edit of a clinic (within 30 days).
+  English: "undo the last change to X". Vietnamese: "hoàn tác thay đổi vừa rồi của X".
+  parameters: {"target": str}
 - rescan_clinic: Re-scan, re-scrape, refresh, or update all fields, photos, verified languages, and VI/KO/ZH translations for one existing clinic in our database using gpt-6-luna.
   English phrases: "rescan clinic anchor dental", "refresh clinic X", "update clinic data for X".
   Vietnamese phrases: "quét lại clinic anchor dental", "cập nhật lại phòng khám X", "làm mới dữ liệu clinic X".
@@ -208,7 +225,7 @@ ALLOWED ACTIONS:
 - check_anomalies: Check for anomalies (traffic drops, broken links).
   parameters: {}
 - User management is NEVER an action you can choose. If the user asks to add, invite, delete, disable, restore or change the role of a person/account, answer with action "chat" and tell them to use the slash commands /users, /user, /user_add, /user_role, /user_disable, /user_restore or /users_purge.
-- chat: Casual conversation, greeting, or general question about Asian Health Hub.
+- chat: Conversation, a question, a clarifying question, or a request this bot cannot do. Always put the real answer in "direct_reply".
   parameters: {}
 
 CONFIRMATION MESSAGE FORMAT:
@@ -249,6 +266,8 @@ def run_intent_agent(
     memory: Optional[Dict[str, Any]] = None,
     pending_action: Optional[Dict[str, Any]] = None,
     preferred_lang: Optional[str] = None,
+    history: Optional[List[Dict[str, str]]] = None,
+    focus: Optional[Dict[str, Any]] = None,
 ) -> IntentResult:
     """Analyze the user message with the Dedicated Intent Agent."""
     clean_text = message.strip()
@@ -307,12 +326,14 @@ def run_intent_agent(
 
     user_payload = {
         "user_message": clean_text,
-        "active_pending_action": pending_action or None,
+        "recent_conversation": (history or [])[-10:],
+        "focus": focus or None,
+        "active_pending_action": _pending_for_prompt(pending_action),
         "latest_chat_memory": (
             {
                 "type": memory.get("type"),
                 "name": memory.get("name"),
-                "text_excerpt": (memory.get("text") or "")[:2000],
+                "text_excerpt": (memory.get("text") or "")[:1500],
             }
             if memory and memory.get("text")
             else None
@@ -320,60 +341,110 @@ def run_intent_agent(
         "previous_detected_lang": preferred_lang or "en",
     }
 
-    try:
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key,
-            timeout=30,
-        )
-        response = client.chat.completions.create(
-            model=INTENT_MODEL,
-            messages=[
-                {"role": "system", "content": INTENT_AGENT_SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-            ],
-            temperature=0.0,
-            max_tokens=600,
-        )
-        raw_text = response.choices[0].message.content or "{}"
-        parsed = json.loads(_clean_json_output(raw_text))
-
-        action = str(parsed.get("action") or "chat").strip()
-        lang = str(parsed.get("lang") or detect_quick_language(clean_text)).strip().lower()
-        if lang not in ("en", "vi"):
-            lang = "en"
-        confidence = float(parsed.get("confidence") or 0.8)
-        parameters = parsed.get("parameters") or {}
-        requires_approval = bool(parsed.get("requires_approval", True))
-        confirmation_msg = str(parsed.get("confirmation_message") or "").strip()
-        is_direct = bool(parsed.get("is_direct_chat", False) or action == "chat")
-        direct_reply = parsed.get("direct_reply")
-
-        if is_direct and not direct_reply:
-            if lang == "vi":
-                direct_reply = "Xin chào! Tôi có thể giúp gì cho bạn? Gõ `/help` để xem danh sách lệnh."
-            else:
-                direct_reply = "Hi! How can I assist you with Asian Health Hub today? Type `/help` to see commands."
-
-        # Ensure parameters has a name if not present
-        if "name" not in parameters:
-            target_str = parameters.get("target") or parameters.get("query") or parameters.get("topic") or action
-            parameters["name"] = f"{action}: {str(target_str)[:36]}"
-
+    parsed, failure = None, ""
+    for model in dict.fromkeys([INTENT_MODEL, FALLBACK_MODEL]):  # the main model, then the backup (if different)
+        try:
+            parsed = _call_intent_llm(api_key, model, user_payload)
+            break
+        except Exception as exc:
+            failure = f"{model}: {exc!r}"
+            print(f"[!] IntentAgent call failed ({failure})")
+    if parsed is None:
+        lang = preferred_lang or detect_quick_language(clean_text)
+        # Tell the truth instead of pretending to answer: the AI service is not responding.
         return IntentResult(
-            action=action,
+            action="chat",
             lang=lang,
-            confidence=confidence,
-            parameters=parameters,
-            requires_approval=requires_approval and not is_direct,
-            confirmation_message=confirmation_msg,
-            is_direct_chat=is_direct,
-            direct_reply=direct_reply,
+            requires_approval=False,
+            is_direct_chat=True,
+            direct_reply=(
+                "Mình đang không kết nối được với bộ não AI nên chưa hiểu được yêu cầu này. "
+                "Bạn thử lại sau ít phút, hoặc dùng lệnh `/help`."
+                if lang == "vi" else
+                "I cannot reach my AI service right now, so I could not understand that. "
+                "Please try again in a few minutes, or use `/help`."
+            ),
+            reason=f"llm_unavailable: {failure}"[:200],
+        )
+
+    action = str(parsed.get("action") or "chat").strip()
+    lang = str(parsed.get("lang") or detect_quick_language(clean_text)).strip().lower()
+    if lang not in ("en", "vi"):
+        lang = "en"
+    try:
+        confidence = float(parsed.get("confidence") or 0.8)
+    except (TypeError, ValueError):
+        confidence = 0.8
+    parameters = parsed.get("parameters") if isinstance(parsed.get("parameters"), dict) else {}
+    requires_approval = bool(parsed.get("requires_approval", True))
+    confirmation_msg = str(parsed.get("confirmation_message") or "").strip()
+    is_direct = bool(parsed.get("is_direct_chat", False) or action == "chat")
+    direct_reply = (str(parsed.get("direct_reply")).strip() if parsed.get("direct_reply") else None) or None
+
+    # The model may recognise approval / refusal in ANY wording, but only when something is actually pending.
+    wants_approval = bool(pending_action and parsed.get("is_approval"))
+    wants_rejection = bool(pending_action and parsed.get("is_rejection") and not wants_approval)
+    if wants_approval or wants_rejection:
+        return IntentResult(
+            action=pending_action.get("type", "unknown"),
+            lang=lang,
+            is_approval=wants_approval,
+            is_rejection=wants_rejection,
+            requires_approval=False,
+            parameters=pending_action,
             reason=str(parsed.get("reason") or ""),
         )
-    except Exception as exc:
-        print(f"[!] IntentAgent LLM failed, using deterministic fallback: {exc}")
-        return _fallback_intent_analysis(clean_text, memory, pending_action, preferred_lang)
+
+    if "name" not in parameters:
+        target_str = parameters.get("target") or parameters.get("query") or parameters.get("topic") or action
+        parameters["name"] = f"{action}: {str(target_str)[:36]}"
+
+    return IntentResult(
+        action=action,
+        lang=lang,
+        confidence=confidence,
+        parameters=parameters,
+        requires_approval=requires_approval and not is_direct,
+        confirmation_message=confirmation_msg,
+        is_direct_chat=is_direct,
+        direct_reply=direct_reply,  # None means: let the conversational agent answer (no canned greeting)
+        reason=str(parsed.get("reason") or ""),
+    )
+
+
+def _pending_for_prompt(pending: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not pending:
+        return None
+    return {k: pending.get(k) for k in ("type", "name", "summary", "target", "instruction", "changes") if pending.get(k)}
+
+
+def _extract_json(raw: str) -> Dict[str, Any]:
+    """Parse the model's JSON even when it wraps it in prose or code fences."""
+    text = _clean_json_output(raw or "")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        first, last = text.find("{"), text.rfind("}")
+        if first == -1 or last <= first:
+            raise
+        return json.loads(text[first:last + 1])
+
+
+def _call_intent_llm(api_key: str, model: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key, timeout=40)
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": INTENT_AGENT_SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        temperature=0.0,
+        max_tokens=INTENT_MAX_TOKENS,  # 600 used to cut the JSON in half ("Unterminated string"), see tests
+    )
+    choice = response.choices[0]
+    if getattr(choice, "finish_reason", None) == "length":
+        raise ValueError("the model's answer was cut off (finish_reason=length)")
+    return _extract_json(choice.message.content or "")
 
 
 def _fallback_intent_analysis(

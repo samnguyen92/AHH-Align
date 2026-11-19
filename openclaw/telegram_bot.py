@@ -3,6 +3,8 @@ import os
 import re
 import threading
 import time
+import uuid
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Callable, Optional
@@ -12,6 +14,7 @@ from dotenv import load_dotenv
 from ai_agent import ask_openclaw_agent
 from agent_prompt import OPENCLAW_AGENT_SYSTEM_PROMPT
 from intent_agent import run_intent_agent
+from tg_format import markdown_to_html
 from jobs import (
     JobFailed,
     create_user_invite_job,
@@ -88,9 +91,19 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 MAX_MESSAGE_LENGTH = 3900
 # Slash commands that manage user accounts. They are explicit commands on purpose: a language model must never
 # decide WHICH user to change.
+CLINIC_COMMANDS = {"/clinic_undo"}
+CLINIC_TARGET_ACTIONS = {"inspect_clinic", "rescan_clinic", "update_clinic", "undo_clinic_edit", "approve_clinic", "reject_clinic", "delete_clinic"}
+ACTION_LABELS_VI = {
+    "inspect_clinic": "kiểm tra clinic", "rescan_clinic": "quét lại clinic", "update_clinic": "sửa thông tin clinic",
+    "undo_clinic_edit": "hoàn tác thay đổi clinic", "approve_clinic": "duyệt clinic", "reject_clinic": "ẩn clinic",
+    "delete_clinic": "xoá clinic", "find_clinics": "tìm clinic mới", "web_edit": "sửa giao diện web",
+    "seo_setup": "cài đặt SEO", "stats_question": "tra cứu số liệu", "stats_report": "báo cáo thống kê",
+    "rescan_all_clinics": "quét lại nhiều clinic", "generate_insight": "viết bài insight", "generate_guide": "viết guide",
+}
 USER_COMMANDS = {"/users", "/user", "/user_add", "/user_role", "/user_disable", "/user_restore", "/users_purge"}
 USER_ROLES = ("user", "provider", "admin", "superadmin")
 PENDING_USER_ACTION_TTL_SECONDS = 600
+PENDING_ACTION_TTL_SECONDS = 600  # a typed "approve" must not approve something asked long ago
 PENDING_WEB_MERGE_TTL_SECONDS = 1800  # reading a diff takes longer than confirming a role change
 LEGACY_PUBLISH_MESSAGE = (
     "Publishing straight to main was removed on purpose: website edits now go through a Pull Request.\n\n"
@@ -130,6 +143,8 @@ class TelegramBot:
         self.pending_actions: dict[int, dict] = {}
         self.chat_memory: dict[int, dict] = self.load_memory()
         self.chat_lang: dict[int, str] = {}
+        self.chat_history: dict[int, list] = {}
+        self.chat_focus: dict[int, dict] = {}
         self._memory_lock = threading.RLock()  # RLock: reentrant, safe for nested acquire
         self._pending_lock = threading.Lock()
         self.start_anomaly_checker()
@@ -182,6 +197,12 @@ class TelegramBot:
             try:
                 with urllib.request.urlopen(request, timeout=70) as response:
                     return json.loads(response.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                last_error = exc
+                if 400 <= exc.code < 500 and exc.code != 429:
+                    break  # a bad request will not get better by repeating it
+                if attempt < 2:
+                    time.sleep(2 * (attempt + 1))
             except Exception as exc:
                 last_error = exc
                 if attempt < 2:
@@ -189,10 +210,44 @@ class TelegramBot:
 
         raise RuntimeError(f"Telegram request failed after retries: {last_error}")
 
-    def send_message(self, chat_id: int, text: str) -> None:
+    def _send_text(self, chat_id: int, text: str, buttons: Optional[list] = None) -> None:
+        """Send one chunk as Telegram HTML; if Telegram rejects the markup, send it as plain text."""
+        payload = {"chat_id": chat_id, "text": markdown_to_html(text), "parse_mode": "HTML", "disable_web_page_preview": "true"}
+        plain = {"chat_id": chat_id, "text": text}
+        if buttons:
+            markup = json.dumps({"inline_keyboard": [[{"text": label, "callback_data": data} for label, data in row] for row in buttons]})
+            payload["reply_markup"] = markup
+            plain["reply_markup"] = markup
+        try:
+            self.request("sendMessage", payload)
+        except Exception as exc:
+            print(f"[!] HTML message rejected, resending as plain text: {exc!r}")
+            self.request("sendMessage", plain)
+
+    def send_message(self, chat_id: int, text: str, buttons: Optional[list] = None) -> None:
+        self.remember_turn(chat_id, "bot", text)
         chunks = [text[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(text), MAX_MESSAGE_LENGTH)] or [""]
-        for chunk in chunks:
-            self.request("sendMessage", {"chat_id": chat_id, "text": chunk})
+        for index, chunk in enumerate(chunks):
+            self._send_text(chat_id, chunk, buttons if index == len(chunks) - 1 else None)
+
+    # ---- short conversation memory (what the AI sees as "the conversation so far")
+
+    HISTORY_TURNS = 12
+    HISTORY_MAX_AGE_SECONDS = 3 * 3600
+
+    def remember_turn(self, chat_id: int, role: str, text: str) -> None:
+        if not text or not text.strip():
+            return
+        now = time.time()
+        with self._memory_lock:
+            turns = self.chat_history.setdefault(chat_id, [])
+            turns.append({"role": role, "text": redact_secrets(text.strip())[:500], "at": now})
+            fresh = [t for t in turns if now - t["at"] < self.HISTORY_MAX_AGE_SECONDS]
+            self.chat_history[chat_id] = fresh[-self.HISTORY_TURNS:]
+
+    def conversation_for_ai(self, chat_id: int) -> list:
+        with self._memory_lock:
+            return [{"role": t["role"], "text": t["text"]} for t in self.chat_history.get(chat_id, [])]
 
     def send_photo(self, chat_id: int, photo_path: str, caption: str = "") -> None:
         if not photo_path or not os.path.exists(photo_path):
@@ -312,7 +367,7 @@ class TelegramBot:
         total = len(chunks)
         for index, chunk in enumerate(chunks, start=1):
             prefix = f"[{index}/{total}]\n" if total > 1 else ""
-            self.request("sendMessage", {"chat_id": chat_id, "text": prefix + chunk})
+            self._send_text(chat_id, prefix + chunk)
 
     def trim_message(self, text: str, limit: int = MAX_MESSAGE_LENGTH) -> str:
         if len(text) <= limit:
@@ -419,7 +474,7 @@ class TelegramBot:
             {
                 "timeout": 45,
                 "offset": self.offset,
-                "allowed_updates": json.dumps(["message"]),
+                "allowed_updates": json.dumps(["message", "callback_query"]),
             },
         )
         return response.get("result", [])
@@ -436,7 +491,12 @@ class TelegramBot:
             from progress import set_progress_callback, clear_progress_callback
             set_progress_callback(lambda msg: self.send_message(chat_id, msg))
             try:
-                self.send_message(chat_id, f"Started {name}. I will report back when it finishes.")
+                self.send_message(
+                    chat_id,
+                    f"⏳ Đang thực hiện: {self.describe_action(name, 'vi')}. Xong mình sẽ báo lại."
+                    if self.chat_lang.get(chat_id) == "vi"
+                    else f"Started {name}. I will report back when it finishes.",
+                )
                 output = fn()
                 summary = output if output else f"{name} finished with no output."
                 self.remember_job_output(chat_id, name, summary, action_type=action_type)
@@ -478,12 +538,13 @@ class TelegramBot:
     def help_text(self) -> str:
         return (
             "OpenClaw AI Agent\n"
-            "You can chat naturally. The bot will analyze your request, summarize the planned action, and only run the job after you reply `approve`.\n\n"
+            "You can chat naturally (Vietnamese or English). The bot will summarize the planned action and only run it after you press Approve (or reply `approve`).\n\n"
             "Commands\n"
             "/status - check env, database counts, and log path\n"
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
             "/find_clinics <query> | [limit] - scout Google Places, scrape websites, extract clinic data, and save new clinics\n"
             "/inspect_clinic <name|slug> - inspect an existing clinic on our website (languages, gallery, sections, i18n)\n"
+            "/clinic_undo <name|slug> - undo the latest bot edit of a clinic (30 days). To edit a clinic just say it, e.g. \"add Vietnamese to anchor-dental\"\n"
             "/rescan_clinic <name|slug> - deep re-scan & re-extract all fields/photos/i18n of an existing clinic via gpt-6-luna\n"
             "/rescan_all_clinics [limit] - rescan & enrich all clinics in the directory\n"
             "/scrape_clinic_url <clinic name> | <url> - scrape one known clinic website and save/update it\n"
@@ -1061,7 +1122,11 @@ class TelegramBot:
     def run_pending_action(self, chat_id: int, action: dict) -> None:
         action_type = action["type"]
 
-        if action_type == "generate_insight_from_url":
+        if action_type == "update_clinic":
+            self.run_clinic_edit(chat_id, action)
+        elif action_type == "undo_clinic_edit":
+            self.run_clinic_undo(chat_id, action)
+        elif action_type == "generate_insight_from_url":
             self.run_job(
                 chat_id,
                 action["name"],
@@ -1306,6 +1371,10 @@ class TelegramBot:
 
         if command in USER_COMMANDS:
             self.handle_user_command(chat_id, command, text, user_id)
+            return
+
+        if command in CLINIC_COMMANDS:
+            self.handle_clinic_command(chat_id, command, text, user_id)
             return
 
         if command in {"/start", "/help"}:
@@ -1676,39 +1745,174 @@ class TelegramBot:
         else:
             self.send_message(chat_id, "Unknown command.\n\n" + self.help_text())
 
-    def handle_chat(self, chat_id: int, text: str) -> None:
+    @staticmethod
+    def describe_action(name: str, lang: str) -> str:
+        """'rescan_clinic: Anchor Dental' -> 'quét lại clinic Anchor Dental' (Vietnamese); unchanged otherwise."""
+        if lang != "vi" or not name:
+            return name
+        kind, _, rest = name.partition(":")
+        label = ACTION_LABELS_VI.get(kind.strip())
+        if not label:
+            return name
+        return f"{label} {rest.strip()}".strip()
+
+    def offer_action(self, chat_id: int, pending: dict, message: str, user_id: Optional[int] = None) -> None:
+        """Remember an action that needs a yes/no and show it with Approve / Cancel buttons."""
+        pending = dict(pending)
+        pending["id"] = uuid.uuid4().hex[:8]
+        pending["expires_at"] = time.time() + PENDING_ACTION_TTL_SECONDS
+        pending["requested_by"] = user_id
+        with self._pending_lock:
+            self.pending_actions[chat_id] = pending
+        vi = pending.get("lang") == "vi"
+        buttons = [[("✅ Duyệt" if vi else "✅ Approve", f"ok:{pending['id']}"), ("❌ Huỷ" if vi else "❌ Cancel", f"no:{pending['id']}")]]
+        self.send_message(chat_id, message, buttons=buttons)
+
+    def handle_callback(self, callback: dict) -> None:
+        """An Approve / Cancel button was pressed."""
+        callback_id = callback.get("id")
+        user_id = (callback.get("from") or {}).get("id")
+        message = callback.get("message") or {}
+        chat_id = (message.get("chat") or {}).get("id")
+        data = callback.get("data") or ""
+
+        def answer(text: str = "") -> None:
+            try:
+                self.request("answerCallbackQuery", {"callback_query_id": callback_id, "text": text[:180]})
+            except Exception as exc:
+                print(f"[!] answerCallbackQuery failed: {exc!r}")
+
+        if not chat_id or not user_id or not self.is_allowed(user_id):
+            answer("You are not allowed to use this bot.")
+            return
+        verdict, _, pending_id = data.partition(":")
+        with self._pending_lock:
+            current = self.pending_actions.get(chat_id)
+        if verdict not in {"ok", "no"} or not current or current.get("id") != pending_id:
+            vi = self.chat_lang.get(chat_id) == "vi" or (current or {}).get("lang") == "vi"
+            answer("Yêu cầu này đã hết hạn hoặc đã được thay thế." if vi else "That request has expired or was replaced.")
+            return
+        answer()
+        try:  # take the buttons away so the same card cannot be pressed twice
+            self.request("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message.get("message_id"), "reply_markup": json.dumps({"inline_keyboard": []})})
+        except Exception:
+            pass
+        self.handle_chat(chat_id, "approve" if verdict == "ok" else "cancel", user_id=user_id)
+
+    def run_clinic_edit(self, chat_id: int, action: dict) -> None:
+        from clinic_edit import ClinicEditError, apply_clinic_edit, plan_from_dict
+
+        actor = f"telegram:{action.get('requested_by') or 'unknown'}"
+
+        def job() -> str:
+            try:
+                return apply_clinic_edit(plan_from_dict(action["plan"]), actor)
+            except ClinicEditError as exc:
+                return f"⚠️ {exc}"
+
+        self.run_job(chat_id, action["name"], job, action_type="update_clinic")
+
+    def run_clinic_undo(self, chat_id: int, action: dict) -> None:
+        from clinic_edit import ClinicEditError, undo_clinic_edit
+
+        actor = f"telegram:{action.get('requested_by') or 'unknown'}"
+
+        def job() -> str:
+            try:
+                return undo_clinic_edit(action["target"], actor)
+            except ClinicEditError as exc:
+                return f"⚠️ {exc}"
+
+        self.run_job(chat_id, action["name"], job, action_type="undo_clinic_edit")
+
+    def plan_clinic_update(self, chat_id: int, intent_res, user_id: Optional[int]) -> bool:
+        """Show the exact before/after for an update_clinic request. Returns True when it was handled."""
+        from clinic_edit import ClinicEditError, plan_clinic_edit, plan_to_dict
+
+        params = intent_res.parameters or {}
+        vi = intent_res.lang == "vi"
+        target = str(params.get("target") or (self.chat_focus.get(chat_id) or {}).get("clinic") or "").strip()
+        if not target:
+            self.send_message(chat_id, "Bạn muốn sửa clinic nào? Cho mình tên hoặc slug nhé." if vi else "Which clinic do you want to change? Give me its name or slug.")
+            return True
+        try:
+            plan = plan_clinic_edit(target, params.get("changes") or {})
+        except ClinicEditError as exc:
+            self.send_message(chat_id, f"⚠️ {exc}")
+            return True
+        self.chat_focus[chat_id] = {"clinic": plan.slug or plan.name}
+        header = f"Bạn muốn sửa **{plan.name}** (`{plan.slug}`) như sau:" if vi else f"You want to change **{plan.name}** (`{plan.slug}`) like this:"
+        footer = (
+            "Duyệt để áp dụng thẳng lên website (có thể hoàn tác trong 30 ngày bằng `/clinic_undo`)."
+            if vi else "Approve to apply it straight to the website (you can undo it for 30 days with `/clinic_undo`)."
+        )
+        text = header + "\n" + "\n".join(f"• {line}" for line in plan.lines) + "\n\n" + footer
+        self.offer_action(
+            chat_id,
+            {"type": "update_clinic", "name": f"update_clinic: {plan.name}", "plan": plan_to_dict(plan), "lang": intent_res.lang},
+            text, user_id,
+        )
+        return True
+
+    def handle_clinic_command(self, chat_id: int, command: str, text: str, user_id: Optional[int]) -> None:
+        parts = text.split(maxsplit=1)
+        target = parts[1].strip() if len(parts) > 1 else str((self.chat_focus.get(chat_id) or {}).get("clinic") or "")
+        lang = self.chat_lang.get(chat_id, "en")
+        if not target:
+            self.send_message(chat_id, "Dùng: /clinic_undo <slug hoặc tên clinic>" if lang == "vi" else "Usage: /clinic_undo <clinic slug or name>")
+            return
+        self.chat_focus[chat_id] = {"clinic": target}
+        msg = (
+            f"Bạn muốn hoàn tác thay đổi gần nhất của **{target}**, đúng không?"
+            if lang == "vi" else f"You want to undo the latest change to **{target}**, correct?"
+        )
+        self.offer_action(chat_id, {"type": "undo_clinic_edit", "name": f"undo_clinic_edit: {target}", "target": target, "lang": lang}, msg, user_id)
+
+    def handle_chat(self, chat_id: int, text: str, user_id: Optional[int] = None) -> None:
         with self._pending_lock:
             current_pending = self.pending_actions.get(chat_id)
         with self._memory_lock:
             current_memory = self.chat_memory.get(chat_id)
+        history = self.conversation_for_ai(chat_id)  # before this message, so it is not counted twice
+        self.remember_turn(chat_id, "user", text)
 
         intent_res = run_intent_agent(
             text,
             memory=current_memory,
             pending_action=current_pending,
             preferred_lang=self.chat_lang.get(chat_id, "en"),
+            history=history,
+            focus=self.chat_focus.get(chat_id),
         )
         self.chat_lang[chat_id] = intent_res.lang
+        vi = intent_res.lang == "vi"
+        params = intent_res.parameters or {}
+        if intent_res.action in CLINIC_TARGET_ACTIONS and not (intent_res.is_approval or intent_res.is_rejection):
+            if params.get("target"):
+                self.chat_focus[chat_id] = {"clinic": str(params["target"])}
 
         # 1. Approval
         if intent_res.is_approval:
             with self._pending_lock:
                 action = self.pending_actions.pop(chat_id, None)
             if not action:
-                msg = "There is no pending action waiting for approval." if intent_res.lang != "vi" else "Không có thao tác nào đang chờ duyệt."
-                self.send_message(chat_id, msg)
+                self.send_message(chat_id, "Không có thao tác nào đang chờ duyệt." if vi else "There is no pending action waiting for approval.")
                 return
 
             if action.get("expires_at") and time.time() > action["expires_at"]:
                 self.send_message(
                     chat_id,
+                    f"Yêu cầu đó đã hết hạn ({self.describe_action(action.get('name') or action.get('type'), 'vi')}). Chưa có gì bị thay đổi, bạn gửi lại giúp mình nhé."
+                    if vi else
                     f"That request expired ({action.get('name') or action.get('type')}). Nothing was changed; send the command again.",
                 )
                 return
 
             action_name = action.get("name") or action.get("type", "job")
-            start_msg = f"Approval received. Starting: {action_name}" if intent_res.lang != "vi" else f"Đã xác nhận. Bắt đầu thực thi: {action_name}"
-            self.send_message(chat_id, start_msg)
+            self.send_message(
+                chat_id,
+                f"Đã xác nhận. Bắt đầu: {self.describe_action(action_name, 'vi')}" if vi else f"Approval received. Starting: {action_name}",
+            )
             self.run_pending_action(chat_id, action)
             return
 
@@ -1718,18 +1922,16 @@ class TelegramBot:
                 action = self.pending_actions.pop(chat_id, None)
             if action:
                 action_name = action.get("name") or action.get("type", "job")
-                cancel_msg = f"Pending action canceled: {action_name}" if intent_res.lang != "vi" else f"Đã hủy thao tác: {action_name}"
-                self.send_message(chat_id, cancel_msg)
+                self.send_message(chat_id, f"Đã hủy: {self.describe_action(action_name, 'vi')}" if vi else f"Pending action canceled: {action_name}")
             else:
-                msg = "There is no pending action to cancel." if intent_res.lang != "vi" else "Không có thao tác nào đang chờ để hủy."
-                self.send_message(chat_id, msg)
+                self.send_message(chat_id, "Không có thao tác nào đang chờ để hủy." if vi else "There is no pending action to cancel.")
             return
 
         # 2b. Immediate read-only action: inspect_clinic (does not require approval)
         if intent_res.action == "inspect_clinic":
             with self._pending_lock:
                 self.pending_actions.pop(chat_id, None)
-            target = (intent_res.parameters or {}).get("target") or (intent_res.parameters or {}).get("query") or text
+            target = params.get("target") or params.get("query") or text
             self.send_message(chat_id, inspect_clinic_job(str(target), lang=intent_res.lang))
             return
 
@@ -1737,30 +1939,33 @@ class TelegramBot:
         if intent_res.action == "list_drafts":
             with self._pending_lock:
                 self.pending_actions.pop(chat_id, None)
-            raw_limit = (intent_res.parameters or {}).get("limit")
+            raw_limit = params.get("limit")
             limit = int(raw_limit) if str(raw_limit).isdigit() else 20
             self.run_job(chat_id, "drafts", lambda: list_draft_clinics_job(limit), action_type="drafts")
             return
 
-        # 3. Requires Approval (New Action detected by IntentAgent)
-        if intent_res.requires_approval and intent_res.confirmation_message:
-            pending_dict = intent_res.to_pending_dict()
-            with self._pending_lock:
-                self.pending_actions[chat_id] = pending_dict
-            self.send_message(chat_id, intent_res.confirmation_message)
+        # 2d. Edit one clinic: the bot builds the exact before/after itself (it never trusts the model's wording)
+        if intent_res.action == "update_clinic":
+            self.plan_clinic_update(chat_id, intent_res, user_id)
             return
 
-        # 4. Direct chat (IntentAgent answered directly)
-        if intent_res.is_direct_chat and intent_res.direct_reply:
-            with self._pending_lock:
-                self.pending_actions.pop(chat_id, None)
-            self.send_message(chat_id, intent_res.direct_reply)
+        # 3. Requires approval (a new action detected by the IntentAgent); it replaces any earlier pending one
+        if intent_res.requires_approval and not intent_res.is_direct_chat:
+            message = intent_res.confirmation_message or (
+                f"Bạn muốn {self.describe_action(params.get('name') or intent_res.action, 'vi')}, đúng không?\n\nTrả lời `approve` để bắt đầu."
+                if vi else f"You want to {params.get('name') or intent_res.action}, correct?\n\nReply `approve` to proceed."
+            )
+            self.offer_action(chat_id, intent_res.to_pending_dict(), message, user_id)
             return
 
-        # 5. Fallback to OpenClaw Agent
-        with self._pending_lock:
-            self.pending_actions.pop(chat_id, None)
-        self.send_message(chat_id, ask_openclaw_agent(text))
+        # 4. Conversation: the model's own answer, else the chat agent with the conversation so far.
+        #    A pending action is kept (the user may just be asking a question about it); it expires by itself.
+        if intent_res.is_direct_chat:
+            self.send_message(chat_id, intent_res.direct_reply or ask_openclaw_agent(text, history))
+            return
+
+        # 5. Anything else
+        self.send_message(chat_id, ask_openclaw_agent(text, history))
 
     def run_forever(self) -> None:
         print(self.startup_log_text())
@@ -1769,6 +1974,9 @@ class TelegramBot:
             try:
                 for update in self.get_updates():
                     self.offset = update["update_id"] + 1
+                    if update.get("callback_query"):
+                        self.handle_callback(update["callback_query"])
+                        continue
                     message = update.get("message") or {}
                     text = message.get("text") or message.get("caption") or ""
                     photos = message.get("photo") or []
@@ -1798,7 +2006,7 @@ class TelegramBot:
                     if text.startswith("/"):
                         self.handle_command(chat_id, text, user_id=user_id)
                     else:
-                        self.handle_chat(chat_id, text)
+                        self.handle_chat(chat_id, text, user_id=user_id)
             except KeyboardInterrupt:
                 print("[*] Stopping OpenClaw Telegram bot.")
                 break
