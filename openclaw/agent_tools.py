@@ -58,11 +58,14 @@ ACTION_TOOLS: List[Tool] = [
     # ---- clinics
     Tool("update_clinic",
          "Change details of ONE existing clinic: spoken languages, phone, address, city, state, zip code, specialty, description, website, telehealth flag. "
-         "Use this (not rescan) when the user states the fact themselves, e.g. 'add Vietnamese to clinic X'. Languages are English names (Vietnamese, Korean, Chinese).",
+         "Everything a visitor reads about ONE clinic is data you can change with this tool: the About text (about_highlight / description), the Language Support box (language_note), phone, address, languages... "
+         "Use it (not rescan, not web_edit) when the user states the fact themselves, e.g. 'add Korean to clinic X' or when they send a screenshot of a clinic page and ask to correct its content. "
+         "Languages are English names (Vietnamese, Korean, Chinese). When languages change, the sentence 'verified spoken languages are ...' in the clinic's texts is updated automatically.",
          _obj({"target": S, "changes": _obj({
              "languages": _obj({"add": {"type": "array", "items": S}, "remove": {"type": "array", "items": S}, "set": {"type": "array", "items": S}}),
              "phone": S, "address": S, "city": S, "state": S, "zip_code": S, "specialty": S, "description": S,
-             "website": S, "language_note": S, "is_telehealth_available": B})}, ["target", "changes"])),
+             "website": S, "language_note": S, "about_highlight": S, "short_description": S, "cultural_context": S,
+             "is_telehealth_available": B})}, ["target", "changes"])),
     Tool("undo_clinic_edit", "Undo the latest bot edit of a clinic (within 30 days).", _obj({"target": S}, ["target"]),
          card_vi="hoàn tác thay đổi gần nhất của clinic {target}", card_en="undo the latest change to clinic {target}"),
     Tool("rescan_clinic", "Re-scrape the clinic's own website and re-extract ALL its data, photos and VI/KO/ZH translations. Slow; only when the user wants a refresh from the web.",
@@ -89,7 +92,7 @@ ACTION_TOOLS: List[Tool] = [
     Tool("reject_claim", "Reject a clinic ownership claim.", _obj({"target": S}, ["target"]), card_vi="từ chối yêu cầu nhận clinic {target}", card_en="reject the claim {target}"),
 
     # ---- website, SEO
-    Tool("web_edit", "Change the website's look, text, layout or components. Opens a GitHub Pull Request with preview screenshots; nothing goes live until it is merged.",
+    Tool("web_edit", "Change the website's DESIGN or CODE (look, layout, components, site-wide text). NOT for the content of one clinic (use update_clinic).  Opens a GitHub Pull Request with preview screenshots; nothing goes live until it is merged.",
          _obj({"instruction": S}, ["instruction"]), card_vi="sửa website (mở Pull Request để bạn duyệt): {instruction}", card_en="edit the website (opens a Pull Request for review): {instruction}"),
     Tool("seo_setup", "Implement or fix SEO code (metadata, JSON-LD, sitemap). Opens a Pull Request.", _obj({"instruction": S}),
          card_vi="cài đặt/sửa SEO (mở Pull Request): {instruction}", card_en="set up or fix SEO (opens a Pull Request): {instruction}"),

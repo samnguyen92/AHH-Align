@@ -146,6 +146,7 @@ class TelegramBot:
         self.chat_lang: dict[int, str] = {}
         self.chat_history: dict[int, list] = {}
         self.chat_focus: dict[int, dict] = {}
+        self.chat_images: dict[int, tuple] = {}
         self._memory_lock = threading.RLock()  # RLock: reentrant, safe for nested acquire
         self._pending_lock = threading.Lock()
         self.start_anomaly_checker()
@@ -516,7 +517,7 @@ class TelegramBot:
                 }:
                     self.send_message(chat_id, self.format_content_job_message(name, summary))
                 else:
-                    self.send_long_message(chat_id, summary, max_chunks=MAX_JOB_OUTPUT_CHUNKS)
+                    self.send_long_message(chat_id, self.tidy_job_output(summary), max_chunks=MAX_JOB_OUTPUT_CHUNKS)
                 if on_success:
                     try:
                         on_success(summary)
@@ -1751,6 +1752,12 @@ class TelegramBot:
             self.send_message(chat_id, "Unknown command.\n\n" + self.help_text())
 
     @staticmethod
+    def tidy_job_output(text: str) -> str:
+        """Drop the "[*] Starting job / Started at / Finished job" bookkeeping lines; they are noise in a chat."""
+        kept = [line for line in (text or "").splitlines() if not re.match(r"^\[\*\] (Starting job:|Started at:|Finished job:)", line)]
+        return "\n".join(kept).strip() or (text or "")
+
+    @staticmethod
     def describe_action(name: str, lang: str) -> str:
         """'rescan_clinic: Anchor Dental' -> 'quét lại clinic Anchor Dental' (Vietnamese); unchanged otherwise."""
         if lang != "vi" or not name:
@@ -1779,6 +1786,31 @@ class TelegramBot:
             self.request("sendChatAction", {"chat_id": chat_id, "action": "typing"})
         except Exception:
             pass
+
+    def handle_photo_message(self, chat_id: int, user_id: int, text: str, photos: list) -> None:
+        """A screenshot. With an explicit /web_edit it goes to the code agent; otherwise the AI decides.
+
+        A screenshot of a clinic page with "fix this text" is a CONTENT change (data), not a code change, so it must
+        not be forced into the code agent (that produced "the agent made no file changes").
+        """
+        lang = self.chat_lang.get(chat_id, "en")
+        if not text:
+            self.send_message(chat_id, "Bạn thêm lời nhắn cho biết muốn đổi gì trong ảnh nhé." if lang == "vi" else "Add a caption saying what to change in the screenshot.")
+            return
+        local_img = self.download_telegram_photo(photos)
+        explicit = re.match(r"^/(?:web_edit|edit_web|code)(?:@\w+)?\b", text)
+        if explicit:
+            instruction = re.sub(r"^/(?:web_edit|edit_web|code)(?:@\w+)?", "", text, count=1).strip() or text
+            self.send_message(
+                chat_id,
+                f"📸 Đã nhận ảnh kèm yêu cầu sửa web: “{instruction}”." if lang == "vi" else f"📸 Received screenshot with instruction: “{instruction}”.",
+            )
+            self.start_web_pr_job(chat_id, instruction, kind="web_edit", image_path=local_img)
+            return
+        if local_img:
+            self.chat_images[chat_id] = (local_img, time.time())
+        self.send_typing(chat_id)
+        self.handle_chat(chat_id, f"{text}\n\n[The user attached a screenshot of a website page.]", user_id=user_id)
 
     def handle_callback(self, callback: dict) -> None:
         """An Approve / Cancel button was pressed."""
@@ -1815,12 +1847,13 @@ class TelegramBot:
         from clinic_edit import ClinicEditError, apply_clinic_edit, plan_from_dict
 
         actor = f"telegram:{action.get('requested_by') or 'unknown'}"
+        lang = action.get("lang") or self.chat_lang.get(chat_id, "en")
 
         def job() -> str:
             try:
-                return apply_clinic_edit(plan_from_dict(action["plan"]), actor)
+                return apply_clinic_edit(plan_from_dict(action["plan"]), actor, lang)
             except ClinicEditError as exc:
-                return f"⚠️ {exc}"
+                return f"⚠️ {exc.text(lang)}"
 
         self.run_job(chat_id, action["name"], job, action_type="update_clinic")
 
@@ -1829,11 +1862,13 @@ class TelegramBot:
 
         actor = f"telegram:{action.get('requested_by') or 'unknown'}"
 
+        lang = action.get("lang") or self.chat_lang.get(chat_id, "en")
+
         def job() -> str:
             try:
-                return undo_clinic_edit(action["target"], actor)
+                return undo_clinic_edit(action["target"], actor, lang)
             except ClinicEditError as exc:
-                return f"⚠️ {exc}"
+                return f"⚠️ {exc.text(lang)}"
 
         self.run_job(chat_id, action["name"], job, action_type="undo_clinic_edit")
 
@@ -1848,9 +1883,9 @@ class TelegramBot:
             self.send_message(chat_id, "Bạn muốn sửa clinic nào? Cho mình tên hoặc slug nhé." if vi else "Which clinic do you want to change? Give me its name or slug.")
             return True
         try:
-            plan = plan_clinic_edit(target, params.get("changes") or {})
+            plan = plan_clinic_edit(target, params.get("changes") or {}, intent_res.lang)
         except ClinicEditError as exc:
-            self.send_message(chat_id, f"⚠️ {exc}")
+            self.send_message(chat_id, f"⚠️ {exc.text(intent_res.lang)}")
             return True
         self.chat_focus[chat_id] = {"clinic": plan.slug or plan.name}
         header = f"Bạn muốn sửa **{plan.name}** (`{plan.slug}`) như sau:" if vi else f"You want to change **{plan.name}** (`{plan.slug}`) like this:"
@@ -1981,7 +2016,11 @@ class TelegramBot:
                 f"Bạn muốn {self.describe_action(params.get('name') or intent_res.action, 'vi')}, đúng không?\n\nTrả lời `approve` để bắt đầu."
                 if vi else f"You want to {params.get('name') or intent_res.action}, correct?\n\nReply `approve` to proceed."
             )
-            self.offer_action(chat_id, intent_res.to_pending_dict(), message, user_id)
+            pending = intent_res.to_pending_dict()
+            recent_image = self.chat_images.get(chat_id)
+            if intent_res.action == "web_edit" and recent_image and time.time() - recent_image[1] < 900:
+                pending["image_path"] = recent_image[0]
+            self.offer_action(chat_id, pending, message, user_id)
             return
 
         # 4. Conversation: the model's own answer, else the chat agent with the conversation so far.
@@ -2016,17 +2055,8 @@ class TelegramBot:
                         self.send_message(chat_id, "You are not allowed to use this OpenClaw bot.")
                         continue
 
-                    if photos and text:
-                        local_img = self.download_telegram_photo(photos)
-                        clean_instr = re.sub(r"^/(?:web_edit|edit_web|code)(?:@\w+)?", "", text, count=1).strip() or text
-                        lang = self.chat_lang.get(chat_id, "en")
-                        notice = (
-                            f"📸 Đã nhận ảnh chụp màn hình kèm yêu cầu: “{clean_instr}”. Đang chuyển vào Web-Dev Agent..."
-                            if lang == "vi" else
-                            f"📸 Received screenshot with instruction: “{clean_instr}”. Forwarding to Web-Dev Agent..."
-                        )
-                        self.send_message(chat_id, notice)
-                        self.start_web_pr_job(chat_id, clean_instr, kind="web_edit", image_path=local_img)
+                    if photos:
+                        self.handle_photo_message(chat_id, user_id, text, photos)
                         continue
 
                     if text.startswith("/"):
