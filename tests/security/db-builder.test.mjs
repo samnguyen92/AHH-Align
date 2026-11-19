@@ -88,3 +88,34 @@ test('rpc() rejects unsafe function and argument names', async () => {
   const b = await client.rpc('match_clinic_embeddings', { 'q" := 1; --': 1 });
   assert.ok(a.error && b.error);
 });
+
+// ---- .select() after a write must not turn the write into a SELECT ----------------------------
+// Regression: `.update(...).eq(...).select(...)` used to send a plain SELECT, so edits, newsletter
+// sign-ups, claim submissions and status changes returned data but were never saved.
+
+test('update().eq().select().single() sends an UPDATE ... RETURNING, not a SELECT', async () => {
+  await new PgQueryBuilder('clinics').update({ status: 'published' }).eq('id', 'abc').select('id,slug,status').maybeSingle().execute();
+  assert.match(last().sql, /^UPDATE "clinics" SET "status" = \$1 WHERE "id" = \$2 RETURNING "id", "slug", "status"/);
+});
+
+test('insert().select().single() sends an INSERT ... RETURNING', async () => {
+  await new PgQueryBuilder('newsletter_subscriptions').insert({ email: 'a@b.co' }).select('id').single().execute();
+  assert.match(last().sql, /^INSERT INTO "newsletter_subscriptions" \("email"\) VALUES \(\$1\)\s+RETURNING "id"/);
+});
+
+test('upsert().select() and delete().select() stay writes', async () => {
+  await new PgQueryBuilder('clinics').upsert({ id: '1', name: 'x' }).select('*').execute();
+  assert.match(last().sql, /^INSERT INTO "clinics"/);
+  await new PgQueryBuilder('clinics').delete().eq('id', 'x').select('id').execute();
+  assert.match(last().sql, /^DELETE FROM "clinics" WHERE "id" = \$1 RETURNING "id"/);
+});
+
+test('select() before any write is still a SELECT', async () => {
+  await new PgQueryBuilder('clinics').select('id, name').eq('id', 'x').execute();
+  assert.match(last().sql, /^SELECT id, name FROM "clinics" WHERE "id" = \$1/);
+});
+
+test('an unsupported RETURNING column list falls back to * instead of injecting SQL', async () => {
+  await new PgQueryBuilder('clinics').update({ name: 'x' }).eq('id', '1').select('id; DROP TABLE clinics').execute();
+  assert.match(last().sql, /RETURNING \*$/);
+});

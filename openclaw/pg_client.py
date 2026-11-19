@@ -76,10 +76,13 @@ class TableQueryBuilder:
     # ---- query construction -------------------------------------------------
 
     def select(self, columns: str = "*", count: str = None):
-        self._action = "select"
         columns = (columns or "*").strip()
         if columns != "*" and not _COLUMN_LIST_RE.match(columns):
             raise ValueError(f"Unsupported select column list: {columns[:80]!r}")
+        if self._action != "select":
+            # After insert/update/upsert/delete, .select() only chooses what to return: it must not
+            # turn the write into a SELECT (the write would silently never happen).
+            return self
         self._select_cols = columns
         if count == "exact":
             self._count_mode = "exact"
@@ -184,9 +187,18 @@ class TableQueryBuilder:
         self._action = "delete"
         return self
 
-    @staticmethod
-    def _prepare_val(val):
-        if isinstance(val, (dict, list)):
+    def _prepare_val(self, column: str, val, cur):
+        """Adapt a Python value to the column's real type.
+
+        dict -> JSON.  list -> a PostgreSQL ARRAY for TEXT[]/INT[] columns, but JSON for json/jsonb columns.
+        (Wrapping every list as JSON, as before, made writes to TEXT[] columns such as clinics.languages
+        and articles.tags fail with "malformed array literal".)
+        """
+        if isinstance(val, dict):
+            return Json(val)
+        if isinstance(val, list):
+            if self.client._is_array_column(cur, self.table_name, column):
+                return val
             return Json(val)
         return val
 
@@ -259,7 +271,7 @@ class TableQueryBuilder:
             query = f'INSERT INTO "{self.table_name}" ({cols_sql}) VALUES ({placeholders}) {conflict_sql} RETURNING *'
             results = []
             for item in self._payload:
-                cur.execute(query, [self._prepare_val(item.get(c)) for c in cols])
+                cur.execute(query, [self._prepare_val(c, item.get(c), cur) for c in cols])
                 row = cur.fetchone()
                 if row:
                     results.append(dict(row))
@@ -274,7 +286,7 @@ class TableQueryBuilder:
             set_clauses, params = [], []
             for key, value in self._payload.items():
                 set_clauses.append(f'"{_ident(key, "column")}" = %s')
-                params.append(self._prepare_val(value))
+                params.append(self._prepare_val(_ident(key, "column"), value, cur))
             params.extend(self._where_params)
             cur.execute(
                 f'UPDATE "{self.table_name}" SET {", ".join(set_clauses)} {where_sql} RETURNING *',
@@ -306,6 +318,20 @@ class PGClient:
             connect_timeout=CONNECT_TIMEOUT_SECONDS,
             options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
         )
+
+    def _is_array_column(self, cur, table: str, column: str) -> bool:
+        key = (self.db_url, table)
+        types = _COLUMN_TYPES.get(key)
+        if types is None:
+            cur.execute(
+                "SELECT column_name, udt_name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = %s",
+                (table,),
+            )
+            types = {row["column_name"]: row["udt_name"] for row in cur.fetchall()}
+            if types:  # do not cache "unknown table"; it may be created later
+                _COLUMN_TYPES[key] = types
+        return str(types.get(column, "")).startswith("_")
 
     def _discard_conn(self) -> None:
         conn = getattr(self._local, "conn", None)
@@ -370,6 +396,8 @@ class PGClient:
             except Exception:
                 pass
 
+
+_COLUMN_TYPES: dict = {}  # (db_url, table) -> {column: udt_name}; array types start with "_"
 
 _INSTANCE: Optional[PGClient] = None
 _INSTANCE_LOCK = threading.Lock()

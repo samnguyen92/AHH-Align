@@ -55,6 +55,7 @@ export interface QueryResponse<T = any> {
 // plain identifier is rejected, which prevents SQL injection through names.
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const JSON_KEY_RE = /^[A-Za-z0-9_]+$/;
+const COLUMN_LIST_RE = /^\s*[A-Za-z_][A-Za-z0-9_]*(\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*\s*$/;
 const FUNCTION_RE = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/;
 
 function assertIdent(name: string, kind = 'identifier'): string {
@@ -99,6 +100,7 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
   private tableName: string;
   private action: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select';
   private selectCols: string = '*';
+  private returningCols: string = '*';
   private countMode: 'exact' | null = null;
   private whereClauses: string[] = [];
   private params: any[] = [];
@@ -114,13 +116,34 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
     this.tableName = assertIdent(tableName, 'table name');
   }
 
+  /**
+   * `.select()` has two meanings, as in the Supabase client this adapter replaces:
+   *   - on its own it starts a SELECT query;
+   *   - AFTER insert/upsert/update/delete it only says which columns to return from that write
+   *     (`.update(...).eq(...).select('id').single()`). It must NOT turn the write into a SELECT,
+   *     otherwise the row is never written while the caller still receives data back.
+   */
   select(columns: string = '*', options?: { count?: 'exact' }): this {
+    if (this.action !== 'select') {
+      this.returningCols = columns || '*';
+      return this;
+    }
     this.action = 'select';
     this.selectCols = columns || '*';
     if (options?.count === 'exact') {
       this.countMode = 'exact';
     }
     return this;
+  }
+
+  /** Columns for `RETURNING`: the requested plain column list, otherwise every column. */
+  private returningSql(): string {
+    const cols = this.returningCols.trim();
+    if (cols === '*' || !COLUMN_LIST_RE.test(cols)) return '*';
+    return cols
+      .split(',')
+      .map((c) => `"${assertIdent(c, 'column')}"`)
+      .join(', ');
   }
 
   eq(col: string, val: any): this {
@@ -360,7 +383,7 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
             }
           }
 
-          const insertSql = `INSERT INTO "${this.tableName}" (${colsSql}) VALUES (${placeholders.join(', ')}) ${conflictSql} RETURNING *`;
+          const insertSql = `INSERT INTO "${this.tableName}" (${colsSql}) VALUES (${placeholders.join(', ')}) ${conflictSql} RETURNING ${this.returningSql()}`;
           const res = await client.query(insertSql, rowParams);
           if (res.rows[0]) {
             insertedRows.push(res.rows[0]);
@@ -394,7 +417,7 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
         const whereSqlAdjusted = adjustedWhere.length > 0 ? `WHERE ${adjustedWhere.join(' AND ')}` : '';
         const allParams = [...setParams, ...this.params];
 
-        const updateSql = `UPDATE "${this.tableName}" SET ${setClauses.join(', ')} ${whereSqlAdjusted} RETURNING *`;
+        const updateSql = `UPDATE "${this.tableName}" SET ${setClauses.join(', ')} ${whereSqlAdjusted} RETURNING ${this.returningSql()}`;
         const res = await client.query(updateSql, allParams);
         const returnData = this.isSingle || this.isMaybeSingle ? res.rows[0] || null : res.rows;
         return { data: returnData as unknown as T, error: null, count: res.rows.length };
@@ -404,7 +427,7 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
         if (this.whereClauses.length === 0) {
           throw new Error(`[db] Refusing to DELETE from "${this.tableName}" without a WHERE condition.`);
         }
-        const deleteSql = `DELETE FROM "${this.tableName}" ${whereSql} RETURNING *`;
+        const deleteSql = `DELETE FROM "${this.tableName}" ${whereSql} RETURNING ${this.returningSql()}`;
         const res = await client.query(deleteSql, this.params);
         return { data: res.rows as unknown as T, error: null, count: res.rows.length };
       }
