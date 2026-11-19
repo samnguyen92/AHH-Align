@@ -5,7 +5,7 @@ Every function returns plain, structured dicts (never prints) so that:
   * numbers are computed deterministically in Python (the LLM never invents figures),
   * the same data can feed a short Telegram answer, a detailed report, charts and alerts.
 
-Sources: Supabase (`analytics_events`, `articles`, `clinics`, claims, newsletter) and the
+Sources: Database (`analytics_events`, `articles`, `clinics`, claims, newsletter) and the
 running website itself (sitemap.xml / robots.txt / sampled page HTML for internal SEO audit).
 Nothing here writes to any database.
 """
@@ -72,7 +72,7 @@ _TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(?:\.(\d+))?")
 
 
 def parse_ts(value: Any) -> Optional[datetime]:
-    """Parse Supabase timestamps (naive UTC). Works on Python 3.9 (no fromisoformat quirks)."""
+    """Parse database timestamps (naive UTC). Works on Python 3.9 (no fromisoformat quirks)."""
     if not value or not isinstance(value, str):
         return None
     m = _TS_RE.match(value)

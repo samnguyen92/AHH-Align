@@ -199,7 +199,7 @@ def create_pulse(topic: Optional[str] = None) -> None:
     }
 
     try:
-        report_progress("🚀 Đang xuất bản bản tin lên Supabase...")
+        report_progress("🚀 Đang xuất bản bản tin lên cơ sở dữ liệu website...")
         supabase.table("articles").insert(article_payload).execute()
         print(f"[+] Article published successfully: /pulse/{slug}")
     except Exception as e:

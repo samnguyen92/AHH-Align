@@ -256,18 +256,18 @@ def check_status() -> str:
     try:
         from pg_client import create_client
 
-        supabase = create_client()
-        clinics = supabase.table("clinics").select("id", count="exact").limit(1).execute()
-        articles = supabase.table("articles").select("id", count="exact").limit(1).execute()
+        db = create_client()
+        clinics = db.table("clinics").select("id", count="exact").limit(1).execute()
+        articles = db.table("articles").select("id", count="exact").limit(1).execute()
         lines.append(f"Clinics: {clinics.count}")
         lines.append(f"Articles: {articles.count}")
         try:
-            subscribers = supabase.table("newsletter_subscriptions").select("id", count="exact").limit(1).execute()
+            subscribers = db.table("newsletter_subscriptions").select("id", count="exact").limit(1).execute()
             lines.append(f"Subscribers: {subscribers.count}")
         except Exception:
             pass
     except Exception as exc:
-        lines.append(f"Supabase check failed: {exc}")
+        lines.append(f"Database check failed: {exc}")
 
     lines.append(f"Log file: {LOG_PATH}")
     return "\n".join(lines)

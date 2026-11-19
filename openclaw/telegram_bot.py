@@ -429,7 +429,7 @@ class TelegramBot:
             "OpenClaw AI Agent\n"
             "You can chat naturally. The bot will analyze your request, summarize the planned action, and only run the job after you reply `approve`.\n\n"
             "Commands\n"
-            "/status - check env, Supabase counts, and log path\n"
+            "/status - check env, database counts, and log path\n"
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
             "/find_clinics <query> | [limit] - scout Google Places, scrape websites, extract clinic data, and save new clinics\n"
             "/inspect_clinic <name|slug> - inspect an existing clinic on our website (languages, gallery, sections, i18n)\n"
@@ -443,7 +443,7 @@ class TelegramBot:
             "/web_edit <instruction> - ask the Autonomous Web-Dev Agent to edit UI/design/code in src/\n"
             "/seo_audit [route] - audit Next.js metadata, JSON-LD schema, headings, alt tags, and DB SEO\n"
             "/seo_setup <instruction> - ask the SEO Agent to code/update metadata, JSON-LD, or sitemaps\n"
-            "/site_analyze [route] - run deep Playwright UX/speed probe + Supabase conversion funnel analysis\n"
+            "/site_analyze [route] - run deep Playwright UX/speed probe + database conversion funnel analysis\n"
             "/preview [route] - capture live Desktop & Mobile screenshots of a page\n"
             "/dev_diff - view uncommitted code changes in src/ and public/\n"
             "/publish [commit msg] - typecheck, git commit & push to GitHub main, and rebuild live web container\n"
@@ -1083,8 +1083,8 @@ Return JSON:
                 "2. Rewrite it into original Asian Health Hub content without copying the source text.\n"
                 "3. Preserve important uncertainties and source notes where relevant.\n"
                 "4. Generate 3-5 supporting images with Gemini image-preview.\n"
-                "5. Publish the article to Supabase.\n\n"
-                "This may call OpenRouter/Gemini and update Supabase data.\n"
+                "5. Publish the article to the database.\n\n"
+                "This may call OpenRouter/Gemini and update database records.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1149,7 +1149,7 @@ Return JSON:
                 "summary": (
                     "You want to run the batch pipeline for the clinic targets configured in `run_batch.py`, correct?\n\n"
                     "If you approve, OpenClaw will search URLs, scrape websites, extract data, save clinics, and attach images when available.\n"
-                    "This may take time and will update Supabase data. Reply `approve` to continue."
+                    "This may take time and will update database records. Reply `approve` to continue."
                 ),
             }
         if action == "repair_clinic_images":
@@ -1159,7 +1159,7 @@ Return JSON:
                 "summary": (
                     "You want OpenClaw to repair/generate missing images for clinic directory profiles, correct?\n\n"
                     "If you approve, OpenClaw will scan the clinics table, generate missing images with Gemini image-preview, "
-                    "and update `clinics.metadata.images` in Supabase.\n\n"
+                    "and update `clinics.metadata.images` in the database.\n\n"
                     "This may use OpenRouter/Gemini quota. Reply `approve` to continue."
                 ),
             }
@@ -1170,8 +1170,8 @@ Return JSON:
                 "summary": (
                     "You want OpenClaw to enrich clinic profiles with Google Places data, correct?\n\n"
                     "If you approve, OpenClaw will scan the clinics table, call Google Places API for photos, ratings, "
-                    "review snippets, Google Maps URLs, coordinates, and opening hours, upload photos to Supabase Storage, "
-                    "then update `clinics.metadata` in Supabase.\n\n"
+                    "review snippets, Google Maps URLs, coordinates, and opening hours, upload photos to storage, "
+                    "then update `clinics.metadata` in the database.\n\n"
                     "This requires `GOOGLE_PLACES_API_KEY` and may use Google Maps quota. Reply `approve` to continue."
                 ),
             }
@@ -1182,7 +1182,7 @@ Return JSON:
                 "summary": (
                     "You want OpenClaw to repair/generate missing images for articles/insights, correct?\n\n"
                     "If you approve, OpenClaw will scan the articles table, generate missing images with Gemini image-preview, "
-                    "and update `articles.seo_meta.og_image` and `articles.seo_meta.images` in Supabase.\n\n"
+                    "and update `articles.seo_meta.og_image` and `articles.seo_meta.images` in the database.\n\n"
                     "Reply `approve` to continue."
                 ),
             }
@@ -1288,7 +1288,7 @@ Return JSON:
                 "route": "/",
                 "timeframe": str(data.get("timeframe") or "week").strip().lower(),
                 "summary": (
-                    "Bạn muốn chạy **Deep Website Analyzer** (Playwright kiểm tra tốc độ/bố cục + phân tích phễu chuyển đổi Supabase), đúng không?\n\n"
+                    "Bạn muốn chạy **Deep Website Analyzer** (Playwright kiểm tra tốc độ/bố cục + phân tích phễu chuyển đổi dữ liệu), đúng không?\n\n"
                     "Trả lời `approve` để bắt đầu."
                 ),
             }
@@ -1346,7 +1346,7 @@ Return JSON:
                 "1. Scan the articles table.\n"
                 "2. Convert unsafe slugs into ASCII format such as `suc-khoe-tam-than...`.\n"
                 "3. Save old slugs into `seo_meta.legacy_slugs`.\n\n"
-                "This will update Supabase data. Reply `approve` to continue."
+                "This will update database records. Reply `approve` to continue."
             ),
         }
 
@@ -1358,7 +1358,7 @@ Return JSON:
             "name": f"{action_type}: {target[:48]}",
             "target": target,
             "summary": (
-                f"You want to delete this {label} from Supabase, correct?\n\n"
+                f"You want to delete this {label} from the database, correct?\n\n"
                 f"Target: {target}\n\n"
                 "If you approve, OpenClaw will find exactly one record by id, slug, name, or title, then delete it.\n"
                 "This is a real destructive data operation. Reply `approve` to continue, or `cancel` if you are unsure."
@@ -1381,7 +1381,7 @@ Return JSON:
                 "You want OpenClaw to change the feature image for this clinic, correct?\n\n"
                 f"{summary_details}\n"
                 "If you approve, OpenClaw will find the clinic, and update its metadata to set/rotate the feature image.\n"
-                "This will update Supabase data. Reply `approve` to continue."
+                "This will update database records. Reply `approve` to continue."
             ),
         }
 
@@ -1393,7 +1393,7 @@ Return JSON:
             "summary": (
                 "You want OpenClaw to retrieve the list of newsletter subscribers, correct?\n\n"
                 f"Limit: {limit} subscribers\n\n"
-                "If you approve, OpenClaw will query Supabase and print the list of email subscribers with timestamps.\n"
+                "If you approve, OpenClaw will query the database and print the list of email subscribers with timestamps.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1430,7 +1430,7 @@ Return JSON:
             "name": "check_claims",
             "summary": (
                 "You want OpenClaw to check pending profile claims and submissions, correct?\n\n"
-                "If you approve, OpenClaw will query Supabase and print all pending clinic claim requests and new profile submissions.\n"
+                "If you approve, OpenClaw will query the database and print all pending clinic claim requests and new profile submissions.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1443,7 +1443,7 @@ Return JSON:
             "summary": (
                 "You want to approve this clinic claim request or submission, correct?\n\n"
                 f"Target Request/Submission ID: {target}\n\n"
-                "If you approve, OpenClaw will mark the request as approved and link/create the clinic in Supabase.\n"
+                "If you approve, OpenClaw will mark the request as approved and link/create the clinic in the database.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1456,7 +1456,7 @@ Return JSON:
             "summary": (
                 "You want to reject this clinic claim request or submission, correct?\n\n"
                 f"Target Request/Submission ID: {target}\n\n"
-                "If you approve, OpenClaw will mark the request as rejected in Supabase.\n"
+                "If you approve, OpenClaw will mark the request as rejected in the database.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1477,8 +1477,8 @@ Return JSON:
                 "3. Regenerate the article according to the requested edits above.\n"
                 "4. Save the current article as a historical version in `seo_meta.versions`.\n"
                 "5. Keep the current slug/URL and publish the rewrite as the next version, such as v2 or v3.\n"
-                "6. Update content, excerpt, tags, and SEO metadata in Supabase.\n\n"
-                "This may call OpenRouter and update Supabase data.\n"
+                "6. Update content, excerpt, tags, and SEO metadata in the database.\n\n"
+                "This may call OpenRouter and update database records.\n"
                 "Reply `approve` to continue. Send a new request if you want to change the edit instructions."
             ),
         }
@@ -1498,7 +1498,7 @@ Return JSON:
                 "2. Generate new photorealistic images with Gemini image-preview.\n"
                 "3. Replace `articles.seo_meta.og_image` and `articles.seo_meta.images` for that article.\n"
                 "4. Keep the old image URLs in `seo_meta.previous_images` for rollback/reference.\n\n"
-                "This will update Supabase data and use OpenRouter/Gemini quota. Reply `approve` to continue."
+                "This will update database records and use OpenRouter/Gemini quota. Reply `approve` to continue."
             ),
         }
 
@@ -1530,8 +1530,8 @@ Return JSON:
                 "3. Use AI to analyze the key healthcare concepts.\n"
                 "4. Write original Asian Health Hub content without copying wording, headings, or source structure.\n"
                 "5. Generate 3-5 supporting images with Gemini image-preview.\n"
-                "6. Publish the article(s) to Supabase.\n\n"
-                "This may call OpenRouter/Gemini and update Supabase data.\n"
+                "6. Publish the article(s) to the database.\n\n"
+                "This may call OpenRouter/Gemini and update database records.\n"
                 "Reply `approve` to continue, or send a new request if you want changes."
             ),
         }
@@ -1550,7 +1550,7 @@ Return JSON:
             "summary": (
                 f"You want OpenClaw to create one {content_label}, correct?\n\n"
                 f"Topic: {topic_label}\n\n"
-                "If you approve, OpenClaw will choose/generate metadata when needed, search trusted health sources for verified references, generate content from those references, generate 3-5 images, create a unique slug, and publish it to Supabase.\n"
+                "If you approve, OpenClaw will choose/generate metadata when needed, search trusted health sources for verified references, generate content from those references, generate 3-5 images, create a unique slug, and publish it to the database.\n"
                 "Reply `approve` to continue. If you want to use reference URLs, send them before approving."
             ),
         }
@@ -1565,7 +1565,7 @@ Return JSON:
                 f"You want OpenClaw to generate a new AHH Pulse newsletter issue {topic_summary}, correct?\n\n"
                 "If you approve, OpenClaw will automatically fetch recently verified clinics to spotlight, "
                 "draft an informative health advice column via LLM, generate a matching cover image, "
-                "and insert the published issue into Supabase.\n"
+                "and insert the published issue into the database.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1649,9 +1649,9 @@ Return JSON:
                 + (f"• Only clinics mentioning {', '.join(required_languages)} on their website will be saved.\n" if required_languages else "")
                 + (f"• Google Places results restricted to type: {', '.join(facility_types)}.\n" if facility_types else "")
                 + "• Spas, nail salons, restaurants, gyms, and other non-medical places are automatically rejected.\n\n"
-                "If you approve, OpenClaw will search Google Places, skip clinics already in Supabase, scrape official websites, "
+                "If you approve, OpenClaw will search Google Places, skip clinics already in the database, scrape official websites, "
                 "extract strict source-grounded clinic data, enrich with Google metadata/images, and save new clinics.\n\n"
-                "This may call Google Places, OpenRouter/Gemini, scrape websites, and update Supabase. Reply `approve` to continue."
+                "This may call Google Places, OpenRouter/Gemini, scrape websites, and update the database. Reply `approve` to continue."
             ),
         }
 
@@ -1702,8 +1702,8 @@ Return JSON:
                 f"Clinic: {clinic_name}\n"
                 f"URL: {url}\n\n"
                 "Nếu bạn duyệt, OpenClaw sẽ scrape website này, trích xuất dữ liệu clinic có kiểm chứng từ nội dung nguồn, "
-                "enrich bằng Google Places/images, rồi save hoặc update clinic trong Supabase.\n\n"
-                "Việc này có thể gọi OpenRouter/Gemini, Google Places, scrape website và cập nhật Supabase. Reply `approve` để chạy."
+                "enrich bằng Google Places/images, rồi save hoặc update clinic trong database.\n\n"
+                "Việc này có thể gọi OpenRouter/Gemini, Google Places, scrape website và cập nhật database. Reply `approve` để chạy."
             ),
         }
 
@@ -1828,7 +1828,7 @@ Return JSON:
                 "summary": (
                     "You want OpenClaw to repair/generate missing images for clinic directory profiles, correct?\n\n"
                     "If you approve, OpenClaw will scan the clinics table, generate missing images with Gemini image-preview, "
-                    "and update `clinics.metadata.images` in Supabase.\n\n"
+                    "and update `clinics.metadata.images` in the database.\n\n"
                     "This may use OpenRouter/Gemini quota. Reply `approve` to continue."
                 ),
             }
@@ -1854,8 +1854,8 @@ Return JSON:
                 "summary": (
                     "You want OpenClaw to enrich clinic profiles with Google Places data, correct?\n\n"
                     "If you approve, OpenClaw will scan the clinics table, call Google Places API for photos, ratings, "
-                    "review snippets, Google Maps URLs, coordinates, and opening hours, upload photos to Supabase Storage, "
-                    "then update `clinics.metadata` in Supabase.\n\n"
+                    "review snippets, Google Maps URLs, coordinates, and opening hours, upload photos to storage, "
+                    "then update `clinics.metadata` in the database.\n\n"
                     "This requires `GOOGLE_PLACES_API_KEY` and may use Google Maps quota. Reply `approve` to continue."
                 ),
             }
@@ -1867,7 +1867,7 @@ Return JSON:
                 "summary": (
                     "You want OpenClaw to repair/generate missing images for articles/insights, correct?\n\n"
                     "If you approve, OpenClaw will scan the articles table, generate missing images with Gemini image-preview, "
-                    "and update `articles.seo_meta.og_image` and `articles.seo_meta.images` in Supabase.\n\n"
+                    "and update `articles.seo_meta.og_image` and `articles.seo_meta.images` in the database.\n\n"
                     "Reply `approve` to continue."
                 ),
             }
@@ -1879,7 +1879,7 @@ Return JSON:
                 "summary": (
                     "You want to run the batch pipeline for the clinic targets configured in `run_batch.py`, correct?\n\n"
                     "If you approve, OpenClaw will search URLs, scrape websites, extract data, save clinics, and attach images when available.\n"
-                    "This may take time and will update Supabase data. Reply `approve` to continue."
+                    "This may take time and will update database records. Reply `approve` to continue."
                 ),
             }
 
@@ -1961,7 +1961,7 @@ Return JSON:
                 "route": "/",
                 "timeframe": "week",
                 "summary": (
-                    "Bạn muốn chạy **Deep Website Analyzer** (Playwright kiểm tra tốc độ/bố cục/ảnh lỗi + phân tích phễu chuyển đổi Supabase), đúng không?\n\n"
+                    "Bạn muốn chạy **Deep Website Analyzer** (Playwright kiểm tra tốc độ/bố cục/ảnh lỗi + phân tích phễu chuyển đổi dữ liệu), đúng không?\n\n"
                     "Trả lời `approve` để bắt đầu."
                 ),
             }

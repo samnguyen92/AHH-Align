@@ -1,24 +1,51 @@
 """
 pg_client.py — Drop-in PostgreSQL Query Builder & Client for OpenClaw.
-Replaces `supabase-py` with direct PostgreSQL connection via `psycopg2`.
+Replaces `supabase-py` with direct, resilient PostgreSQL connections via `psycopg2`.
 Provides the same `.table(name).select(...).eq(...).execute()` API syntax
 returning an object with `.data` and `.count`.
+
+Features:
+- Thread-local connections: safe for concurrent Telegram job threads.
+- Auto-reconnect & healthcheck ping: heals dropped/idle sockets automatically.
+- Autocommit & auto-rollback: prevents "current transaction is aborted" (giao dịch hiện tại bị hủy).
+- Multi-host fallback: supports Docker internal (db:5432) and host machine (127.0.0.1:5433 / 5432).
 """
 
 import json
+import logging
 import os
+import threading
 import psycopg2
 import psycopg2.extras
 from psycopg2.extras import RealDictCursor, Json
 
+logger = logging.getLogger("openclaw.pg_client")
+
+
+def get_connection_strings() -> list[str]:
+    """Return candidates for connection strings in priority order."""
+    candidates = []
+    env_url = os.environ.get("DATABASE_URL")
+    if env_url:
+        candidates.append(env_url)
+
+    # Common container & local defaults
+    defaults = [
+        "postgresql://postgres:ahh_secure_pass_2026@db:5432/asian_health_hub",
+        "postgresql://postgres:ahh_secure_pass_2026@127.0.0.1:5433/asian_health_hub",
+        "postgresql://postgres:ahh_secure_pass_2026@localhost:5433/asian_health_hub",
+        "postgresql://postgres:ahh_secure_pass_2026@127.0.0.1:5432/asian_health_hub",
+        "postgresql://postgres:ahh_secure_pass_2026@localhost:5432/asian_health_hub",
+    ]
+    for d in defaults:
+        if d not in candidates:
+            candidates.append(d)
+    return candidates
+
 
 def get_connection_string() -> str:
-    # In Docker container: db:5432. On local host: localhost:5433 or localhost:5432
-    url = os.environ.get("DATABASE_URL")
-    if url:
-        return url
-    # Try localhost:5433 first, fallback to db:5432
-    return "postgresql://postgres:ahh_secure_pass_2026@localhost:5433/asian_health_hub"
+    candidates = get_connection_strings()
+    return candidates[0] if candidates else "postgresql://postgres:ahh_secure_pass_2026@localhost:5433/asian_health_hub"
 
 
 class QueryResult:
@@ -28,8 +55,8 @@ class QueryResult:
 
 
 class TableQueryBuilder:
-    def __init__(self, conn, table_name: str):
-        self.conn = conn
+    def __init__(self, client: "PGClient", table_name: str):
+        self.client = client
         self.table_name = table_name
         self._action = "select"  # select, insert, upsert, update, delete
         self._select_cols = "*"
@@ -153,7 +180,9 @@ class TableQueryBuilder:
         return val
 
     def execute(self) -> QueryResult:
-        cur = self.conn.cursor(cursor_factory=RealDictCursor)
+        # Obtain a verified, alive connection
+        conn = self.client._get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
         where_sql = ("WHERE " + " AND ".join(self._where_clauses)) if self._where_clauses else ""
 
         try:
@@ -163,7 +192,8 @@ class TableQueryBuilder:
                 if self._count_mode == "exact":
                     count_query = f'SELECT COUNT(*) FROM "{self.table_name}" {where_sql}'
                     cur.execute(count_query, self._where_params)
-                    total_count = cur.fetchone()["count"]
+                    row = cur.fetchone()
+                    total_count = row["count"] if row else 0
 
                 cols = self._select_cols
                 if cols == "*" or not cols:
@@ -207,7 +237,8 @@ class TableQueryBuilder:
                     row = cur.fetchone()
                     if row:
                         results.append(dict(row))
-                self.conn.commit()
+                if not conn.autocommit:
+                    conn.commit()
                 res_data = results[0] if (self._single and results) else results
                 return QueryResult(data=res_data, count=len(results))
 
@@ -225,7 +256,8 @@ class TableQueryBuilder:
                 query = f'UPDATE "{self.table_name}" SET {set_sql} {where_sql} RETURNING *'
                 cur.execute(query, params)
                 rows = [dict(r) for r in cur.fetchall()]
-                self.conn.commit()
+                if not conn.autocommit:
+                    conn.commit()
                 res_data = rows[0] if (self._single and rows) else rows
                 return QueryResult(data=res_data, count=len(rows))
 
@@ -233,30 +265,85 @@ class TableQueryBuilder:
                 query = f'DELETE FROM "{self.table_name}" {where_sql} RETURNING *'
                 cur.execute(query, self._where_params)
                 rows = [dict(r) for r in cur.fetchall()]
-                self.conn.commit()
+                if not conn.autocommit:
+                    conn.commit()
                 return QueryResult(data=rows, count=len(rows))
 
+        except Exception as exc:
+            try:
+                if not conn.closed:
+                    conn.rollback()
+            except Exception:
+                pass
+            # Force discard thread connection so next query gets a fresh connection
+            self.client._reset_thread_conn()
+            raise exc
+
         finally:
-            cur.close()
+            try:
+                cur.close()
+            except Exception:
+                pass
 
 
 class PGClient:
     def __init__(self, db_url: str = None):
         self.db_url = db_url or get_connection_string()
-        self._conn = None
+        self._thread_local = threading.local()
+
+    def _connect_candidate(self, url: str):
+        conn = psycopg2.connect(url, connect_timeout=5)
+        # Enable autocommit: SELECT queries do not keep hanging transactions open,
+        # and errors never leave the connection in InFailedSqlTransaction state.
+        conn.autocommit = True
+        return conn
+
+    def _create_fresh_connection(self):
+        candidates = get_connection_strings()
+        if self.db_url and self.db_url not in candidates:
+            candidates.insert(0, self.db_url)
+
+        last_err = None
+        for cand in candidates:
+            try:
+                return self._connect_candidate(cand)
+            except Exception as e:
+                last_err = e
+                continue
+        raise RuntimeError(f"Could not connect to PostgreSQL with candidates: {last_err}")
+
+    def _is_alive(self, conn) -> bool:
+        if conn is None or conn.closed:
+            return False
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.fetchone()
+            cur.close()
+            return True
+        except Exception:
+            return False
+
+    def _reset_thread_conn(self):
+        conn = getattr(self._thread_local, "conn", None)
+        if conn is not None:
+            try:
+                if not conn.closed:
+                    conn.close()
+            except Exception:
+                pass
+        self._thread_local.conn = None
 
     def _get_conn(self):
-        if self._conn is None or self._conn.closed:
-            try:
-                self._conn = psycopg2.connect(self.db_url)
-            except Exception:
-                # If localhost:5433 fails, try localhost:5432, or vice versa
-                fallback = "postgresql://postgres:ahh_secure_pass_2026@localhost:5433/asian_health_hub" if "5432" in self.db_url else "postgresql://postgres:ahh_secure_pass_2026@127.0.0.1:5433/asian_health_hub"
-                self._conn = psycopg2.connect(fallback)
-        return self._conn
+        conn = getattr(self._thread_local, "conn", None)
+        if conn is None or not self._is_alive(conn):
+            self._reset_thread_conn()
+            conn = self._create_fresh_connection()
+            self._thread_local.conn = conn
+        return conn
 
     def table(self, table_name: str) -> TableQueryBuilder:
-        return TableQueryBuilder(self._get_conn(), table_name)
+        return TableQueryBuilder(self, table_name)
 
     def from_(self, table_name: str) -> TableQueryBuilder:
         return self.table(table_name)
@@ -271,18 +358,33 @@ class PGClient:
             cur.execute(query, param_vals)
             rows = [dict(r) for r in cur.fetchall()]
             return QueryResult(data=rows, count=len(rows))
+        except Exception as exc:
+            try:
+                if not conn.closed:
+                    conn.rollback()
+            except Exception:
+                pass
+            self._reset_thread_conn()
+            raise exc
         finally:
-            cur.close()
+            try:
+                cur.close()
+            except Exception:
+                pass
 
 
 _INSTANCE = None
+_INIT_LOCK = threading.Lock()
+
 
 def create_client(url=None, key=None) -> PGClient:
     global _INSTANCE
     if _INSTANCE is None:
-        _INSTANCE = PGClient()
+        with _INIT_LOCK:
+            if _INSTANCE is None:
+                _INSTANCE = PGClient(db_url=url)
     return _INSTANCE
+
 
 def get_client() -> PGClient:
     return create_client()
-

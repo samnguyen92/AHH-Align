@@ -132,7 +132,7 @@ def run_site_analysis(target_route: str = "/", timeframe: str = "week") -> str:
     lines.extend(
         [
             "",
-            "### 2. Phân tích Lưu lượng, Tìm kiếm & Chuyển đổi (Supabase Telemetry)",
+            "### 2. Phân tích Lưu lượng, Tìm kiếm & Chuyển đổi (Database Telemetry)",
             analytics_text,
             "",
             "💡 **Gợi ý lệnh tiếp theo**:",
