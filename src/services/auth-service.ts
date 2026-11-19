@@ -158,6 +158,10 @@ export async function getUserFromAccessToken(
     if (!row) {
       return null;
     }
+    // A disabled account stops working immediately, including sessions that were issued earlier.
+    if (row.disabled_at) {
+      return null;
+    }
 
     const metadata = row.raw_user_meta_data || {};
     const role = (await getUserRole(row.id)) || normalizeRole(metadata.role) || 'provider';

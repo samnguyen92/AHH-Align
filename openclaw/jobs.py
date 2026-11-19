@@ -5,6 +5,7 @@ import io
 import logging
 import logging.handlers
 import os
+import re
 import sys
 import traceback
 from datetime import datetime
@@ -52,9 +53,17 @@ class TeeWriter:
             stream.flush()
 
 
+_SECRET_RE = re.compile(r"(token=)[A-Za-z0-9_\-]{16,}", re.IGNORECASE)
+
+
+def redact_secrets(text: str) -> str:
+    """Hide one-time tokens (invite links) in anything that is written to the log or kept in memory."""
+    return _SECRET_RE.sub(r"\1<redacted>", text or "")
+
+
 def _write_log(text: str) -> None:
     timestamp = datetime.now().isoformat(timespec="seconds")
-    _openclaw_logger.info("\n[%s]\n%s", timestamp, text)
+    _openclaw_logger.info("\n[%s]\n%s", timestamp, redact_secrets(text))
 
 
 class JobFailed(Exception):
@@ -327,6 +336,48 @@ def approve_all_draft_clinics_job() -> str:
     from admin_actions import approve_all_draft_clinics
 
     return _run_with_captured_output("approve_all_draft_clinics", approve_all_draft_clinics)
+
+
+def list_users_job(query: str = "", limit: int = 20) -> str:
+    from user_admin import list_users
+
+    return _run_with_captured_output("list_users", lambda: list_users(query, limit))
+
+
+def show_user_job(email: str) -> str:
+    from user_admin import show_user
+
+    return _run_with_captured_output("show_user", lambda: show_user(email))
+
+
+def create_user_invite_job(email: str, role: str, actor: str) -> str:
+    from user_admin import create_invite
+
+    return _run_with_captured_output("user_add", lambda: create_invite(email, role, actor))
+
+
+def set_user_role_job(email: str, role: str, actor: str) -> str:
+    from user_admin import set_role
+
+    return _run_with_captured_output("user_role", lambda: set_role(email, role, actor))
+
+
+def disable_user_job(email: str, actor: str) -> str:
+    from user_admin import disable_user
+
+    return _run_with_captured_output("user_disable", lambda: disable_user(email, actor))
+
+
+def restore_user_job(email: str, actor: str) -> str:
+    from user_admin import restore_user
+
+    return _run_with_captured_output("user_restore", lambda: restore_user(email, actor))
+
+
+def purge_disabled_users_job(actor: str) -> str:
+    from user_admin import purge_disabled_users
+
+    return _run_with_captured_output("users_purge", lambda: purge_disabled_users(actor))
 
 
 def list_newsletter_subscribers_job(limit: int = 50) -> str:

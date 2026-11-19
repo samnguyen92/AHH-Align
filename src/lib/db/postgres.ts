@@ -15,6 +15,28 @@ function ensureSchema(p: Pool) {
   p.query(`
     ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'published';
     UPDATE clinics SET status = 'published' WHERE status IS NULL;
+    ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMPTZ;
+    ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS last_sign_in_at TIMESTAMPTZ;
+    CREATE TABLE IF NOT EXISTS public.user_invites (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email TEXT NOT NULL,
+      role TEXT NOT NULL CHECK (role IN ('user', 'provider', 'admin', 'superadmin')),
+      token_hash TEXT NOT NULL UNIQUE,
+      created_by TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ
+    );
+    CREATE TABLE IF NOT EXISTS public.audit_log (
+      id BIGSERIAL PRIMARY KEY,
+      actor TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_type TEXT,
+      target_id TEXT,
+      target_label TEXT,
+      details JSONB NOT NULL DEFAULT '{}'::JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `).catch((err) => {
     console.warn('[db] Schema ensure notice:', err.message);
   });
@@ -491,61 +513,10 @@ export function createPostgresClient() {
       }
     },
     auth: {
-      async getUser(token?: string | null) {
-        if (!token) return { data: { user: null }, error: new Error('No token') };
-        try {
-          // Parse token format: 'user_id' or standard base64 session token
-          let userId = token;
-          if (token.startsWith('user_')) {
-            userId = token.replace('user_', '');
-          }
-          const client = getPool();
-          const res = await client.query('SELECT * FROM auth.users WHERE id = $1', [userId]);
-          if (res.rows[0]) {
-            const row = res.rows[0];
-            return {
-              data: {
-                user: {
-                  id: row.id,
-                  email: row.email,
-                  user_metadata: row.raw_user_meta_data || {},
-                },
-              },
-              error: null,
-            };
-          }
-        } catch {
-          // ignore
-        }
-        return { data: { user: null }, error: new Error('Invalid token') };
-      },
+      // Sign-in lives in /api/auth/login (bcrypt + signed session token). The old getUser()/signInWithPassword()
+      // stubs treated a user id as a token and ignored the password; they were unused and are removed.
       async getSession() {
         return { data: { session: null }, error: null };
-      },
-      async signInWithPassword({ email }: { email: string; password?: string }) {
-        try {
-          const client = getPool();
-          const res = await client.query('SELECT * FROM auth.users WHERE email = $1', [email]);
-          if (res.rows[0]) {
-            const user = res.rows[0];
-            return {
-              data: {
-                user: {
-                  id: user.id,
-                  email: user.email,
-                  user_metadata: user.raw_user_meta_data || {},
-                },
-                session: {
-                  access_token: user.id,
-                },
-              },
-              error: null,
-            };
-          }
-          return { data: { user: null, session: null }, error: new Error('User not found') };
-        } catch (err: any) {
-          return { data: { user: null, session: null }, error: err };
-        }
       },
       async signOut() {
         return { error: null };
@@ -563,6 +534,7 @@ export function createPostgresClient() {
               app_metadata: u.raw_app_meta_data || {},
               created_at: u.created_at,
               last_sign_in_at: u.last_sign_in_at,
+              disabled_at: u.disabled_at ?? null,
             }));
             return { data: { users }, error: null };
           } catch (err: any) {

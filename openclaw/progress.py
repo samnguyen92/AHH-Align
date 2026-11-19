@@ -36,3 +36,20 @@ def report_progress(message: str) -> None:
             fn(message)
         except Exception:
             pass  # Never let progress reporting crash the job
+
+
+def send_private(message: str) -> bool:
+    """Deliver `message` to whoever started the job, bypassing the job's captured output.
+
+    Job output is written to openclaw.log and kept in the chat memory; secrets (invite links) must not
+    end up there. Returns False when no callback is registered (e.g. running from a terminal), so the
+    caller can fall back to printing.
+    """
+    fn: Optional[Callable[[str], None]] = getattr(_local, "progress_fn", None)
+    if fn is None:
+        return False
+    try:
+        fn(message)
+        return True
+    except Exception:
+        return False

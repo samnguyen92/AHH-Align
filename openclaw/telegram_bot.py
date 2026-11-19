@@ -14,6 +14,14 @@ from agent_prompt import OPENCLAW_AGENT_SYSTEM_PROMPT
 from intent_agent import run_intent_agent
 from jobs import (
     JobFailed,
+    create_user_invite_job,
+    disable_user_job,
+    list_users_job,
+    purge_disabled_users_job,
+    redact_secrets,
+    restore_user_job,
+    set_user_role_job,
+    show_user_job,
     approve_all_draft_clinics_job,
     approve_clinic_job,
     list_draft_clinics_job,
@@ -77,6 +85,11 @@ load_dotenv(".env.local")
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 MAX_MESSAGE_LENGTH = 3900
+# Slash commands that manage user accounts. They are explicit commands on purpose: a language model must never
+# decide WHICH user to change.
+USER_COMMANDS = {"/users", "/user", "/user_add", "/user_role", "/user_disable", "/user_restore", "/users_purge"}
+USER_ROLES = ("user", "provider", "admin", "superadmin")
+PENDING_USER_ACTION_TTL_SECONDS = 600
 MAX_JOB_OUTPUT_CHUNKS = int(os.environ.get("TELEGRAM_MAX_JOB_OUTPUT_CHUNKS", "12"))
 MAX_MEMORY_CHARS = int(os.environ.get("OPENCLAW_MEMORY_MAX_CHARS", "60000"))
 MEMORY_PATH = os.path.join(os.path.dirname(__file__), "telegram_memory.json")
@@ -99,6 +112,11 @@ class TelegramBot:
                 "[!] TELEGRAM_ALLOWED_USER_IDS is empty: the bot will REFUSE every user until at least one "
                 "Telegram user id is configured in openclaw/.env (get yours from @userinfobot)."
             )
+        # User management is deny-by-default: only these Telegram ids (a subset of the allowed users) may use it.
+        superadmin_ids = os.environ.get("TELEGRAM_SUPERADMIN_IDS", "").strip()
+        self.user_admin_ids = {
+            int(value.strip()) for value in superadmin_ids.split(",") if value.strip().isdigit()
+        }
         self.offset = 0
         self.running_jobs: dict[str, threading.Thread] = {}
         self.pending_actions: dict[int, dict] = {}
@@ -137,7 +155,7 @@ class TelegramBot:
                 "type": action_type,
                 "name": name,
                 "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "text": output[-MAX_MEMORY_CHARS:],
+                "text": redact_secrets(output)[-MAX_MEMORY_CHARS:],
             }
         self.save_memory()
 
@@ -383,6 +401,10 @@ class TelegramBot:
         # Deny by default: an empty allow-list must never mean "everyone".
         return bool(self.allowed_user_ids) and user_id in self.allowed_user_ids
 
+    def is_user_admin(self, user_id: int) -> bool:
+        """May this Telegram user manage accounts? Deny by default (no ids configured = nobody)."""
+        return bool(self.user_admin_ids) and user_id in self.user_admin_ids
+
     def get_updates(self) -> list[dict]:
         response = self.request(
             "getUpdates",
@@ -452,6 +474,13 @@ class TelegramBot:
             "/drafts [limit] - list clinics waiting for review (new clinics start as drafts, hidden from the website)\n"
             "/approve_clinic <slug|id|name|all> - publish a draft clinic (or all drafts)\n"
             "/reject_clinic <slug|id|name> - archive a clinic so it is hidden from the website\n"
+            "/users [search] - list users (needs TELEGRAM_SUPERADMIN_IDS)\n"
+            "/user <email> - show one user, their clinics and recent changes\n"
+            "/user_add <email> [role] - invite a user: a one-time link, they set their own password (default role: provider)\n"
+            "/user_role <email> <user|provider|admin|superadmin> - change a role (asks for approval)\n"
+            "/user_disable <email> - disable an account; restorable for 30 days (asks for approval)\n"
+            "/user_restore <email> - re-enable a disabled account within 30 days\n"
+            "/users_purge - permanently delete users disabled for more than 30 days (asks for approval)\n"
             "/clinic_quality [threshold] - show clinic data quality scores and lowest-scoring clinics\n"
             "/directory_audit - show Track C entity/field/insurance/price coverage & Track E supply gaps\n"
             "/search_audit - run the Track D 30-query search benchmark suite\n"
@@ -522,6 +551,151 @@ class TelegramBot:
                 urls.append(url)
 
         return urls
+
+    # ------------------------------------------------------------------ user management
+
+    def _user_action(self, action_type: str, name: str, summary: str, actor_id: int, **fields) -> dict:
+        return {
+            "type": action_type,
+            "name": name,
+            "summary": summary,
+            "actor_id": actor_id,
+            "actor": f"telegram:{actor_id}",
+            "expires_at": time.time() + PENDING_USER_ACTION_TTL_SECONDS,
+            **fields,
+        }
+
+    def handle_user_command(self, chat_id: int, command: str, text: str, user_id: Optional[int]) -> None:
+        actor_id = user_id if user_id is not None else chat_id
+
+        if not self.user_admin_ids:
+            self.send_message(
+                chat_id,
+                "User management is switched off. Set TELEGRAM_SUPERADMIN_IDS in openclaw/.env to your Telegram "
+                "user id (get it from @userinfobot) and restart the bot.",
+            )
+            return
+        if not self.is_user_admin(actor_id):
+            self.send_message(chat_id, "You are not allowed to manage users.")
+            return
+        if actor_id != chat_id:
+            self.send_message(chat_id, "User management only works in a private chat with the bot.")
+            return
+
+        args = text.split()[1:]
+
+        if command == "/users":
+            query = " ".join(args)
+            self.run_job(chat_id, "users", lambda: list_users_job(query, 20), action_type="users")
+            return
+
+        if command == "/users_purge":
+            from user_admin import purgeable_count
+
+            count = purgeable_count()
+            if not count:
+                self.send_message(chat_id, "Nothing to purge: no user has been disabled for more than 30 days.")
+                return
+            self.pending_actions[chat_id] = self._user_action(
+                "users_purge",
+                "users_purge",
+                f"You want to PERMANENTLY DELETE {count} user(s) that were disabled more than 30 days ago.\n\n"
+                "This cannot be undone. Clinics they had claimed are released. See who with /users.\n"
+                "Reply `approve` within 10 minutes to continue, or `cancel`.",
+                actor_id,
+            )
+            self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+            return
+
+        if not args:
+            usage = {
+                "/user": "/user <email>",
+                "/user_add": "/user_add <email> [role]",
+                "/user_role": "/user_role <email> <user|provider|admin|superadmin>",
+                "/user_disable": "/user_disable <email>",
+                "/user_restore": "/user_restore <email>",
+            }[command]
+            self.send_message(chat_id, f"Use: {usage}")
+            return
+
+        from user_admin import normalize_email, user_brief
+
+        email = normalize_email(args[0])
+        if not email:
+            self.send_message(chat_id, f"'{args[0][:80]}' is not a valid e-mail address.")
+            return
+
+        if command == "/user":
+            self.run_job(chat_id, f"user: {email}", lambda: show_user_job(email), action_type="user")
+        elif command == "/user_restore":
+            actor = f"telegram:{actor_id}"
+            self.run_job(chat_id, f"user_restore: {email}", lambda: restore_user_job(email, actor), action_type="user_restore")
+        elif command == "/user_add":
+            role = (args[1].lower() if len(args) > 1 else "provider")
+            if role not in USER_ROLES:
+                self.send_message(chat_id, f"Invalid role '{role[:30]}'. Use one of: {', '.join(USER_ROLES)}.")
+                return
+            warning = "\n⚠️ 'superadmin' can manage every user and all data." if role == "superadmin" else ""
+            self.pending_actions[chat_id] = self._user_action(
+                "user_add",
+                f"user_add: {email}",
+                f"You want to INVITE {email} as '{role}'.{warning}\n\n"
+                "OpenClaw will create a one-time link (valid 72 hours) and send it to you in a separate message. "
+                "The person sets their own password; nothing is created until they open the link.\n"
+                "Reply `approve` within 10 minutes to continue, or `cancel`.",
+                actor_id,
+                email=email,
+                role=role,
+            )
+            self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command in {"/user_role", "/user_disable"}:
+            brief = user_brief(email)
+            if not brief:
+                self.send_message(chat_id, f"No user with e-mail {email}.")
+                return
+            if command == "/user_disable":
+                self.pending_actions[chat_id] = self._user_action(
+                    "user_disable",
+                    f"user_disable: {email}",
+                    f"You want to DISABLE {email} (role: {brief['role']}).\n\n"
+                    "They will not be able to sign in and their current sessions stop working at once. "
+                    "You can restore them within 30 days with /user_restore; clinics they own are left as they are.\n"
+                    "Reply `approve` within 10 minutes to continue, or `cancel`.",
+                    actor_id,
+                    email=email,
+                )
+            else:
+                role = (args[1].lower() if len(args) > 1 else "")
+                if role not in USER_ROLES:
+                    self.send_message(chat_id, f"Use: /user_role {email} <{'|'.join(USER_ROLES)}>")
+                    return
+                warning = "\n⚠️ 'superadmin' can manage every user and all data." if role == "superadmin" else ""
+                self.pending_actions[chat_id] = self._user_action(
+                    "user_role",
+                    f"user_role: {email}",
+                    f"You want to change the role of {email}: {brief['role']} -> {role}.{warning}\n\n"
+                    "Reply `approve` within 10 minutes to continue, or `cancel`.",
+                    actor_id,
+                    email=email,
+                    role=role,
+                )
+            self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+
+    def run_user_action(self, chat_id: int, action: dict) -> None:
+        """Run an approved user-management action. Re-checks permission: the approval may come later."""
+        if not self.is_user_admin(chat_id) or action.get("actor_id") != chat_id:
+            self.send_message(chat_id, "You are not allowed to manage users.")
+            return
+        actor = action["actor"]
+        kind = action["type"]
+        if kind == "user_add":
+            self.run_job(chat_id, action["name"], lambda: create_user_invite_job(action["email"], action["role"], actor), action_type=kind)
+        elif kind == "user_role":
+            self.run_job(chat_id, action["name"], lambda: set_user_role_job(action["email"], action["role"], actor), action_type=kind)
+        elif kind == "user_disable":
+            self.run_job(chat_id, action["name"], lambda: disable_user_job(action["email"], actor), action_type=kind)
+        elif kind == "users_purge":
+            self.run_job(chat_id, action["name"], lambda: purge_disabled_users_job(actor), action_type=kind)
 
     def build_approve_all_drafts_action(self) -> dict:
         try:
@@ -821,6 +995,8 @@ class TelegramBot:
             self.run_job(chat_id, action["name"], lambda: delete_article_job(action["target"]), action_type=action_type)
         elif action_type == "delete_clinic":
             self.run_job(chat_id, action["name"], lambda: delete_clinic_job(action["target"]), action_type=action_type)
+        elif action_type in {"user_add", "user_role", "user_disable", "users_purge"}:
+            self.run_user_action(chat_id, action)
         elif action_type == "approve_all_draft_clinics":
             self.run_job(chat_id, action["name"], approve_all_draft_clinics_job, action_type=action_type)
         elif action_type == "approve_clinic":
@@ -1016,8 +1192,12 @@ class TelegramBot:
         else:
             self.send_message(chat_id, "I do not know how to run this action yet. Please send a clearer request.")
 
-    def handle_command(self, chat_id: int, text: str) -> None:
+    def handle_command(self, chat_id: int, text: str, user_id: Optional[int] = None) -> None:
         command = text.split()[0].split("@")[0].lower()
+
+        if command in USER_COMMANDS:
+            self.handle_user_command(chat_id, command, text, user_id)
+            return
 
         if command in {"/start", "/help"}:
             self.send_message(chat_id, self.help_text())
@@ -1437,6 +1617,13 @@ class TelegramBot:
                 self.send_message(chat_id, msg)
                 return
 
+            if action.get("expires_at") and time.time() > action["expires_at"]:
+                self.send_message(
+                    chat_id,
+                    f"That request expired ({action.get('name') or action.get('type')}). Nothing was changed; send the command again.",
+                )
+                return
+
             action_name = action.get("name") or action.get("type", "job")
             start_msg = f"Approval received. Starting: {action_name}" if intent_res.lang != "vi" else f"Đã xác nhận. Bắt đầu thực thi: {action_name}"
             self.send_message(chat_id, start_msg)
@@ -1536,7 +1723,7 @@ class TelegramBot:
                         continue
 
                     if text.startswith("/"):
-                        self.handle_command(chat_id, text)
+                        self.handle_command(chat_id, text, user_id=user_id)
                     else:
                         self.handle_chat(chat_id, text)
             except KeyboardInterrupt:

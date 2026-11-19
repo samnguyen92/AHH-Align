@@ -92,6 +92,9 @@ export async function GET(request: Request) {
     let userId: string;
 
     if (existing.rows.length > 0) {
+      if (existing.rows[0].disabled_at) {
+        return NextResponse.redirect(new URL('/auth/login?error=This+account+has+been+disabled', request.url));
+      }
       userId = existing.rows[0].id;
       // Update Google metadata
       const currentMeta = existing.rows[0].raw_user_meta_data || {};
@@ -115,6 +118,8 @@ export async function GET(request: Request) {
         [userId]
       );
     }
+
+    pool.query('UPDATE auth.users SET last_sign_in_at = NOW() WHERE id = $1', [userId]).catch(() => undefined);
 
     // 4. Fetch role
     const roleRes = await pool.query('SELECT role FROM public.user_roles WHERE user_id = $1', [userId]);

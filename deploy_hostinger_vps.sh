@@ -63,6 +63,16 @@ echo "[*] Building and starting Docker services (PostgreSQL 16 + Next.js + OpenC
 docker compose down || true
 docker compose up -d --build
 
+# 4b. Apply SQL migrations (idempotent: safe on every deploy). New databases already get them from
+#     postgres/init, but an existing database only changes through these files.
+echo "[*] Applying database migrations..."
+for f in postgres/migrations/*.sql; do
+    [ -e "$f" ] || continue
+    echo "    $f"
+    docker compose exec -T db psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-asian_health_hub}" \
+        -v ON_ERROR_STOP=1 -q < "$f"
+done
+
 # 5. Check container statuses & wait for web server to be ready
 echo "[*] Waiting for services to become ready..."
 docker compose ps
