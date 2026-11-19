@@ -7,6 +7,8 @@ export interface AdminClinicRow {
   name: string;
   specialty: string;
   status: string;
+  /** The clinic's publication state: draft (hidden, awaiting review), published or archived (hidden). */
+  publishStatus: string;
   slug: string;
 }
 
@@ -85,7 +87,9 @@ function countWords(content: string | null | undefined) {
   return text ? text.split(' ').length : 0;
 }
 
-function clinicStatus(clinic: Pick<Clinic, 'is_claimed' | 'claimed_by'>) {
+function clinicStatus(clinic: Pick<Clinic, 'is_claimed' | 'claimed_by' | 'status'>) {
+  if (clinic.status === 'draft') return 'Draft';
+  if (clinic.status === 'archived') return 'Archived';
   if (clinic.is_claimed || clinic.claimed_by) return 'Verified';
   return 'Active';
 }
@@ -97,6 +101,7 @@ function mapClinic(clinic: Clinic): AdminClinicRow {
     name: clinic.name,
     specialty: clinic.specialty ?? 'Primary Care',
     status: clinicStatus(clinic),
+    publishStatus: clinic.status ?? 'published',
     slug: clinic.slug,
   };
 }

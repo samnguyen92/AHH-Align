@@ -3,7 +3,7 @@ audit_directory.py — Track C (Our Own Data Audit & Bucket Backfill) + Track E 
 
 Provides:
   1. audit_directory_coverage(): Full entity/field/tag coverage report, business type breakdown,
-     price tier distribution, and top insurance networks across all clinics in Supabase.
+     price tier distribution, and top insurance networks across all clinics in PostgreSQL.
   2. discover_directory_gaps(limit=10): Identifies underserved (City x Specialty x Language)
      combinations weighted by metro priority and real pageview demand, returning ready-to-run
      Google Places scout queries.
@@ -53,7 +53,7 @@ CORE_SPECIALTIES = [
 CORE_LANGUAGES = ["Vietnamese", "Korean", "Mandarin"]
 
 
-def _get_supabase():
+def _get_db():
     return create_client()
 
 
@@ -69,8 +69,8 @@ def _has_lang(langs: List[str], target: str) -> bool:
 
 
 def audit_directory_coverage() -> Dict[str, Any]:
-    """Run Track C audit across all clinics in Supabase."""
-    sb = _get_supabase()
+    """Run Track C audit across all clinics in PostgreSQL."""
+    sb = _get_db()
     rows = (
         sb.table("clinics")
         .select("id, slug, name, org_id, address, city, state, zip_code, phone, specialty, languages, is_telehealth_available, metadata")
@@ -192,7 +192,7 @@ def discover_directory_gaps(limit: int = 10) -> List[Dict[str, Any]]:
     Track E: Identify underserved (City, State, Specialty, Language) combinations
     weighted by metro priority and real pageview demand.
     """
-    sb = _get_supabase()
+    sb = _get_db()
     rows = (
         sb.table("clinics")
         .select("city, state, specialty, languages")
@@ -263,7 +263,7 @@ def format_directory_gaps_report(limit: int = 10) -> str:
 
 def backfill_directory_buckets(apply: bool = False) -> Dict[str, int]:
     """Backfill normalized insurance buckets, price_tier, open_weekend, and search_keywords on all clinics."""
-    sb = _get_supabase()
+    sb = _get_db()
     rows = sb.table("clinics").select("*").execute().data or []
     updated = 0
     for row in rows:
@@ -320,10 +320,10 @@ BENCHMARK_30_QUERIES = [
 
 def benchmark_search_queries() -> Dict[str, Any]:
     """
-    Track D: Run 30 real patient queries against the Supabase clinics index
+    Track D: Run 30 real patient queries against the PostgreSQL clinics index
     comparing Legacy Search (name/address only) vs Deep Search (intent + metadata.search_text).
     """
-    sb = _get_supabase()
+    sb = _get_db()
     rows = sb.table("clinics").select("name,specialty,description,address,city,languages,metadata").execute().data or []
 
     results = []
@@ -401,7 +401,7 @@ def format_search_benchmark_report() -> str:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Audit directory coverage, discover gaps, or backfill buckets.")
     parser.add_argument("--backfill-buckets", action="store_true", help="Backfill insurance/price/weekend/search buckets")
-    parser.add_argument("--apply", action="store_true", help="Write backfill updates to Supabase")
+    parser.add_argument("--apply", action="store_true", help="Write backfill updates to PostgreSQL")
     parser.add_argument("--gaps", action="store_true", help="Print top underserved (City x Specialty x Language) gaps")
     parser.add_argument("--benchmark-search", action="store_true", help="Run the 30-query search benchmark")
     args = parser.parse_args()

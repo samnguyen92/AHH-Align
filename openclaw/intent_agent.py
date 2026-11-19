@@ -159,9 +159,9 @@ ALLOWED ACTIONS:
   parameters: {"target": str}
 - repair_article_slugs: Convert non-ASCII article slugs to ASCII safe slugs.
   parameters: {}
-- delete_article: Delete one article from Supabase.
+- delete_article: Delete one article from PostgreSQL.
   parameters: {"target": str}
-- delete_clinic: Delete one clinic from Supabase.
+- delete_clinic: Delete one clinic from PostgreSQL.
   parameters: {"target": str}
 - change_clinic_feature_image: Change or rotate feature image of a clinic.
   parameters: {"target": str, "image_url": str or null}
@@ -179,6 +179,18 @@ ALLOWED ACTIONS:
   parameters: {"urls": list[str]}
 - multi_agent_research: Run multi-agent research pipeline on a topic.
   parameters: {"request": str}
+- list_drafts: List clinics waiting for review (status draft). New clinics found by the scout are saved as drafts and are NOT visible on the website until approved. Does NOT require approval.
+  English phrases: "show drafts", "clinics waiting for review", "what is pending review".
+  Vietnamese phrases: "xem các clinic nháp", "clinic nào đang chờ duyệt", "danh sách nháp".
+  parameters: {"limit": int}
+- approve_clinic: Publish one draft clinic so it becomes visible on the website.
+  English phrases: "approve clinic X", "publish clinic X".
+  Vietnamese phrases: "duyệt clinic X", "đăng clinic X lên web".
+  parameters: {"target": str (slug, id or exact name; the word "all" publishes every draft)}
+- reject_clinic: Archive one clinic (hide it from the website; can be restored).
+  English phrases: "reject clinic X", "archive clinic X".
+  Vietnamese phrases: "từ chối clinic X", "ẩn clinic X".
+  parameters: {"target": str}
 - check_claims: List pending clinic claims & submissions.
   parameters: {}
 - approve_claim: Approve a clinic claim.

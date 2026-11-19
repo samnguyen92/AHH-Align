@@ -251,7 +251,7 @@ def _format_scraped_content(scraped_content: Any) -> str:
 def _with_pipeline_compatibility(extracted: dict) -> dict:
     """
     Preserve UI-first fields while adding aliases expected by the current
-    Supabase insert path and clinic profile components.
+    PostgreSQL insert path and clinic profile components.
     """
     services_offered = extracted.get("services_offered") or []
     services = [

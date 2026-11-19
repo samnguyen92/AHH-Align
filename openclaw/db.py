@@ -128,11 +128,20 @@ def _attach_quality(db_payload: dict) -> None:
     db_payload["metadata"] = metadata
 
 
-def insert_clinic(clinic_data: dict):
+NEW_CLINIC_STATUS = "draft"
+
+
+def insert_clinic(clinic_data: dict, status: str = NEW_CLINIC_STATUS):
     """
     Insert or update clinic data in PostgreSQL.
+
+    A clinic that does not exist yet is created with `status` (default "draft": hidden from the public
+    site until a person approves it). A clinic that ALREADY exists keeps whatever status it has, so
+    re-scraping a published clinic never hides it and never republishes an archived one.
+
+    On success `clinic_data["_saved"]` describes what happened: {"id", "created", "status"}.
     """
-    supabase = create_client()
+    db = create_client()
     
     # Construct DB payload
     slug = generate_slug(clinic_data.get("name", ""))
@@ -210,7 +219,7 @@ def insert_clinic(clinic_data: dict):
     try:
         # Check if clinic already exists by slug (safer than name)
         existing = (
-            supabase.table("clinics")
+            db.table("clinics")
             .select("id, metadata, description, address, city, state, zip_code, phone, specialty, languages")
             .eq("slug", slug)
             .execute()
@@ -241,11 +250,23 @@ def insert_clinic(clinic_data: dict):
             db_payload["id"] = existing_row["id"]
             db_payload["metadata"] = merged_metadata
             _attach_quality(db_payload)
-            response = supabase.table("clinics").upsert(db_payload).execute()
+            db_payload.pop("status", None)  # never touch the status of an existing clinic
+            response = db.table("clinics").upsert(db_payload).execute()
+            clinic_data["_saved"] = {
+                "id": db_payload["id"],
+                "created": False,
+                "status": (response.data[0].get("status") if response.data else None),
+            }
             print(f"[*] Updated existing clinic in DB: {db_payload['name']}")
         else:
             _attach_quality(db_payload)
-            response = supabase.table("clinics").insert(db_payload).execute()
+            db_payload["status"] = status
+            response = db.table("clinics").insert(db_payload).execute()
+            clinic_data["_saved"] = {
+                "id": db_payload["id"],
+                "created": True,
+                "status": status,
+            }
             print(f"[*] Inserted new clinic into DB: {db_payload['name']}")
         print(f"[*] Quality score: {db_payload['metadata'].get('quality_score')}/100; missing: {', '.join(db_payload['metadata'].get('quality_missing') or []) or 'none'}")
             

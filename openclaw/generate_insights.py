@@ -13,7 +13,7 @@ from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, quote
 import urllib.request
 from openai import OpenAI
-from supabase import create_client, Client
+from pg_client import PGClient as Client, create_client
 from dotenv import load_dotenv
 from storage import upload_image_value
 from progress import report_progress
@@ -503,12 +503,12 @@ def save_generated_image(image_value: Optional[str], slug: str, suffix: str = "h
 
     return ""
 
-def make_unique_slug(supabase: Client, base_slug: str) -> str:
+def make_unique_slug(db: Client, base_slug: str) -> str:
     slug = base_slug
     suffix = 2
 
     while True:
-        existing = supabase.table("articles").select("id").eq("slug", slug).limit(1).execute()
+        existing = db.table("articles").select("id").eq("slug", slug).limit(1).execute()
         if not existing.data:
             return slug
 
@@ -713,8 +713,8 @@ def build_guide_generation_rules(mode: str = "insight") -> str:
     - Do not produce a short draft and rely on later expansion. The first response should already satisfy the minimum word count.
     """
 
-def pick_topic(supabase: Client) -> str:
-    existing = supabase.table("articles").select("title").execute().data or []
+def pick_topic(db: Client) -> str:
+    existing = db.table("articles").select("title").execute().data or []
     existing_titles = {row["title"].strip().lower() for row in existing if row.get("title")}
 
     for topic in DEFAULT_TOPICS:
@@ -723,8 +723,8 @@ def pick_topic(supabase: Client) -> str:
 
     return f"Asian American Healthcare Guide {datetime.now().strftime('%Y-%m-%d %H%M')}"
 
-def pick_trending_topic(client: OpenAI, supabase: Client, mode: str = "insight") -> str:
-    existing = supabase.table("articles").select("title").execute().data or []
+def pick_trending_topic(client: OpenAI, db: Client, mode: str = "insight") -> str:
+    existing = db.table("articles").select("title").execute().data or []
     existing_titles = [row["title"] for row in existing if row.get("title")]
     content_type = "SEO insight article" if mode == "insight" else "pillar guide"
 
@@ -761,11 +761,11 @@ def pick_trending_topic(client: OpenAI, supabase: Client, mode: str = "insight")
     except Exception as exc:
         print(f"[!] Could not pick trending topic via AI, using default topic: {exc}")
 
-    return pick_topic(supabase)
+    return pick_topic(db)
 
 def create_article(topic: Optional[str] = None):
     print("[*] Start generate blog.")
-    client, supabase = create_clients()
+    client, db = create_clients()
     raw_requested_topic = (topic or os.environ.get("OPENCLAW_ARTICLE_TOPIC") or "").strip()
     requested_topic = clean_requested_topic(raw_requested_topic, mode="insight")
     if requested_topic:
@@ -775,15 +775,15 @@ def create_article(topic: Optional[str] = None):
         print("[*] Getting topic for blog...")
     else:
         print("[*] Getting topic for blog...")
-    topic = requested_topic or pick_trending_topic(client, supabase, mode="insight")
+    topic = requested_topic or pick_trending_topic(client, db, mode="insight")
     print(f"[*] Blog topic selected: {topic}")
     print("[*] Building blog prompt...")
     prompt = build_topic_prompt(topic, mode="insight")
-    create_article_from_prompt(client, supabase, prompt, topic, mode="insight")
+    create_article_from_prompt(client, db, prompt, topic, mode="insight")
 
 def create_guide(topic: Optional[str] = None):
     print("[*] Start generate guide.")
-    client, supabase = create_clients()
+    client, db = create_clients()
     raw_requested_topic = (topic or os.environ.get("OPENCLAW_GUIDE_TOPIC") or "").strip()
     requested_topic = clean_requested_topic(raw_requested_topic, mode="guide")
     if requested_topic:
@@ -793,11 +793,11 @@ def create_guide(topic: Optional[str] = None):
         print("[*] Getting topic for guide...")
     else:
         print("[*] Getting topic for guide...")
-    topic = requested_topic or pick_trending_topic(client, supabase, mode="guide")
+    topic = requested_topic or pick_trending_topic(client, db, mode="guide")
     print(f"[*] Guide topic selected: {topic}")
     print("[*] Building guide prompt...")
     prompt = build_topic_prompt(topic, mode="guide")
-    create_article_from_prompt(client, supabase, prompt, topic, mode="guide")
+    create_article_from_prompt(client, db, prompt, topic, mode="guide")
 
 def create_clients():
     client = OpenAI(
@@ -805,12 +805,9 @@ def create_clients():
         api_key=os.environ.get("OPENROUTER_API_KEY"),
     )
 
-    supabase: Client = create_client(
-        os.environ.get("NEXT_PUBLIC_SUPABASE_URL"),
-        os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    )
+    db: Client = create_client()
 
-    return client, supabase
+    return client, db
 
 def build_topic_prompt(topic: str, mode: str = "insight") -> str:
     trust_rules = build_trust_and_culture_rules(mode)
@@ -1961,7 +1958,7 @@ def generate_article_sections_data(
 
 def create_article_from_prompt(
     client: OpenAI,
-    supabase: Client,
+    db: Client,
     prompt: str,
     label: str,
     mode: str = "insight",
@@ -1985,7 +1982,7 @@ def create_article_from_prompt(
         data["content"] = enforce_verified_references(data["content"], evidence)
         
         base_slug = generate_slug(data["title"])
-        slug = make_unique_slug(supabase, base_slug)
+        slug = make_unique_slug(db, base_slug)
         if slug != base_slug:
             print(f"[*] Slug already existed. Using unique slug: {slug}")
 
@@ -2020,12 +2017,13 @@ def create_article_from_prompt(
             "seo_meta": seo_meta
         }
 
-        print(f"[*] Publishing article to Supabase: {data['title']}")
-        res = supabase.table("articles").insert(article_payload).execute()
+        print(f"[*] Saving article to the database: {data['title']}")
+        res = db.table("articles").insert(article_payload).execute()
         print(f"[+] Article published successfully: /insights/{slug}")
 
     except Exception as e:
         print(f"[!] Error: {e}")
+        raise  # let the job runner report the failure instead of a fake "finished"
 
 def rewrite_article(identifier: str, instruction: str) -> None:
     from admin_actions import find_one_by_identifier
@@ -2039,8 +2037,8 @@ def rewrite_article(identifier: str, instruction: str) -> None:
         print("[!] Missing rewrite instruction.")
         return
 
-    client, supabase = create_clients()
-    article = find_one_by_identifier(supabase, "articles", identifier)
+    client, db = create_clients()
+    article = find_one_by_identifier(db, "articles", identifier)
     if not article:
         print(f"[!] Article not found: {identifier}")
         return
@@ -2092,7 +2090,7 @@ def rewrite_article(identifier: str, instruction: str) -> None:
         updated_seo_meta["og_image"] = image_urls[0]
         updated_seo_meta["images"] = image_urls
 
-    supabase.table("articles").update(
+    db.table("articles").update(
         {
             "title": data.get("title") or article.get("title"),
             "excerpt": data.get("excerpt") or article.get("excerpt"),
@@ -2462,12 +2460,12 @@ def create_article_from_context(reference_text: str, instruction: str, reference
         print("[!] Missing reference context for article generation.")
         return
 
-    client, supabase = create_clients()
+    client, db = create_clients()
     prompt = build_context_prompt(reference_label, reference_text, instruction, mode=mode)
     seed_urls = re.findall(r"https?://\S+", reference_text)
     create_article_from_prompt(
         client,
-        supabase,
+        db,
         prompt,
         instruction or reference_label,
         mode=mode,
@@ -2490,11 +2488,11 @@ def create_article_from_url_with_mode(source_url: str, mode: str = "insight"):
         print("[!] Could not extract readable text from source URL.")
         return
 
-    client, supabase = create_clients()
+    client, db = create_clients()
     prompt = build_source_url_prompt(source_url, source_text, mode=mode)
     create_article_from_prompt(
         client,
-        supabase,
+        db,
         prompt,
         source_url,
         mode=mode,

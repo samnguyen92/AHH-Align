@@ -5,15 +5,19 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 from dotenv import load_dotenv
-from openai import OpenAI
 
 from ai_agent import ask_openclaw_agent
 from agent_prompt import OPENCLAW_AGENT_SYSTEM_PROMPT
-from intent_agent import run_intent_agent, IntentResult
+from intent_agent import run_intent_agent
 from jobs import (
+    JobFailed,
+    approve_all_draft_clinics_job,
+    approve_clinic_job,
+    list_draft_clinics_job,
+    reject_clinic_job,
     check_status,
     delete_article_job,
     delete_clinic_job,
@@ -76,7 +80,6 @@ MAX_MESSAGE_LENGTH = 3900
 MAX_JOB_OUTPUT_CHUNKS = int(os.environ.get("TELEGRAM_MAX_JOB_OUTPUT_CHUNKS", "12"))
 MAX_MEMORY_CHARS = int(os.environ.get("OPENCLAW_MEMORY_MAX_CHARS", "60000"))
 MEMORY_PATH = os.path.join(os.path.dirname(__file__), "telegram_memory.json")
-INTENT_MODEL = os.environ.get("OPENCLAW_INTENT_MODEL", "deepseek/deepseek-v4-flash")
 
 
 class TelegramBot:
@@ -420,8 +423,12 @@ class TelegramBot:
                     self.send_message(chat_id, self.format_content_job_message(name, summary))
                 else:
                     self.send_long_message(chat_id, summary, max_chunks=MAX_JOB_OUTPUT_CHUNKS)
+            except JobFailed as exc:
+                print(f"[!] Telegram job failed: {name}")
+                self.send_message(chat_id, f"❌ {name} failed.\n\n{exc.short()}\n\nUse /tail for the full log.")
             except Exception as exc:
-                print(f"[!] Telegram job thread failed for {name}: {exc}")
+                print(f"[!] Telegram job thread crashed for {name}: {exc!r}")
+                self.send_message(chat_id, f"❌ {name} crashed: {exc}")
             finally:
                 clear_progress_callback()
                 self.running_jobs.pop(name, None)
@@ -435,13 +442,16 @@ class TelegramBot:
             "OpenClaw AI Agent\n"
             "You can chat naturally. The bot will analyze your request, summarize the planned action, and only run the job after you reply `approve`.\n\n"
             "Commands\n"
-            "/status - check env, Supabase counts, and log path\n"
+            "/status - check env, PostgreSQL counts, and log path\n"
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
             "/find_clinics <query> | [limit] - scout Google Places, scrape websites, extract clinic data, and save new clinics\n"
             "/inspect_clinic <name|slug> - inspect an existing clinic on our website (languages, gallery, sections, i18n)\n"
             "/rescan_clinic <name|slug> - deep re-scan & re-extract all fields/photos/i18n of an existing clinic via gpt-6-luna\n"
             "/rescan_all_clinics [limit] - rescan & enrich all clinics in the directory\n"
             "/scrape_clinic_url <clinic name> | <url> - scrape one known clinic website and save/update it\n"
+            "/drafts [limit] - list clinics waiting for review (new clinics start as drafts, hidden from the website)\n"
+            "/approve_clinic <slug|id|name|all> - publish a draft clinic (or all drafts)\n"
+            "/reject_clinic <slug|id|name> - archive a clinic so it is hidden from the website\n"
             "/clinic_quality [threshold] - show clinic data quality scores and lowest-scoring clinics\n"
             "/directory_audit - show Track C entity/field/insurance/price coverage & Track E supply gaps\n"
             "/search_audit - run the Track D 30-query search benchmark suite\n"
@@ -449,7 +459,7 @@ class TelegramBot:
             "/web_edit <instruction> - ask the Autonomous Web-Dev Agent to edit UI/design/code in src/\n"
             "/seo_audit [route] - audit Next.js metadata, JSON-LD schema, headings, alt tags, and DB SEO\n"
             "/seo_setup <instruction> - ask the SEO Agent to code/update metadata, JSON-LD, or sitemaps\n"
-            "/site_analyze [route] - run deep Playwright UX/speed probe + Supabase conversion funnel analysis\n"
+            "/site_analyze [route] - run deep Playwright UX/speed probe + PostgreSQL conversion funnel analysis\n"
             "/preview [route] - capture live Desktop & Mobile screenshots of a page\n"
             "/dev_diff - view uncommitted code changes in src/ and public/\n"
             "/publish [commit msg] - typecheck, git commit & push to GitHub main, and rebuild live web container\n"
@@ -502,47 +512,6 @@ class TelegramBot:
             "[*] Press Ctrl+C to stop."
         )
 
-    def is_approval(self, text: str) -> bool:
-        normalized = text.strip().lower()
-        return normalized in {
-            "approve",
-            "approved",
-            "yes",
-            "y",
-            "ok",
-            "okay",
-            "confirm",
-            "run",
-            "go",
-            "đúng",
-            "dung",
-            "duyệt",
-            "duyet",
-            "xác nhận",
-            "xac nhan",
-            "chạy",
-            "chay",
-        }
-
-    def is_rejection(self, text: str) -> bool:
-        normalized = text.strip().lower()
-        return normalized in {
-            "cancel",
-            "no",
-            "n",
-            "stop",
-            "không",
-            "khong",
-            "hủy",
-            "huy",
-            "thôi",
-            "thoi",
-        }
-
-    def extract_url(self, text: str) -> Optional[str]:
-        urls = self.extract_urls(text)
-        return urls[0] if urls else None
-
     def extract_urls(self, text: str) -> list[str]:
         matches = re.findall(r"https?://[^\s\"'<>]+", text)
         urls = []
@@ -554,805 +523,21 @@ class TelegramBot:
 
         return urls
 
-    def wants_guide_request(self, normalized: str) -> bool:
-        return any(
-            keyword in normalized
-            for keyword in ["guide", "pillar", "chuyên sâu", "chuyen sau", "hướng dẫn", "huong dan", "2000"]
-        )
-
-    def wants_content_request(self, normalized: str) -> bool:
-        return any(
-            keyword in normalized
-            for keyword in [
-                "generate",
-                "create",
-                "write",
-                "viết",
-                "viet",
-                "tạo",
-                "tao",
-                "insight",
-                "blog",
-                "article",
-                "bài",
-                "bai",
-                "content",
-                "guide",
-                "pillar",
-                "research",
-                "nghiên cứu",
-                "nguyên cứu",
-                "nghien cuu",
-                "nguyen cuu",
-                "tìm hiểu",
-                "tim hieu",
-            ]
-        )
-
-    def wants_rewrite_request(self, normalized: str) -> bool:
-        return any(
-            keyword in normalized
-            for keyword in [
-                "rewrite",
-                "revise",
-                "edit article",
-                "update article",
-                "regenerate article",
-                "regenerate blog",
-                "viết lại",
-                "viet lai",
-                "chỉnh sửa",
-                "chinh sua",
-                "sửa bài",
-                "sua bai",
-                "cập nhật bài",
-                "cap nhat bai",
-                "rewrite bài",
-                "rewrite bai",
-            ]
-        )
-
-    def wants_regenerate_article_images_request(self, normalized: str) -> bool:
-        has_image_word = any(word in normalized for word in ["image", "images", "photo", "photos", "hình", "hinh", "ảnh", "anh"])
-        has_article_word = any(word in normalized for word in ["article", "blog", "insight", "bài viết", "bai viet", "bài", "bai"])
-        has_change_word = any(
-            word in normalized
-            for word in [
-                "change",
-                "replace",
-                "regenerate",
-                "update image",
-                "update photo",
-                "thay đổi",
-                "thay doi",
-                "đổi hình",
-                "doi hinh",
-                "đổi ảnh",
-                "doi anh",
-                "tạo lại hình",
-                "tao lai hinh",
-                "tạo lại ảnh",
-                "tao lai anh",
-                "regenerate image",
-                "regenerate photo",
-            ]
-        )
-        return has_image_word and has_article_word and has_change_word
-
-    def extract_rewrite_target(self, text: str) -> Optional[str]:
-        stripped = text.strip()
-        quoted = re.findall(r'"([^"]+)"|“([^”]+)”|' + r"'([^']+)'", stripped)
-        for groups in quoted:
-            value = next((item for item in groups if item), "").strip()
-            if value:
-                return value
-
-        lowered = stripped.lower()
-        markers = ["bài ", "bai ", "article ", "blog ", "insight "]
-        start = -1
-        for marker in markers:
-            index = lowered.find(marker)
-            if index >= 0:
-                start = index + len(marker)
-                break
-
-        if start < 0:
-            return None
-
-        tail = stripped[start:].strip()
-        for separator in [",", "，", " - ", " – ", " — ", " với ", " voi ", " theo yêu cầu", " theo yeu cau"]:
-            sep_index = tail.lower().find(separator)
-            if sep_index > 0:
-                return tail[:sep_index].strip(" :.-")
-
-        return tail.strip(" :.-") or None
-
-    def wants_research_request(self, normalized: str) -> bool:
-        return any(
-            keyword in normalized
-            for keyword in [
-                "research",
-                "nghiên cứu",
-                "nguyên cứu",
-                "nghien cuu",
-                "nguyen cuu",
-                "tìm hiểu sâu",
-                "tim hieu sau",
-                "báo cáo",
-                "bao cao",
-                "phân tích nguồn",
-                "phan tich nguon",
-                "đa tác nhân",
-                "da tac nhan",
-                "multi-agent",
-                "multi agent",
-                "tìm thông tin",
-                "tim thong tin",
-            ]
-        )
-
-    def clean_research_request(self, text: str) -> str:
-        normalized = text.strip()
-        lowered = normalized.lower()
-
-        for marker in [" về ", " ve ", " about ", " topic "]:
-            index = lowered.find(marker)
-            if index >= 0:
-                return normalized[index + len(marker):].strip(" :.-") or normalized
-
-        prefixes = [
-            "nghiên cứu",
-            "nguyên cứu",
-            "nghien cuu",
-            "nguyen cuu",
-            "research",
-            "tìm hiểu sâu",
-            "tim hieu sau",
-            "làm báo cáo nghiên cứu",
-            "lam bao cao nghien cuu",
-        ]
-        for prefix in prefixes:
-            if lowered.startswith(prefix):
-                cleaned = normalized[len(prefix):].strip(" :.-")
-                return cleaned or normalized
-
-        return normalized
-
-    def wants_auto_topic_request(self, normalized: str) -> bool:
-        return any(
-            keyword in normalized
-            for keyword in [
-                "trend",
-                "trending",
-                "xu hướng",
-                "xu huong",
-                "hot topic",
-                "tự động",
-                "tu dong",
-                "tự chọn",
-                "tu chon",
-                "mới nhất",
-                "moi nhat",
-            ]
-        )
-
-    def looks_like_generic_content_topic(self, text: str) -> bool:
-        normalized = re.sub(r"https?://\S+", " ", text or "")
-        normalized = re.sub(r"[^0-9A-Za-zÀ-ỹ\s/-]", " ", normalized)
-        normalized = re.sub(r"\s+", " ", normalized).strip().lower()
-        if not normalized:
-            return True
-
-        generic_phrases = {
-            "write an guide insight for me",
-            "write a guide for me",
-            "write an insight for me",
-            "write a blog for me",
-            "generate guide for me",
-            "generate insight for me",
-            "generate blog for me",
-            "create guide for me",
-            "create insight for me",
-            "viet 1 bai insight blog cho toi",
-            "viet mot bai insight blog cho toi",
-            "viet mot bai guide cho toi",
-            "tao mot bai guide cho toi",
-            "tao mot bai insight cho toi",
-            "viết 1 bài insight blog cho tôi",
-            "viết một bài insight blog cho tôi",
-            "viết một bài guide cho tôi",
-            "tạo một bài guide cho tôi",
-            "tạo một bài insight cho tôi",
-        }
-        if normalized in generic_phrases:
-            return True
-
-        filler_words = {
-            "a", "an", "the", "one", "mot", "một", "me", "my", "for", "to", "cho", "toi", "tôi",
-            "giup", "giúp", "please", "pls", "article", "bai", "bài", "blog", "content",
-            "guide", "huong", "hướng", "dan", "dẫn", "insight", "pillar", "post", "write",
-            "create", "generate", "tao", "tạo", "viet", "viết",
-        }
-        words = re.findall(r"[0-9A-Za-zÀ-ỹ]+", normalized)
-        meaningful_words = [word for word in words if word not in filler_words and not word.isdigit()]
-        return len(meaningful_words) == 0
-
-    def wants_memory_reference(self, normalized: str) -> bool:
-        return any(
-            keyword in normalized
-            for keyword in [
-                "dựa trên thông tin này",
-                "dua tren thong tin nay",
-                "dựa trên kết quả này",
-                "dua tren ket qua nay",
-                "dựa trên research",
-                "dua tren research",
-                "dựa trên báo cáo",
-                "dua tren bao cao",
-                "based on this",
-                "from this",
-                "từ thông tin này",
-                "tu thong tin nay",
-                "thông tin trên",
-                "thong tin tren",
-            ]
-        )
-
-    def extract_json_payload(self, content: str) -> dict:
-        content = content.strip()
-        if "```json" in content:
-            content = content.split("```json", 1)[1].split("```", 1)[0].strip()
-        elif content.startswith("```"):
-            content = content.split("```", 1)[1].split("```", 1)[0].strip()
-
-        return json.loads(content, strict=False)
-
-    def clean_content_topic(self, text: str, mode: str) -> Optional[str]:
-        normalized = text.strip()
-        lowered = normalized.lower()
-
-        if self.wants_auto_topic_request(lowered):
-            return None
-
-        for marker in [" về ", " ve ", " about ", " topic "]:
-            index = lowered.find(marker)
-            if index >= 0:
-                candidate = normalized[index + len(marker):].strip(" :.-")
-                return None if self.looks_like_generic_content_topic(candidate) else candidate
-
-        prefixes = [
-            "viết 1 bài insight blog",
-            "viet 1 bai insight blog",
-            "viết một bài insight blog",
-            "viet mot bai insight blog",
-            "tạo một bài insight",
-            "tao mot bai insight",
-            "viết một bài insight",
-            "viet mot bai insight",
-            "generate insight",
-            "create insight",
-            "write insight",
-            "tạo một bài blog",
-            "tao mot bai blog",
-            "viết một bài blog",
-            "viet mot bai blog",
-            "generate blog",
-            "create blog",
-            "write blog",
-            "tạo một bài guide",
-            "tao mot bai guide",
-            "viết một bài guide",
-            "viet mot bai guide",
-            "generate guide",
-            "create guide",
-            "write guide",
-            "write a guide",
-            "write an guide",
-        ]
-        for prefix in prefixes:
-            if lowered.startswith(prefix):
-                cleaned = normalized[len(prefix):].strip(" :.-")
-                return None if self.looks_like_generic_content_topic(cleaned) else cleaned
-
-        if mode == "guide" and lowered in {"viết một bài guide cho tôi", "viet mot bai guide cho toi", "write a guide"}:
-            return None
-
-        return None if self.looks_like_generic_content_topic(normalized) else normalized
-
-    def analyze_request_with_worker(
-        self,
-        text: str,
-        pending_action: Optional[dict] = None,
-        memory: Optional[dict] = None,
-    ) -> Optional[dict]:
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            return None
-
-        system_prompt = """
-You are OpenClaw Intent Analyzer, a specialized worker.
-Your only job is to convert one Telegram message into a structured backend intent.
-Return ONLY valid JSON. Do not answer the user.
-
-Allowed actions:
-- chat
-- web_edit
-- seo_audit
-- seo_setup
-- site_analyze
-- publish_code
-- rollback_code
-- generate_insight
-- generate_guide
-- generate_pulse
-- generate_insight_from_urls
-- generate_guide_from_urls
-- generate_insight_from_memory
-- generate_guide_from_memory
-- repair_clinic_images
-- enrich_clinics_google
-- repair_article_images
-- regenerate_article_images
-- repair_article_slugs
-- delete_article
-- delete_clinic
-- change_clinic_feature_image
-- newsletter_list
-- newsletter_add
-- newsletter_remove
-- check_claims
-- approve_claim
-- reject_claim
-- rewrite_article
-- run_batch
-- find_clinics
-- scrape_clinic_url
-- multi_agent_research
-- check_analytics
-- stats_question
-- stats_report
-
-Rules:
-- Decision priority:
-  00a. If the user asks for a detailed stats report, full report, or charts (e.g., "báo cáo chi tiết", "xuất báo cáo", "full stats report", "biểu đồ thống kê"), choose `stats_report`. Put any scope or period argument in `query`.
-  00b. If the user asks any question about website stats, traffic, views, sessions, number of articles/posts, number of clinics, zero-result searches, internal SEO score, or site metrics (e.g., "thống kê tuần này", "view hôm nay", "có bao nhiêu bài viết", "bao nhiêu phòng khám", "post nào hot nhất", "traffic ra sao", "seo thế nào", "stats website"), choose `stats_question`. Put the full user request in `question`.
-  0a. If the user asks to edit, modify, redesign, fix, add, or remove any UI element, section, form, button, hero, navbar, footer, layout, CSS, or page on the website (e.g., "edit homepage, xóa form question ở hero", "sửa giao diện trang chủ", "đổi màu nút", "sửa trang search"), choose `web_edit`. Do NOT choose `delete_article`, `delete_clinic`, or `chat` when the user is talking about editing a webpage/UI component!
-  0b. If the user asks to audit/check SEO, choose `seo_audit`. If the user asks to setup, add, or optimize SEO tags/schema/metadata/sitemap in code, choose `seo_setup`.
-  0c. If the user asks to analyze the website's performance/UX/funnel ("analyze website", "phân tích trang web"), choose `site_analyze`.
-  0d. If the user asks to publish/push code changes to GitHub or deploy/update live ("publish lên github", "push code", "update lên live"), choose `publish_code`. If they ask to revert/undo code edits ("rollback", "hoàn tác code"), choose `rollback_code`.
-  0. If the user asks to see, check, view, list, print, or report analytics, visitor stats, traffic numbers, search queries, or clinic click counts, choose check_analytics.
-  1. If the user asks to scrape, add, import, save, or create a clinic/directory profile from one exact clinic website URL, choose scrape_clinic_url.
-  2. If the user asks to change, replace, update, regenerate, or "thay đổi" images/photos for one specific article/blog/insight, choose regenerate_article_images.
-  3. If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, choose rewrite_article.
-  4. If memory is available and the user asks to write/create a blog, article, insight, or guide based on previous/current research/report/content, choose generate_insight_from_memory or generate_guide_from_memory.
-- If the user asks to write/create/generate a newsletter, pulse, or monthly update/bản tin tháng/bản tin/pulse, choose generate_pulse.
-- If the user asks to perform NEW research/investigation/source gathering, choose multi_agent_research.
-  6. If the user asks for an insight/blog/article without referring to memory, choose generate_insight unless they ask for guide/pillar/deep guide.
-  7. If the user asks for a guide/pillar/chuyên sâu without referring to memory, choose generate_guide.
-- The word "nghiên cứu" does NOT automatically mean multi_agent_research. In "dựa trên nội dung nghiên cứu để viết bài blog", the user wants content from memory, not new research.
-- If the user says research/nghiên cứu/nguyên cứu/tìm hiểu/báo cáo and asks to gather/analyze/find sources, action is multi_agent_research.
-- If the user asks for a guide/pillar/chuyên sâu, action is generate_guide.
-- If URLs are present for article/blog/guide content requests, use *_from_urls action and include all URLs.
-- If a URL is a clinic website and the user asks to scrape, add, import, save, or create a clinic profile/directory record from that URL, choose scrape_clinic_url. Do not use article/guide URL actions for clinic profile ingestion.
-- If the user asks to delete/remove/xoá an article/blog/insight, action is delete_article and target is the clean id, slug, or title.
-- If the user asks to delete/remove/xoá a clinic/directory profile, action is delete_clinic and target is the clean id, slug, or clinic name.
-- If the user asks to change, replace, swap, rotate, update, or "thay đổi" the feature image/main image/hình nền/ảnh đại diện/ảnh đại diện của clinic/phòng khám for a specific clinic, action is change_clinic_feature_image. Target must be the clinic id, slug, or name. Extract image_url if provided.
-- If the user asks to see, check, print, or list the newsletter subscribers list (e.g. 'kiểm tra newsletter list', 'danh sách newsletter'), choose newsletter_list. Extract limit if provided.
-- If the user asks to manually add, subscribe, or register an email to the newsletter, choose newsletter_add. Extract target or the email address as query or urls[0].
-- If the user asks to remove, unsubscribe, or delete an email from the newsletter, choose newsletter_remove. Extract target or the email address as query or urls[0].
-- If the user asks to see, check, print, list, or view pending clinic claims, submissions, or requests (e.g., 'check claims', 'kiểm tra claims', 'danh sách claims'), choose check_claims.
-- If the user asks to approve a claim request or submission (e.g., 'approve claim <id>', 'duyệt claim <id>'), choose approve_claim. Extract the target as the claim ID.
-- If the user asks to reject/deny a claim request or submission (e.g., 'reject claim <id>', 'từ chối claim <id>'), choose reject_claim. Extract the target as the claim ID.
-- If the user asks to rewrite, revise, update, edit, improve, regenerate, or "viết lại" an existing article/blog/insight, action is rewrite_article.
-- If the user asks to change/replace/regenerate images/photos for a specific article/blog/insight, action is regenerate_article_images. Target must be the article id, slug, or title.
-- For rewrite_article, target must be the article id, slug, or title. rewrite_instruction must include all requested edits.
-- If the user asks to fix/repair slugs or URL 404 caused by Vietnamese/non-ASCII slugs, action is repair_article_slugs.
-- If the user asks to find, scout, discover, add, or import new clinics from Google Places, action is find_clinics. See find_clinics rules below.
-- If the user asks to scrape/add/import one exact clinic website URL, action is scrape_clinic_url. Extract urls[0] and a clinic name when provided.
-- If the user asks to add Google reviews, Google Maps location, Google rating, or Google photos to clinics, action is enrich_clinics_google.
-- If the user says "based on this", "dựa trên thông tin này", "dựa trên research/báo cáo", or similar, and memory is available, use generate_insight_from_memory or generate_guide_from_memory.
-
-find_clinics rules (IMPORTANT):
-- Extract a clean English-language search query. ALWAYS translate to English (e.g., "tiếng Việt" → Vietnamese, "tiếng Hàn" → Korean, "bệnh viện" → hospital, "nha khoa" → dental clinic).
-- CRITICAL: Asian Health Hub is a US-based directory. ALL clinic searches are for the United States ONLY.
-  - If the user does NOT mention a specific US city/state, ALWAYS append "in the United States" to the query.
-  - If the user mentions a US city/state (e.g., "tại Houston", "ở San Jose", "in California"), use that location instead of "in the United States".
-  - NEVER produce a query without a US geographic anchor — this prevents results from Vietnam, Korea, China, etc.
-- Example query translations:
-  - "hospital nói tiếng Việt ở Mỹ" → "Vietnamese speaking hospital in the United States"
-  - "bệnh viện nói tiếng Hàn" → "Korean speaking hospital in the United States"
-  - "5 nha khoa nói tiếng Việt tại San Jose" → "Vietnamese speaking dental clinic in San Jose"
-  - "phòng khám nói tiếng Hoa ở California" → "Chinese speaking clinic in California"
-- Extract required_languages as an English list if the user specifies a language (e.g., tiếng Việt → ["Vietnamese"], tiếng Hàn → ["Korean"], tiếng Hoa/tiếng Tàu → ["Chinese"], tiếng Tagalog → ["Tagalog"], tiếng Nhật → ["Japanese"]).
-- Extract facility_types as a Google Places type list when the user specifies a facility kind:
-    hospital/bệnh viện → ["hospital"]
-    dental/nha khoa/nha sĩ → ["dental_clinic"]
-    clinic/phòng khám/bác sĩ → ["medical_clinic"]
-    pharmacy/nhà thuốc → ["pharmacy"]
-    eye/mắt/optometrist → ["optometrist"]
-    mental health/tâm lý → ["psychologist"]
-  Leave facility_types as [] if no specific type is mentioned.
-- Examples:
-  - "tìm 5 hospital nói tiếng Hàn" → query "Korean speaking hospital in the United States", required_languages ["Korean"], facility_types ["hospital"], limit 5.
-  - "scrape 3 nha khoa nói tiếng Việt tại San Jose" → query "Vietnamese speaking dental clinic in San Jose", required_languages ["Vietnamese"], facility_types ["dental_clinic"], limit 3.
-  - "tìm phòng khám nói tiếng Việt" → query "Vietnamese speaking clinic in the United States", required_languages ["Vietnamese"], facility_types ["medical_clinic"], limit 1.
-  - "vui lòng scrape 5 hospital có thể nói tiếng việt ở mỹ" → query "Vietnamese speaking hospital in the United States", required_languages ["Vietnamese"], facility_types ["hospital"], limit 5.
-
-General examples:
-  - "viết lại bài Navigating Seasonal Flu and COVID-19 Vaccines..., loại bỏ table content ở đầu bài blog, thêm 2 reference và thêm bản so sánh với American culture" => rewrite_article, target "Navigating Seasonal Flu and COVID-19 Vaccines...", rewrite_instruction includes removing opening table, adding 2 references, adding comparison with American culture.
-  - "thay đổi hình ảnh cho bài viết \"Colorectal Cancer Screening...\"" => regenerate_article_images, target "Colorectal Cancer Screening..."
-  - "thay feature image của clinics \"Advanced Skin Treatment Center : JEFFREY LAUBER, MD\"" => change_clinic_feature_image, target "Advanced Skin Treatment Center : JEFFREY LAUBER, MD"
-  - "kiểm tra newsletter list" => newsletter_list
-  - "thêm subscriber abc@gmail.com" => newsletter_add, query "abc@gmail.com"
-  - "xóa subscriber xyz@gmail.com" => newsletter_remove, query "xyz@gmail.com"
-  - "kiểm tra claims" => check_claims
-  - "duyệt claim 123-abc" => approve_claim, target "123-abc"
-  - "từ chối claim 456-def" => reject_claim, target "456-def"
-  - "dựa trên nội dung nghiên cứu để viết bài blog" + memory available => generate_insight_from_memory, use_memory true.
-  - "dựa trên báo cáo này viết guide chuyên sâu" + memory available => generate_guide_from_memory, use_memory true.
-  - "nghiên cứu về Top 10 phòng khám nói tiếng Việt tại San Jose" => multi_agent_research.
-  - "tạo một bài insight về Top 10 phòng khám nói tiếng Việt tại San Jose" => generate_insight.
-- Extract the clean topic, not the whole command. Example: "tạo một bài insight về Top 10 phòng khám nói tiếng Việt tại San Jose" => topic "Top 10 phòng khám nói tiếng Việt tại San Jose".
-- If the user says trend/trending/xu hướng/tự chọn/mới nhất without a specific topic, set topic to null.
-- If the message is greeting/small talk/general question, action is chat.
-- If uncertain, action is chat with confidence below 0.6.
-- If there is a pending action and the new message expresses a different backend action, return the new action. The bot will replace the pending action.
-""".strip()
-        user_prompt = f"""
-Pending action, if any:
-{json.dumps(pending_action or {}, ensure_ascii=False)}
-
-Latest chat memory, if any:
-{json.dumps(self.memory_for_prompt(memory), ensure_ascii=False)}
-
-Memory available:
-{bool(memory and memory.get("text"))}
-
-Telegram message:
-{text}
-
-Return JSON:
-{{
-  "action": "generate_insight",
-  "confidence": 0.0,
-  "query": null,
-  "required_languages": [],
-  "facility_types": [],
-  "topic": null,
-  "target": null,
-  "urls": [],
-  "clinic_name": null,
-  "use_memory": false,
-  "limit": null,
-  "rewrite_instruction": null,
-  "timeframe": "week",
-  "filter_type": "all",
-  "reason": "short internal reason"
-}}
-""".strip()
-
+    def build_approve_all_drafts_action(self) -> dict:
         try:
-            client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=api_key,
-                timeout=30,
-            )
-            response = client.chat.completions.create(
-                model=INTENT_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0,
-                max_tokens=500,
-            )
-            data = self.extract_json_payload(response.choices[0].message.content)
-            return self.intent_data_to_action(data, text, memory)
-        except Exception as exc:
-            print(f"[!] Intent Analyzer worker failed, falling back to local parser: {exc}")
-            return None
+            from admin_actions import count_draft_clinics
 
-    def memory_for_prompt(self, memory: Optional[dict]) -> dict:
-        if not memory:
-            return {}
-
-        text = memory.get("text") or ""
+            count_text = str(count_draft_clinics())
+        except Exception as exc:  # the confirmation must still work if the count fails
+            print(f"[!] Could not count draft clinics: {exc!r}")
+            count_text = "all"
         return {
-            "type": memory.get("type"),
-            "name": memory.get("name"),
-            "created_at": memory.get("created_at"),
-            "text_excerpt": text[-8000:],
-        }
-
-    def build_memory_content_action(self, instruction: str, memory: dict, mode: str) -> Optional[dict]:
-        if not memory or not memory.get("text"):
-            return None
-
-        is_guide = mode == "guide"
-        action_type = "generate_guide_from_memory" if is_guide else "generate_insight_from_memory"
-        action_name = "generate_guide_from_memory" if is_guide else "generate_insight_from_memory"
-        content_label = "in-depth Pillar Guide of about 3000 words" if is_guide else "SEO Insight of about 1200-1500 words"
-        memory_name = memory.get("name") or "latest saved result"
-
-        return {
-            "type": action_type,
-            "name": f"{action_name}: {memory_name[:48]}",
-            "instruction": instruction,
-            "reference_label": memory_name,
-            "reference_text": memory["text"],
+            "type": "approve_all_draft_clinics",
+            "name": "approve_all_draft_clinics",
             "summary": (
-                f"You want OpenClaw to create one {content_label} based on the latest saved memory/result, correct?\n\n"
-                f"Memory source: {memory_name}\n"
-                f"Request: {instruction}\n\n"
-                "If you approve, OpenClaw will:\n"
-                "1. Use the saved report/result from chat memory as the primary source.\n"
-                "2. Rewrite it into original Asian Health Hub content without copying the source text.\n"
-                "3. Preserve important uncertainties and source notes where relevant.\n"
-                "4. Generate 3-5 supporting images with Gemini image-preview.\n"
-                "5. Publish the article to Supabase.\n\n"
-                "This may call OpenRouter/Gemini and update Supabase data.\n"
-                "Reply `approve` to continue."
-            ),
-        }
-
-    def intent_data_to_action(self, data: dict, original_text: str, memory: Optional[dict] = None) -> Optional[dict]:
-        action = str(data.get("action") or "").strip()
-        confidence = float(data.get("confidence") or 0)
-        urls = data.get("urls") or []
-        if isinstance(urls, str):
-            urls = [urls]
-        urls = [url for url in urls if isinstance(url, str) and url.startswith(("http://", "https://"))]
-
-        if confidence < 0.6 or action in {"chat", "unknown", ""}:
-            return None
-
-        if action == "generate_insight_from_urls" and urls:
-            return self.build_url_content_action(urls, mode="insight")
-        if action == "generate_guide_from_urls" and urls:
-            return self.build_url_content_action(urls, mode="guide")
-        if action == "generate_insight_from_memory":
-            return self.build_memory_content_action(original_text.strip(), memory or {}, mode="insight")
-        if action == "generate_guide_from_memory":
-            return self.build_memory_content_action(original_text.strip(), memory or {}, mode="guide")
-        if action == "generate_insight":
-            topic = data.get("topic")
-            topic = str(topic).strip() if topic else None
-            topic = self.clean_content_topic(topic, mode="insight") if topic else None
-            if data.get("use_memory"):
-                memory_action = self.build_memory_content_action(original_text.strip(), memory or {}, mode="insight")
-                if memory_action:
-                    return memory_action
-            return self.build_topic_content_action(topic, mode="insight")
-        if action == "generate_pulse":
-            topic = data.get("topic")
-            topic = str(topic).strip() if topic else None
-            return self.build_pulse_action(topic)
-        if action == "generate_guide":
-            topic = data.get("topic")
-            topic = str(topic).strip() if topic else None
-            topic = self.clean_content_topic(topic, mode="guide") if topic else None
-            if data.get("use_memory"):
-                memory_action = self.build_memory_content_action(original_text.strip(), memory or {}, mode="guide")
-                if memory_action:
-                    return memory_action
-            return self.build_topic_content_action(topic, mode="guide")
-        if action == "multi_agent_research":
-            return self.build_research_action(self.clean_research_request(original_text))
-        if action == "find_clinics":
-            query = str(data.get("query") or data.get("topic") or data.get("target") or "").strip()
-            limit = self.parse_limit_value(data.get("limit"), default=1)
-            required_languages = [str(l).strip() for l in (data.get("required_languages") or []) if l]
-            facility_types = [str(t).strip() for t in (data.get("facility_types") or []) if t]
-            if query:
-                return self.build_find_clinics_action(query, limit, required_languages=required_languages, facility_types=facility_types)
-        if action == "scrape_clinic_url" and urls:
-            name = str(data.get("clinic_name") or data.get("target") or data.get("topic") or "").strip()
-            return self.build_scrape_clinic_url_action(name, urls[0])
-        if action == "run_batch":
-            return {
-                "type": "run_batch",
-                "name": "run_batch",
-                "summary": (
-                    "You want to run the batch pipeline for the clinic targets configured in `run_batch.py`, correct?\n\n"
-                    "If you approve, OpenClaw will search URLs, scrape websites, extract data, save clinics, and attach images when available.\n"
-                    "This may take time and will update Supabase data. Reply `approve` to continue."
-                ),
-            }
-        if action == "repair_clinic_images":
-            return {
-                "type": "repair_clinic_images",
-                "name": "repair_clinic_images",
-                "summary": (
-                    "You want OpenClaw to repair/generate missing images for clinic directory profiles, correct?\n\n"
-                    "If you approve, OpenClaw will scan the clinics table, generate missing images with Gemini image-preview, "
-                    "and update `clinics.metadata.images` in Supabase.\n\n"
-                    "This may use OpenRouter/Gemini quota. Reply `approve` to continue."
-                ),
-            }
-        if action == "enrich_clinics_google":
-            return {
-                "type": "enrich_clinics_google",
-                "name": "enrich_clinics_google",
-                "summary": (
-                    "You want OpenClaw to enrich clinic profiles with Google Places data, correct?\n\n"
-                    "If you approve, OpenClaw will scan the clinics table, call Google Places API for photos, ratings, "
-                    "review snippets, Google Maps URLs, coordinates, and opening hours, upload photos to Supabase Storage, "
-                    "then update `clinics.metadata` in Supabase.\n\n"
-                    "This requires `GOOGLE_PLACES_API_KEY` and may use Google Maps quota. Reply `approve` to continue."
-                ),
-            }
-        if action == "repair_article_images":
-            return {
-                "type": "repair_article_images",
-                "name": "repair_article_images",
-                "summary": (
-                    "You want OpenClaw to repair/generate missing images for articles/insights, correct?\n\n"
-                    "If you approve, OpenClaw will scan the articles table, generate missing images with Gemini image-preview, "
-                    "and update `articles.seo_meta.og_image` and `articles.seo_meta.images` in Supabase.\n\n"
-                    "Reply `approve` to continue."
-                ),
-            }
-        if action == "regenerate_article_images":
-            target = str(data.get("target") or data.get("topic") or "").strip()
-            if target:
-                return self.build_regenerate_article_images_action(target)
-        if action == "repair_article_slugs":
-            return self.build_repair_article_slugs_action()
-        if action == "delete_article":
-            target = str(data.get("target") or data.get("topic") or "").strip()
-            if target:
-                return self.build_delete_action("article", target)
-        if action == "delete_clinic":
-            target = str(data.get("target") or data.get("topic") or "").strip()
-            if target:
-                return self.build_delete_action("clinic", target)
-        if action == "change_clinic_feature_image":
-            target = str(data.get("target") or data.get("clinic_name") or data.get("topic") or "").strip()
-            urls = data.get("urls") or []
-            image_url = urls[0] if urls else None
-            if target:
-                return self.build_change_clinic_feature_image_action(target, image_url)
-        if action == "newsletter_list":
-            limit = self.parse_limit_value(data.get("limit"), 50)
-            return self.build_newsletter_list_action(limit)
-        if action == "newsletter_add":
-            email = str(data.get("query") or data.get("target") or (data.get("urls")[0] if data.get("urls") else "")).strip()
-            if email:
-                return self.build_newsletter_add_action(email)
-        if action == "newsletter_remove":
-            email = str(data.get("query") or data.get("target") or (data.get("urls")[0] if data.get("urls") else "")).strip()
-            if email:
-                return self.build_newsletter_remove_action(email)
-        if action == "check_claims":
-            return self.build_check_claims_action()
-        if action == "approve_claim":
-            target = str(data.get("target") or data.get("query") or "").strip()
-            if target:
-                return self.build_approve_claim_action(target)
-        if action == "reject_claim":
-            target = str(data.get("target") or data.get("query") or "").strip()
-            if target:
-                return self.build_reject_claim_action(target)
-        if action == "rewrite_article":
-            target = str(data.get("target") or data.get("topic") or "").strip()
-            rewrite_instruction = str(data.get("rewrite_instruction") or original_text).strip()
-            if target:
-                return self.build_rewrite_article_action(target, rewrite_instruction)
-        if action == "check_analytics":
-            timeframe = str(data.get("timeframe") or "week").strip().lower()
-            filter_type = str(data.get("filter_type") or "all").strip().lower()
-            return {
-                "type": "check_analytics",
-                "name": f"check_analytics ({timeframe}, {filter_type})",
-                "timeframe": timeframe,
-                "filter_type": filter_type,
-                "summary": (
-                    f"You want to run the analytics overview report for timeframe '{timeframe}' and filter type '{filter_type.upper()}', correct?\n\n"
-                    "Reply `approve` to start the check."
-                ),
-            }
-        if action == "web_edit":
-            instr = str(data.get("rewrite_instruction") or original_text).strip()
-            return {
-                "type": "web_edit",
-                "name": f"web_edit: {instr[:45]}",
-                "instruction": instr,
-                "image_path": None,
-                "summary": (
-                    f"Bạn muốn **Autonomous Web-Dev Agent** chỉnh sửa giao diện / mã nguồn website theo yêu cầu:\n“{instr}”\n\n"
-                    "Nếu bạn trả lời `approve`, Agent sẽ tự tìm file trong `src/`, thực hiện chỉnh sửa, kiểm tra TypeScript (`npx tsc --noEmit`) và báo cáo kết quả cho bạn trước khi `/publish`."
-                ),
-            }
-        if action == "seo_audit":
-            target_route = str(data.get("target") or "/").strip()
-            if not target_route.startswith("/"):
-                target_route = "/"
-            return {
-                "type": "seo_audit",
-                "name": f"seo_audit ({target_route})",
-                "route": target_route,
-                "summary": (
-                    f"Bạn muốn chạy **Technical SEO Audit** cho `{target_route}`, đúng không?\n\n"
-                    "Trả lời `approve` để bắt đầu."
-                ),
-            }
-        if action == "seo_setup":
-            instr = str(data.get("rewrite_instruction") or original_text).strip()
-            return {
-                "type": "seo_setup",
-                "name": f"seo_setup: {instr[:45]}",
-                "instruction": instr,
-                "summary": (
-                    f"Bạn muốn **SEO Agent** cập nhật cấu hình/mã nguồn SEO theo yêu cầu:\n“{instr}”\n\n"
-                    "Trả lời `approve` để bắt đầu."
-                ),
-            }
-        if action == "site_analyze":
-            return {
-                "type": "site_analyze",
-                "name": "site_analyze (/)",
-                "route": "/",
-                "timeframe": str(data.get("timeframe") or "week").strip().lower(),
-                "summary": (
-                    "Bạn muốn chạy **Deep Website Analyzer** (Playwright kiểm tra tốc độ/bố cục + phân tích phễu chuyển đổi Supabase), đúng không?\n\n"
-                    "Trả lời `approve` để bắt đầu."
-                ),
-            }
-        if action == "publish_code":
-            return {
-                "type": "publish_code",
-                "name": "publish_to_github_and_live",
-                "commit_message": str(data.get("rewrite_instruction") or original_text).strip(),
-                "summary": (
-                    "Bạn muốn kiểm tra TypeScript, commit các thay đổi hiện tại, **push lên GitHub (`origin main`)** và **cập nhật bản Live**, đúng không?\n\n"
-                    "Trả lời `approve` để thực thi."
-                ),
-            }
-        if action == "rollback_code":
-            return {
-                "type": "rollback_code",
-                "name": "rollback_code",
-                "summary": (
-                    "Bạn muốn hoàn tác (`rollback`) toàn bộ các thay đổi chưa commit trong `src/` và `public/`, đúng không?\n\n"
-                    "Trả lời `approve` để thực thi."
-                ),
-            }
-        if action == "stats_question":
-            q = str(data.get("question") or data.get("topic") or data.get("query") or original_text).strip()
-            return {
-                "type": "stats_question",
-                "name": f"stats: {q[:36]}",
-                "question": q,
-                "summary": (
-                    f"Bạn muốn tra cứu số liệu thống kê website cho câu hỏi: “{q}”, đúng không?\n\n"
-                    "Trả lời `approve` để xem số liệu phân tích."
-                ),
-            }
-        if action == "stats_report":
-            arg = str(data.get("query") or data.get("topic") or original_text).strip()
-            return {
-                "type": "stats_report",
-                "name": f"stats_report ({arg[:24] or 'week'})",
-                "arg": arg,
-                "summary": (
-                    "Bạn muốn xuất báo cáo thống kê chi tiết website (kèm biểu đồ và file Markdown), đúng không?\n\n"
-                    "Trả lời `approve` để OpenClaw xuất báo cáo."
-                ),
-            }
-
-        return None
-
-    def build_repair_article_slugs_action(self) -> dict:
-        return {
-            "type": "repair_article_slugs",
-            "name": "repair_article_slugs",
-            "summary": (
-                "You want OpenClaw to convert article slugs with Vietnamese/special characters into URL-safe ASCII slugs, correct?\n\n"
-                "If you approve, OpenClaw will:\n"
-                "1. Scan the articles table.\n"
-                "2. Convert unsafe slugs into ASCII format such as `suc-khoe-tam-than...`.\n"
-                "3. Save old slugs into `seo_meta.legacy_slugs`.\n\n"
-                "This will update Supabase data. Reply `approve` to continue."
+                f"You want to PUBLISH {count_text} draft clinic(s) so they become visible on the website.\n\n"
+                "Some drafts may have UNVERIFIED languages. Review them first with /drafts if you are unsure.\n"
+                "Reply `approve` to publish them, or `cancel`."
             ),
         }
 
@@ -1364,7 +549,7 @@ Return JSON:
             "name": f"{action_type}: {target[:48]}",
             "target": target,
             "summary": (
-                f"You want to delete this {label} from Supabase, correct?\n\n"
+                f"You want to delete this {label} from PostgreSQL, correct?\n\n"
                 f"Target: {target}\n\n"
                 "If you approve, OpenClaw will find exactly one record by id, slug, name, or title, then delete it.\n"
                 "This is a real destructive data operation. Reply `approve` to continue, or `cancel` if you are unsure."
@@ -1387,7 +572,7 @@ Return JSON:
                 "You want OpenClaw to change the feature image for this clinic, correct?\n\n"
                 f"{summary_details}\n"
                 "If you approve, OpenClaw will find the clinic, and update its metadata to set/rotate the feature image.\n"
-                "This will update Supabase data. Reply `approve` to continue."
+                "This will update PostgreSQL data. Reply `approve` to continue."
             ),
         }
 
@@ -1399,7 +584,7 @@ Return JSON:
             "summary": (
                 "You want OpenClaw to retrieve the list of newsletter subscribers, correct?\n\n"
                 f"Limit: {limit} subscribers\n\n"
-                "If you approve, OpenClaw will query Supabase and print the list of email subscribers with timestamps.\n"
+                "If you approve, OpenClaw will query PostgreSQL and print the list of email subscribers with timestamps.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1436,7 +621,7 @@ Return JSON:
             "name": "check_claims",
             "summary": (
                 "You want OpenClaw to check pending profile claims and submissions, correct?\n\n"
-                "If you approve, OpenClaw will query Supabase and print all pending clinic claim requests and new profile submissions.\n"
+                "If you approve, OpenClaw will query PostgreSQL and print all pending clinic claim requests and new profile submissions.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1449,7 +634,7 @@ Return JSON:
             "summary": (
                 "You want to approve this clinic claim request or submission, correct?\n\n"
                 f"Target Request/Submission ID: {target}\n\n"
-                "If you approve, OpenClaw will mark the request as approved and link/create the clinic in Supabase.\n"
+                "If you approve, OpenClaw will mark the request as approved and link/create the clinic in PostgreSQL.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1462,7 +647,7 @@ Return JSON:
             "summary": (
                 "You want to reject this clinic claim request or submission, correct?\n\n"
                 f"Target Request/Submission ID: {target}\n\n"
-                "If you approve, OpenClaw will mark the request as rejected in Supabase.\n"
+                "If you approve, OpenClaw will mark the request as rejected in PostgreSQL.\n"
                 "Reply `approve` to continue."
             ),
         }
@@ -1483,115 +668,9 @@ Return JSON:
                 "3. Regenerate the article according to the requested edits above.\n"
                 "4. Save the current article as a historical version in `seo_meta.versions`.\n"
                 "5. Keep the current slug/URL and publish the rewrite as the next version, such as v2 or v3.\n"
-                "6. Update content, excerpt, tags, and SEO metadata in Supabase.\n\n"
-                "This may call OpenRouter and update Supabase data.\n"
+                "6. Update content, excerpt, tags, and SEO metadata in PostgreSQL.\n\n"
+                "This may call OpenRouter and update PostgreSQL data.\n"
                 "Reply `approve` to continue. Send a new request if you want to change the edit instructions."
-            ),
-        }
-
-    def build_regenerate_article_images_action(self, target: str, image_count: int = 3) -> dict:
-        return {
-            "type": "regenerate_article_images",
-            "name": f"regenerate_article_images: {target[:48]}",
-            "target": target,
-            "image_count": image_count,
-            "summary": (
-                "You want OpenClaw to replace the images for one specific article/insight, correct?\n\n"
-                f"Target article: {target}\n"
-                f"New images: {image_count} photorealistic editorial healthcare photos\n\n"
-                "If you approve, OpenClaw will:\n"
-                "1. Find the article by id, slug, or exact title.\n"
-                "2. Generate new photorealistic images with Gemini image-preview.\n"
-                "3. Replace `articles.seo_meta.og_image` and `articles.seo_meta.images` for that article.\n"
-                "4. Keep the old image URLs in `seo_meta.previous_images` for rollback/reference.\n\n"
-                "This will update Supabase data and use OpenRouter/Gemini quota. Reply `approve` to continue."
-            ),
-        }
-
-    def build_url_content_action(self, urls: Union[str, list[str]], mode: str) -> dict:
-        if isinstance(urls, str):
-            url_list = [urls]
-        else:
-            url_list = urls
-
-        is_guide = mode == "guide"
-        is_batch = len(url_list) > 1
-        action_type = "generate_guide_from_urls" if is_guide and is_batch else "generate_guide_from_url" if is_guide else "generate_insight_from_urls" if is_batch else "generate_insight_from_url"
-        action_name = action_type
-        content_label = "in-depth Pillar Guide of about 3000 words" if is_guide else "SEO Insight of about 1200-1500 words"
-        url_lines = "\n".join(f"- {url}" for url in url_list)
-        count_label = f"{len(url_list)} articles" if is_batch else "one article"
-
-        return {
-            "type": action_type,
-            "name": f"{action_name}: {len(url_list)} urls" if is_batch else f"{action_name}: {url_list[0][:48]}",
-            "url": url_list[0],
-            "urls": url_list,
-            "summary": (
-                f"You want OpenClaw to create {count_label} {content_label} from the reference URL(s), correct?\n\n"
-                f"URLs:\n{url_lines}\n\n"
-                "If you approve, OpenClaw will:\n"
-                "1. Process each URL sequentially to avoid overload/quota spikes.\n"
-                "2. Scrape each reference page.\n"
-                "3. Use AI to analyze the key healthcare concepts.\n"
-                "4. Write original Asian Health Hub content without copying wording, headings, or source structure.\n"
-                "5. Generate 3-5 supporting images with Gemini image-preview.\n"
-                "6. Publish the article(s) to Supabase.\n\n"
-                "This may call OpenRouter/Gemini and update Supabase data.\n"
-                "Reply `approve` to continue, or send a new request if you want changes."
-            ),
-        }
-
-    def build_topic_content_action(self, topic: Optional[str], mode: str) -> dict:
-        is_guide = mode == "guide"
-        action_type = "generate_guide" if is_guide else "generate_insight"
-        action_name = "generate_guide" if is_guide else "generate_insight"
-        content_label = "in-depth Pillar Guide of about 3000 words" if is_guide else "SEO Insight of about 1200-1500 words"
-        topic_label = topic or "OpenClaw will choose a suitable topic"
-
-        return {
-            "type": action_type,
-            "name": action_name if not topic else f"{action_name}: {topic[:48]}",
-            "topic": topic,
-            "summary": (
-                f"You want OpenClaw to create one {content_label}, correct?\n\n"
-                f"Topic: {topic_label}\n\n"
-                "If you approve, OpenClaw will choose/generate metadata when needed, search trusted health sources for verified references, generate content from those references, generate 3-5 images, create a unique slug, and publish it to Supabase.\n"
-                "Reply `approve` to continue. If you want to use reference URLs, send them before approving."
-            ),
-        }
-
-    def build_pulse_action(self, topic: Optional[str]) -> dict:
-        topic_summary = f"with topic focus: '{topic}'" if topic else "with an automated/general topic focus"
-        return {
-            "type": "generate_pulse",
-            "name": f"generate_pulse: {topic[:48]}" if topic else "generate_pulse",
-            "topic": topic,
-            "summary": (
-                f"You want OpenClaw to generate a new AHH Pulse newsletter issue {topic_summary}, correct?\n\n"
-                "If you approve, OpenClaw will automatically fetch recently verified clinics to spotlight, "
-                "draft an informative health advice column via LLM, generate a matching cover image, "
-                "and insert the published issue into Supabase.\n"
-                "Reply `approve` to continue."
-            ),
-        }
-
-    def build_research_action(self, user_request: str) -> dict:
-        return {
-            "type": "multi_agent_research",
-            "name": f"multi_agent_research: {user_request[:48]}",
-            "request": user_request,
-            "summary": (
-                "You want OpenClaw to run the automated multi-agent research pipeline for this request, correct?\n\n"
-                f"Request: {user_request}\n\n"
-                "If you approve, OpenClaw will run the 5-role pipeline:\n"
-                "1. Search Planner: analyze intent and create optimized search queries.\n"
-                "2. Batch Link Selector: choose the strongest 10-12 sources from the result pool.\n"
-                "3. Sub-link Extractor: drill into list/hub pages for specific article links.\n"
-                "4. Fact Extractor: scrape detail pages and extract rolling fact sheets.\n"
-                "5. Final Editor: synthesize the final sourced report.\n\n"
-                "This may call OpenRouter multiple times, search the web, scrape websites, and take several minutes.\n"
-                "Reply `approve` to continue."
             ),
         }
 
@@ -1620,46 +699,6 @@ Return JSON:
                 query = payload[: match.start()].strip()
 
         return query, limit
-
-    def build_find_clinics_action(
-        self,
-        query: str,
-        limit: int = 1,
-        required_languages: list = None,
-        facility_types: list = None,
-    ) -> dict:
-        limit = self.parse_limit_value(limit, default=1)
-        required_languages = [l for l in (required_languages or []) if l]
-        facility_types = [t for t in (facility_types or []) if t]
-
-        filter_lines = []
-        if required_languages:
-            filter_lines.append(f"Language filter: {', '.join(required_languages)}")
-        if facility_types:
-            filter_lines.append(f"Facility type filter: {', '.join(facility_types)}")
-        filter_summary = ("\n" + "\n".join(filter_lines)) if filter_lines else ""
-
-        return {
-            "type": "find_clinics",
-            "name": f"find_clinics: {query[:48]}",
-            "query": query,
-            "limit": limit,
-            "required_languages": required_languages,
-            "facility_types": facility_types,
-            "summary": (
-                "You want OpenClaw to scout Google Places for new clinics, correct?\n\n"
-                f"Query: {query}\n"
-                f"Limit: {limit}"
-                + filter_summary
-                + "\n\nFilters active:\n"
-                + (f"• Only clinics mentioning {', '.join(required_languages)} on their website will be saved.\n" if required_languages else "")
-                + (f"• Google Places results restricted to type: {', '.join(facility_types)}.\n" if facility_types else "")
-                + "• Spas, nail salons, restaurants, gyms, and other non-medical places are automatically rejected.\n\n"
-                "If you approve, OpenClaw will search Google Places, skip clinics already in Supabase, scrape official websites, "
-                "extract strict source-grounded clinic data, enrich with Google metadata/images, and save new clinics.\n\n"
-                "This may call Google Places, OpenRouter/Gemini, scrape websites, and update Supabase. Reply `approve` to continue."
-            ),
-        }
 
     def infer_clinic_name_from_url(self, url: str) -> str:
         domain = urllib.parse.urlparse(url).netloc.lower()
@@ -1696,372 +735,17 @@ Return JSON:
 
         return name, url
 
-    def build_scrape_clinic_url_action(self, name: str, url: str) -> dict:
-        clinic_name = (name or "").strip() or self.infer_clinic_name_from_url(url)
-        return {
-            "type": "scrape_clinic_url",
-            "name": f"scrape_clinic_url: {clinic_name[:48]}",
-            "clinic_name": clinic_name,
-            "url": url,
-            "summary": (
-                "Bạn muốn OpenClaw scrape một clinic từ URL chính xác này, đúng không?\n\n"
-                f"Clinic: {clinic_name}\n"
-                f"URL: {url}\n\n"
-                "Nếu bạn duyệt, OpenClaw sẽ scrape website này, trích xuất dữ liệu clinic có kiểm chứng từ nội dung nguồn, "
-                "enrich bằng Google Places/images, rồi save hoặc update clinic trong Supabase.\n\n"
-                "Việc này có thể gọi OpenRouter/Gemini, Google Places, scrape website và cập nhật Supabase. Reply `approve` để chạy."
-            ),
-        }
-
-    def analyze_request(
-        self,
-        text: str,
-        pending_action: Optional[dict] = None,
-        memory: Optional[dict] = None,
-    ) -> Optional[dict]:
-        normalized = text.strip().lower()
-        urls = self.extract_urls(text)
-        url = urls[0] if urls else None
-        wants_guide = self.wants_guide_request(normalized)
-        wants_content = self.wants_content_request(normalized)
-        wants_research = self.wants_research_request(normalized)
-        wants_auto_topic = self.wants_auto_topic_request(normalized)
-        wants_rewrite = self.wants_rewrite_request(normalized)
-        wants_regenerate_article_images = self.wants_regenerate_article_images_request(normalized)
-
-        if wants_regenerate_article_images:
-            target = self.extract_rewrite_target(text)
-            if target:
-                return self.build_regenerate_article_images_action(target)
-
-        if urls and (
-            ("clinic" in normalized or "directory" in normalized or "profile" in normalized or "phòng khám" in normalized or "phong kham" in normalized)
-            and (
-                "scrape" in normalized
-                or "crawl" in normalized
-                or "import" in normalized
-                or "add" in normalized
-                or "save" in normalized
-                or "create" in normalized
-                or "thêm" in normalized
-                or "them" in normalized
-                or "lưu" in normalized
-                or "luu" in normalized
-                or "cào" in normalized
-                or "cao" in normalized
-            )
-        ):
-            name, clinic_url = self.parse_scrape_clinic_url_payload(text)
-            if clinic_url:
-                return self.build_scrape_clinic_url_action(name, clinic_url)
-
-        worker_action = self.analyze_request_with_worker(text, pending_action, memory)
-        if worker_action:
-            return worker_action
-
-        if wants_rewrite:
-            target = self.extract_rewrite_target(text)
-            if target:
-                return self.build_rewrite_article_action(target, text.strip())
-
-        stats_keywords = ("thống kê", "thong ke", "stats", "traffic", "lưu lượng", "luu luong", "lượt xem", "luot xem", "truy cập", "truy cap", "báo cáo website", "bao nhiêu bài viết", "bao nhiêu phòng khám")
-        if any(kw in normalized for kw in stats_keywords) and not wants_rewrite and not ("edit" in normalized or "xóa" in normalized or "xoa" in normalized or "sửa" in normalized or "sua" in normalized):
-            if "chi tiết" in normalized or "detail" in normalized or "biểu đồ" in normalized or "bieu do" in normalized or "report" in normalized:
-                return {
-                    "type": "stats_report",
-                    "name": "Báo cáo thống kê chi tiết website",
-                    "summary": "Tôi sẽ xuất báo cáo thống kê chi tiết (kèm biểu đồ và file Markdown). Gõ `approve` để tiến hành.",
-                    "arg": text,
-                }
-            return {
-                "type": "stats_question",
-                "name": f"Thống kê: {text[:36]}",
-                "summary": f"Tôi sẽ tra cứu số liệu website cho câu hỏi: “{text}”. Gõ `approve` để tiến hành.",
-                "question": text,
-            }
-
-        if self.wants_memory_reference(normalized) and memory:
-            mode = "guide" if wants_guide else "insight"
-            return self.build_memory_content_action(text.strip(), memory, mode=mode)
-
-        if wants_research:
-            return self.build_research_action(self.clean_research_request(text))
-
-        if (
-            ("find" in normalized or "scout" in normalized or "discover" in normalized or "import" in normalized or "add" in normalized)
-            and ("clinic" in normalized or "clinics" in normalized or "phòng khám" in normalized or "phong kham" in normalized)
-            and ("google" in normalized or "places" in normalized or "near" in normalized or "in " in normalized)
-        ):
-            query = re.sub(r"\b(find|scout|discover|import|add)\b", "", text, flags=re.IGNORECASE).strip(" :.-")
-            query, limit = self.parse_find_clinics_payload(query)
-            if query:
-                return self.build_find_clinics_action(query, limit)
-
-        if pending_action:
-            pending_urls = pending_action.get("urls") or ([pending_action["url"]] if pending_action.get("url") else [])
-            pending_type = pending_action.get("type")
-
-            if wants_guide and pending_urls:
-                return self.build_url_content_action(pending_urls, mode="guide")
-
-            if urls and pending_type in {"generate_guide", "generate_guide_from_url", "generate_guide_from_urls"}:
-                return self.build_url_content_action(urls, mode="guide")
-
-            if urls and pending_type in {"generate_insight", "generate_insight_from_url", "generate_insight_from_urls"}:
-                mode = "guide" if wants_guide else "insight"
-                return self.build_url_content_action(urls, mode=mode)
-
-        if url and (
-            "insight" in normalized
-            or "blog" in normalized
-            or "article" in normalized
-            or "bài" in normalized
-            or "bai" in normalized
-            or "content" in normalized
-            or "url" in normalized
-            or "dựa trên" in normalized
-            or "dua tren" in normalized
-            or "tham khảo" in normalized
-            or "tham khao" in normalized
-            or wants_guide
-        ):
-            return self.build_url_content_action(urls, mode="guide" if wants_guide else "insight")
-
-        if "repair" in normalized and ("clinic" in normalized or "directory" in normalized) and "image" in normalized:
-            return {
-                "type": "repair_clinic_images",
-                "name": "repair_clinic_images",
-                "summary": (
-                    "You want OpenClaw to repair/generate missing images for clinic directory profiles, correct?\n\n"
-                    "If you approve, OpenClaw will scan the clinics table, generate missing images with Gemini image-preview, "
-                    "and update `clinics.metadata.images` in Supabase.\n\n"
-                    "This may use OpenRouter/Gemini quota. Reply `approve` to continue."
-                ),
-            }
-
-        if (
-            ("google" in normalized or "maps" in normalized)
-            and ("clinic" in normalized or "directory" in normalized or "phòng khám" in normalized or "phong kham" in normalized)
-            and (
-                "review" in normalized
-                or "rating" in normalized
-                or "image" in normalized
-                or "hình" in normalized
-                or "hinh" in normalized
-                or "location" in normalized
-                or "map" in normalized
-                or "địa điểm" in normalized
-                or "dia diem" in normalized
-            )
-        ):
-            return {
-                "type": "enrich_clinics_google",
-                "name": "enrich_clinics_google",
-                "summary": (
-                    "You want OpenClaw to enrich clinic profiles with Google Places data, correct?\n\n"
-                    "If you approve, OpenClaw will scan the clinics table, call Google Places API for photos, ratings, "
-                    "review snippets, Google Maps URLs, coordinates, and opening hours, upload photos to Supabase Storage, "
-                    "then update `clinics.metadata` in Supabase.\n\n"
-                    "This requires `GOOGLE_PLACES_API_KEY` and may use Google Maps quota. Reply `approve` to continue."
-                ),
-            }
-
-        if "repair" in normalized and ("article" in normalized or "insight" in normalized or "blog" in normalized) and "image" in normalized:
-            return {
-                "type": "repair_article_images",
-                "name": "repair_article_images",
-                "summary": (
-                    "You want OpenClaw to repair/generate missing images for articles/insights, correct?\n\n"
-                    "If you approve, OpenClaw will scan the articles table, generate missing images with Gemini image-preview, "
-                    "and update `articles.seo_meta.og_image` and `articles.seo_meta.images` in Supabase.\n\n"
-                    "Reply `approve` to continue."
-                ),
-            }
-
-        if "run batch" in normalized or "chạy batch" in normalized or "chay batch" in normalized:
-            return {
-                "type": "run_batch",
-                "name": "run_batch",
-                "summary": (
-                    "You want to run the batch pipeline for the clinic targets configured in `run_batch.py`, correct?\n\n"
-                    "If you approve, OpenClaw will search URLs, scrape websites, extract data, save clinics, and attach images when available.\n"
-                    "This may take time and will update Supabase data. Reply `approve` to continue."
-                ),
-            }
-
-        if wants_content and (
-            "insight" in normalized
-            or "article" in normalized
-            or "blog" in normalized
-            or wants_guide
-        ):
-            mode = "guide" if wants_guide else "insight"
-            topic = None if wants_auto_topic else self.clean_content_topic(text, mode)
-
-            return self.build_topic_content_action(topic, mode=mode)
-
-        # Natural language routing for SEO Audit / Setup
-        if "seo" in normalized:
-            if any(w in normalized for w in ["audit", "kiểm tra", "kiem tra", "check", "đánh giá", "danh gia"]):
-                return {
-                    "type": "seo_audit",
-                    "name": "seo_audit",
-                    "route": "/",
-                    "summary": (
-                        "Bạn muốn chạy kiểm toán SEO toàn diện (Metadata, JSON-LD, Heading, Alt, Sitemap & DB SEO), đúng không?\n\n"
-                        "Trả lời `approve` để chạy ngay."
-                    ),
-                }
-            return {
-                "type": "seo_setup",
-                "name": f"seo_setup: {text[:45]}",
-                "instruction": text,
-                "summary": (
-                    f"Bạn muốn **SEO Agent** tự động thiết lập / chỉnh sửa code SEO theo yêu cầu:\n“{text}”\n\n"
-                    "Nếu bạn trả lời `approve`, Agent sẽ đọc mã nguồn `src/app/`, cập nhật Metadata / JSON-LD / Sitemap và kiểm tra TypeScript trước khi báo cáo."
-                ),
-            }
-
-        # Natural language routing for Publish / Push to GitHub & Live
-        if any(
-            phrase in normalized
-            for phrase in [
-                "publish lên github",
-                "publish len github",
-                "đẩy lên github",
-                "day len github",
-                "push lên github",
-                "push len github",
-                "update lên live",
-                "update len live",
-                "deploy live",
-            ]
-        ):
-            return {
-                "type": "publish_code",
-                "name": "publish_to_github_and_live",
-                "commit_message": text,
-                "summary": (
-                    "Bạn muốn kiểm tra TypeScript, commit các thay đổi hiện tại, **push lên GitHub (`origin main`)** và **cập nhật bản Live**, đúng không?\n\n"
-                    "Trả lời `approve` để thực thi."
-                ),
-            }
-
-        # Natural language routing for Deep Website Analysis
-        if any(
-            phrase in normalized
-            for phrase in [
-                "analyze website",
-                "phân tích website",
-                "phan tich website",
-                "kiểm tra website",
-                "kiem tra website",
-                "phân tích trang web",
-                "phan tich trang web",
-                "check analyze",
-            ]
-        ):
-            return {
-                "type": "site_analyze",
-                "name": "site_analyze",
-                "route": "/",
-                "timeframe": "week",
-                "summary": (
-                    "Bạn muốn chạy **Deep Website Analyzer** (Playwright kiểm tra tốc độ/bố cục/ảnh lỗi + phân tích phễu chuyển đổi Supabase), đúng không?\n\n"
-                    "Trả lời `approve` để bắt đầu."
-                ),
-            }
-
-        # Natural language routing for Web-Dev UI / Design / Code Edits
-        has_ui_target = any(
-            t in normalized
-            for t in [
-                "homepage",
-                "trang chủ",
-                "trang chu",
-                "hero",
-                "navbar",
-                "header",
-                "footer",
-                "sidebar",
-                "button",
-                "nút",
-                "form",
-                "section",
-                "layout",
-                "giao diện",
-                "giao dien",
-                "thiết kế",
-                "thiet ke",
-                "css",
-                "font",
-                "spacing",
-                "padding",
-                "margin",
-                "trang search",
-                "trang clinic",
-                "website",
-                "trang web",
-            ]
-        )
-        has_ui_verb = any(
-            v in normalized
-            for v in [
-                "edit",
-                "sửa",
-                "sua",
-                "chỉnh",
-                "chinh",
-                "xóa",
-                "xoa",
-                "bỏ",
-                "bo",
-                "thêm",
-                "them",
-                "đổi",
-                "doi",
-                "cập nhật",
-                "cap nhat",
-                "update",
-                "remove",
-                "fix",
-                "redesign",
-            ]
-        )
-        if (has_ui_target and has_ui_verb) or any(
-            phrase in normalized
-            for phrase in [
-                "edit design",
-                "sửa giao diện",
-                "sua giao dien",
-                "chỉnh sửa trang web",
-                "chinh sua trang web",
-                "sửa thiết kế",
-                "sua thiet ke",
-                "sửa code",
-                "sua code",
-            ]
-        ):
-            return {
-                "type": "web_edit",
-                "name": f"web_edit: {text[:45]}",
-                "instruction": text,
-                "image_path": None,
-                "summary": (
-                    f"Bạn muốn **Autonomous Web-Dev Agent** chỉnh sửa giao diện / mã nguồn theo yêu cầu:\n“{text}”\n\n"
-                    "Nếu bạn trả lời `approve`, Agent sẽ tìm file trong `src/`, áp dụng bản vá, chạy kiểm tra TypeScript (`tsc --noEmit`) và gửi kết quả kèm ảnh chụp màn hình để bạn duyệt trước khi `/publish`."
-                ),
-            }
-
-        return None
-
     def run_url_batch(self, urls: list[str], fn: Callable[[str], str]) -> str:
         outputs = []
         total = len(urls)
 
         for index, url in enumerate(urls, start=1):
             outputs.append(f"===== URL {index}/{total}: {url} =====")
-            outputs.append(fn(url))
+            try:
+                outputs.append(fn(url))
+            except JobFailed as exc:
+                # One bad URL must not abort the rest of the batch.
+                outputs.append(f"❌ FAILED: {exc.short()}")
 
         return "\n\n".join(outputs)
 
@@ -2137,6 +821,12 @@ Return JSON:
             self.run_job(chat_id, action["name"], lambda: delete_article_job(action["target"]), action_type=action_type)
         elif action_type == "delete_clinic":
             self.run_job(chat_id, action["name"], lambda: delete_clinic_job(action["target"]), action_type=action_type)
+        elif action_type == "approve_all_draft_clinics":
+            self.run_job(chat_id, action["name"], approve_all_draft_clinics_job, action_type=action_type)
+        elif action_type == "approve_clinic":
+            self.run_job(chat_id, action["name"], lambda: approve_clinic_job(action["target"]), action_type=action_type)
+        elif action_type == "reject_clinic":
+            self.run_job(chat_id, action["name"], lambda: reject_clinic_job(action["target"]), action_type=action_type)
         elif action_type == "change_clinic_feature_image":
             self.run_job(
                 chat_id,
@@ -2581,6 +1271,29 @@ Return JSON:
             else:
                 self.pending_actions[chat_id] = self.build_delete_action("article", target)
                 self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        elif command == "/drafts":
+            raw_limit = text.removeprefix("/drafts").strip()
+            limit = int(raw_limit) if raw_limit.isdigit() else 20
+            self.run_job(chat_id, "drafts", lambda: list_draft_clinics_job(limit), action_type="drafts")
+        elif command == "/approve_clinic":
+            target = text.removeprefix("/approve_clinic").strip()
+            if not target:
+                self.send_message(chat_id, "Use: /approve_clinic <slug|id|name|all>")
+            elif target.lower() == "all":
+                self.pending_actions[chat_id] = self.build_approve_all_drafts_action()
+                self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+            else:
+                self.run_job(
+                    chat_id, f"approve_clinic: {target[:40]}", lambda: approve_clinic_job(target), action_type="approve_clinic"
+                )
+        elif command == "/reject_clinic":
+            target = text.removeprefix("/reject_clinic").strip()
+            if not target:
+                self.send_message(chat_id, "Use: /reject_clinic <slug|id|name>")
+            else:
+                self.run_job(
+                    chat_id, f"reject_clinic: {target[:40]}", lambda: reject_clinic_job(target), action_type="reject_clinic"
+                )
         elif command == "/delete_clinic":
             target = text.removeprefix("/delete_clinic").strip()
             if not target:
@@ -2749,6 +1462,15 @@ Return JSON:
                 self.pending_actions.pop(chat_id, None)
             target = (intent_res.parameters or {}).get("target") or (intent_res.parameters or {}).get("query") or text
             self.send_message(chat_id, inspect_clinic_job(str(target), lang=intent_res.lang))
+            return
+
+        # 2c. Immediate read-only action: list_drafts (does not require approval)
+        if intent_res.action == "list_drafts":
+            with self._pending_lock:
+                self.pending_actions.pop(chat_id, None)
+            raw_limit = (intent_res.parameters or {}).get("limit")
+            limit = int(raw_limit) if str(raw_limit).isdigit() else 20
+            self.run_job(chat_id, "drafts", lambda: list_draft_clinics_job(limit), action_type="drafts")
             return
 
         # 3. Requires Approval (New Action detected by IntentAgent)

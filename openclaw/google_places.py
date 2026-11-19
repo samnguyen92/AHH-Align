@@ -43,7 +43,8 @@ def request_json(url: str, api_key: str, method: str = "GET", body: Optional[dic
         with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
             return json.loads(response.read().decode("utf-8"))
     except Exception as exc:
-        print(f"[!] Google Places get_place_details failed for {place_id}: {exc}")
+        # Log the URL WITHOUT its query string: photo requests carry the API key there.
+        print(f"[!] Google Places request failed for {url.split('?')[0]}: {exc}")
         return {}
 
 

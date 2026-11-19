@@ -6,7 +6,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from pg_client import create_client
-Client = object
+from pg_client import PGClient as Client
 
 load_dotenv(".env")
 load_dotenv("../.env.local")
@@ -33,12 +33,12 @@ def needs_ascii_slug_repair(slug: str) -> bool:
     return not bool(re.fullmatch(r"[a-z0-9-]+", slug))
 
 
-def make_unique_slug(supabase: Client, table: str, base_slug: str, row_id: str) -> str:
+def make_unique_slug(db: Client, table: str, base_slug: str, row_id: str) -> str:
     slug = base_slug
     suffix = 2
 
     while True:
-        existing = supabase.table(table).select("id").eq("slug", slug).limit(1).execute()
+        existing = db.table(table).select("id").eq("slug", slug).limit(1).execute()
         if not existing.data or existing.data[0]["id"] == row_id:
             return slug
 
@@ -47,8 +47,8 @@ def make_unique_slug(supabase: Client, table: str, base_slug: str, row_id: str) 
 
 
 def repair_article_slugs() -> None:
-    supabase = create_admin_client()
-    rows = supabase.table("articles").select("id,title,slug,seo_meta").execute().data or []
+    db = create_admin_client()
+    rows = db.table("articles").select("id,title,slug,seo_meta").execute().data or []
     repaired = 0
 
     for row in rows:
@@ -57,28 +57,28 @@ def repair_article_slugs() -> None:
         if not needs_ascii_slug_repair(old_slug) and old_slug == base_slug:
             continue
 
-        new_slug = make_unique_slug(supabase, "articles", base_slug, row["id"])
+        new_slug = make_unique_slug(db, "articles", base_slug, row["id"])
         seo_meta = row.get("seo_meta") or {}
         legacy_slugs = seo_meta.get("legacy_slugs") or []
         if old_slug and old_slug not in legacy_slugs:
             legacy_slugs.append(old_slug)
         seo_meta["legacy_slugs"] = legacy_slugs
 
-        supabase.table("articles").update({"slug": new_slug, "seo_meta": seo_meta}).eq("id", row["id"]).execute()
+        db.table("articles").update({"slug": new_slug, "seo_meta": seo_meta}).eq("id", row["id"]).execute()
         repaired += 1
         print(f"[*] Repaired article slug: {old_slug} -> {new_slug}")
 
     print(f"[+] Repaired {repaired} article slugs.")
 
 
-def find_one_by_identifier(supabase: Client, table: str, identifier: str) -> Optional[dict]:
+def find_one_by_identifier(db: Client, table: str, identifier: str) -> Optional[dict]:
     identifier = identifier.strip()
     if not identifier:
         return None
 
     for column in ["id", "slug", "title" if table == "articles" else "name"]:
         try:
-            result = supabase.table(table).select("*").eq(column, identifier).limit(2).execute()
+            result = db.table(table).select("*").eq(column, identifier).limit(2).execute()
             if result.data:
                 if len(result.data) > 1:
                     raise RuntimeError(f"Multiple {table} rows matched {column}={identifier}. Use id or slug.")
@@ -89,7 +89,7 @@ def find_one_by_identifier(supabase: Client, table: str, identifier: str) -> Opt
             raise
 
     name_column = "title" if table == "articles" else "name"
-    result = supabase.table(table).select("*").ilike(name_column, f"%{identifier}%").limit(3).execute()
+    result = db.table(table).select("*").ilike(name_column, f"%{identifier}%").limit(3).execute()
     if not result.data:
         return None
     if len(result.data) > 1:
@@ -100,35 +100,35 @@ def find_one_by_identifier(supabase: Client, table: str, identifier: str) -> Opt
 
 
 def delete_article(identifier: str) -> None:
-    supabase = create_admin_client()
-    row = find_one_by_identifier(supabase, "articles", identifier)
+    db = create_admin_client()
+    row = find_one_by_identifier(db, "articles", identifier)
     if not row:
         print(f"[!] Article not found: {identifier}")
         return
 
     try:
-        supabase.table("article_facts").delete().eq("article_id", row["id"]).execute()
+        db.table("article_facts").delete().eq("article_id", row["id"]).execute()
     except Exception as exc:
         print(f"[!] Could not delete article_facts for article {row['id']}: {exc}")
 
-    supabase.table("articles").delete().eq("id", row["id"]).execute()
+    db.table("articles").delete().eq("id", row["id"]).execute()
     print(f"[+] Deleted article: {row.get('title')} ({row.get('slug')})")
 
 
 def delete_clinic(identifier: str) -> None:
-    supabase = create_admin_client()
-    row = find_one_by_identifier(supabase, "clinics", identifier)
+    db = create_admin_client()
+    row = find_one_by_identifier(db, "clinics", identifier)
     if not row:
         print(f"[!] Clinic not found: {identifier}")
         return
 
-    supabase.table("clinics").delete().eq("id", row["id"]).execute()
+    db.table("clinics").delete().eq("id", row["id"]).execute()
     print(f"[+] Deleted clinic: {row.get('name')} ({row.get('slug')})")
 
 
 def change_clinic_feature_image(identifier: str, image_url: Optional[str] = None) -> None:
-    supabase = create_admin_client()
-    row = find_one_by_identifier(supabase, "clinics", identifier)
+    db = create_admin_client()
+    row = find_one_by_identifier(db, "clinics", identifier)
     if not row:
         print(f"[!] Clinic not found: {identifier}")
         return
@@ -182,17 +182,95 @@ def change_clinic_feature_image(identifier: str, image_url: Optional[str] = None
     metadata["gallery_images"] = gallery_images
 
     try:
-        supabase.table("clinics").update({"metadata": metadata}).eq("id", row["id"]).execute()
+        db.table("clinics").update({"metadata": metadata}).eq("id", row["id"]).execute()
         print(f"[+] Successfully changed feature image for clinic '{row.get('name')}' ({row.get('slug')})")
     except Exception as e:
         print(f"[!] Error updating clinic metadata: {e}")
 
 
+CLINIC_STATUSES = ("draft", "published", "archived")
+
+
+def _clinic_review_line(index: int, row: dict) -> str:
+    meta = row.get("metadata") or {}
+    langs = ", ".join(row.get("languages") or []) or "no languages"
+    verified = meta.get("languages_verified")
+    lang_flag = "verified" if verified else "UNVERIFIED"
+    quality = meta.get("quality_score")
+    quality_text = f"{quality}/100" if quality is not None else "n/a"
+    place = ", ".join(p for p in (row.get("city"), row.get("state")) if p) or "no location"
+    return (
+        f"[{index}] {row.get('name')} — {place} — {row.get('specialty') or 'no specialty'}\n"
+        f"    languages: {langs} ({lang_flag}) | quality: {quality_text}\n"
+        f"    slug: {row.get('slug')} | id: {row.get('id')}"
+    )
+
+
+def count_draft_clinics() -> int:
+    db = create_admin_client()
+    result = db.table("clinics").select("id", count="exact").eq("status", "draft").limit(1).execute()
+    return int(result.count or 0)
+
+
+def list_draft_clinics(limit: int = 20) -> None:
+    """Print clinics waiting for review (status = draft), newest first."""
+    db = create_admin_client()
+    limit = max(1, min(int(limit or 20), 50))
+    result = (
+        db.table("clinics")
+        .select("id, name, slug, city, state, specialty, languages, metadata, created_at", count="exact")
+        .eq("status", "draft")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    rows = result.data or []
+    total = result.count if result.count is not None else len(rows)
+    if not rows:
+        print("[+] No clinics are waiting for review.")
+        return
+    print(f"[*] {total} clinic(s) waiting for review (showing {len(rows)}):\n")
+    for index, row in enumerate(rows, 1):
+        print(_clinic_review_line(index, row))
+    print("\nApprove one: /approve_clinic <slug|id|name>   Approve all: /approve_clinic all")
+    print("Reject one:  /reject_clinic <slug|id|name>   (archives it, can be restored)")
+
+
+def set_clinic_status(identifier: str, new_status: str) -> None:
+    """Change one clinic's status. Matches exactly one clinic by id, slug or name."""
+    if new_status not in CLINIC_STATUSES:
+        raise ValueError(f"Invalid clinic status: {new_status!r}")
+    db = create_admin_client()
+    row = find_one_by_identifier(db, "clinics", identifier)
+    if not row:
+        print(f"[!] Clinic not found: {identifier}")
+        return
+    if row.get("status") == new_status:
+        print(f"[*] '{row.get('name')}' is already {new_status}.")
+        return
+    updated = db.table("clinics").update({"status": new_status}).eq("id", row["id"]).execute()
+    if not updated.data:
+        raise RuntimeError(f"Clinic {row['id']} was not updated")
+    print(f"[+] '{row.get('name')}' ({row.get('slug')}): {row.get('status')} -> {new_status}")
+    if new_status == "published":
+        print(f"    Live at /clinics/{row.get('slug')}")
+
+
+def approve_all_draft_clinics() -> None:
+    """Publish every clinic that is currently a draft."""
+    db = create_admin_client()
+    updated = db.table("clinics").update({"status": "published"}).eq("status", "draft").execute()
+    names = [row.get("name") for row in (updated.data or [])]
+    print(f"[+] Published {len(names)} clinic(s).")
+    for name in names[:30]:
+        print(f"    - {name}")
+
+
 def list_newsletter_subscribers(limit: int = 50) -> None:
-    supabase = create_admin_client()
+    db = create_admin_client()
     try:
         res = (
-            supabase.table("newsletter_subscriptions")
+            db.table("newsletter_subscriptions")
             .select("email, created_at")
             .order("created_at", desc=True)
             .limit(limit)
@@ -214,9 +292,9 @@ def add_newsletter_subscriber(email: str) -> None:
         print(f"[!] Invalid email address: {email}")
         return
 
-    supabase = create_admin_client()
+    db = create_admin_client()
     try:
-        supabase.table("newsletter_subscriptions").insert({"email": email}).execute()
+        db.table("newsletter_subscriptions").insert({"email": email}).execute()
         print(f"[+] Successfully subscribed email: {email}")
     except Exception as e:
         if hasattr(e, "code") and e.code == "23505":
@@ -233,26 +311,26 @@ def remove_newsletter_subscriber(email: str) -> None:
         print("[!] Email is required to unsubscribe.")
         return
 
-    supabase = create_admin_client()
+    db = create_admin_client()
     try:
-        existing = supabase.table("newsletter_subscriptions").select("id").eq("email", email).execute()
+        existing = db.table("newsletter_subscriptions").select("id").eq("email", email).execute()
         if not existing.data:
             print(f"[!] Email '{email}' not found in subscribers list.")
             return
 
-        supabase.table("newsletter_subscriptions").delete().eq("email", email).execute()
+        db.table("newsletter_subscriptions").delete().eq("email", email).execute()
         print(f"[+] Successfully unsubscribed email: {email}")
     except Exception as e:
         print(f"[!] Error unsubscribing email {email}: {e}")
 
 
 def check_claims() -> None:
-    supabase = create_admin_client()
+    db = create_admin_client()
     try:
         # Get claim requests (claim of existing profile)
         try:
             claims_res = (
-                supabase.table("claim_requests")
+                db.table("claim_requests")
                 .select("id, status, proof_type, notes, created_at, user_id, clinic_id, clinics(name)")
                 .eq("status", "pending")
                 .order("created_at", desc=True)
@@ -261,7 +339,7 @@ def check_claims() -> None:
             claims = claims_res.data or []
         except Exception:
             claims_res = (
-                supabase.table("claim_requests")
+                db.table("claim_requests")
                 .select("id, status, proof_type, notes, created_at, user_id, clinic_id")
                 .eq("status", "pending")
                 .order("created_at", desc=True)
@@ -271,13 +349,13 @@ def check_claims() -> None:
             # Fetch clinic names manually as fallback
             for c in claims:
                 if c.get("clinic_id"):
-                    clinic_res = supabase.table("clinics").select("name").eq("id", c["clinic_id"]).limit(1).execute()
+                    clinic_res = db.table("clinics").select("name").eq("id", c["clinic_id"]).limit(1).execute()
                     if clinic_res.data:
                         c["clinics"] = {"name": clinic_res.data[0].get("name")}
 
         # Get clinic submissions (new profile suggestion)
         subs_res = (
-            supabase.table("clinic_submissions")
+            db.table("clinic_submissions")
             .select("id, status, clinic_name, full_name, role, email, phone, website, updates, created_at")
             .eq("status", "pending")
             .order("created_at", desc=True)
@@ -324,10 +402,10 @@ def approve_claim(identifier: str) -> None:
         print("[!] Claim ID is required.")
         return
 
-    supabase = create_admin_client()
+    db = create_admin_client()
     # 1. Check if it's a claim_request
     try:
-        claim_res = supabase.table("claim_requests").select("*").eq("id", identifier).limit(1).execute()
+        claim_res = db.table("claim_requests").select("*").eq("id", identifier).limit(1).execute()
         claim = claim_res.data[0] if claim_res.data else None
         if claim:
             if claim.get("status") != "pending":
@@ -340,8 +418,8 @@ def approve_claim(identifier: str) -> None:
                 print(f"[!] Claim request '{identifier}' has no linked user account. Ask the claimant to sign up first.")
                 return
 
-            supabase.table("claim_requests").update({"status": "approved"}).eq("id", identifier).execute()
-            supabase.table("clinics").update({
+            db.table("claim_requests").update({"status": "approved"}).eq("id", identifier).execute()
+            db.table("clinics").update({
                 "is_claimed": True,
                 "claimed_by": claim["user_id"]
             }).eq("id", claim["clinic_id"]).execute()
@@ -354,7 +432,7 @@ def approve_claim(identifier: str) -> None:
 
     # 2. Check if it's a clinic_submission
     try:
-        sub_res = supabase.table("clinic_submissions").select("*").eq("id", identifier).limit(1).execute()
+        sub_res = db.table("clinic_submissions").select("*").eq("id", identifier).limit(1).execute()
         sub = sub_res.data[0] if sub_res.data else None
         if sub:
             if sub.get("status") != "pending":
@@ -372,10 +450,10 @@ def approve_claim(identifier: str) -> None:
                     "submitted_by_role": sub["role"]
                 }
             }
-            inserted = supabase.table("clinics").insert(new_clinic).execute()
+            inserted = db.table("clinics").insert(new_clinic).execute()
             new_clinic_data = inserted.data[0] if inserted.data else {}
 
-            supabase.table("clinic_submissions").update({"status": "approved"}).eq("id", identifier).execute()
+            db.table("clinic_submissions").update({"status": "approved"}).eq("id", identifier).execute()
 
             print(f"[+] Successfully approved clinic submission '{identifier}'.")
             print(f"    Created new clinic: '{sub['clinic_name']}' with slug '{new_clinic_data.get('slug')}' (ID: {new_clinic_data.get('id')})")
@@ -392,17 +470,17 @@ def reject_claim(identifier: str) -> None:
         print("[!] Claim ID is required.")
         return
 
-    supabase = create_admin_client()
+    db = create_admin_client()
     # 1. Check if it's a claim_request
     try:
-        claim_res = supabase.table("claim_requests").select("*").eq("id", identifier).limit(1).execute()
+        claim_res = db.table("claim_requests").select("*").eq("id", identifier).limit(1).execute()
         claim = claim_res.data[0] if claim_res.data else None
         if claim:
             if claim.get("status") != "pending":
                 print(f"[!] Claim request '{identifier}' is already '{claim.get('status')}'.")
                 return
 
-            supabase.table("claim_requests").update({"status": "rejected"}).eq("id", identifier).execute()
+            db.table("claim_requests").update({"status": "rejected"}).eq("id", identifier).execute()
             print(f"[+] Successfully rejected claim request '{identifier}'.")
             return
     except Exception as e:
@@ -410,14 +488,14 @@ def reject_claim(identifier: str) -> None:
 
     # 2. Check if it's a clinic_submission
     try:
-        sub_res = supabase.table("clinic_submissions").select("*").eq("id", identifier).limit(1).execute()
+        sub_res = db.table("clinic_submissions").select("*").eq("id", identifier).limit(1).execute()
         sub = sub_res.data[0] if sub_res.data else None
         if sub:
             if sub.get("status") != "pending":
                 print(f"[!] Clinic submission '{identifier}' is already '{sub.get('status')}'.")
                 return
 
-            supabase.table("clinic_submissions").update({"status": "rejected"}).eq("id", identifier).execute()
+            db.table("clinic_submissions").update({"status": "rejected"}).eq("id", identifier).execute()
             print(f"[+] Successfully rejected clinic submission '{identifier}'.")
             return
     except Exception as e:
@@ -445,8 +523,8 @@ def check_analytics(timeframe: str = "week", filter_type: str = "all") -> None:
         label = "Last 7 Days (Week)"
 
     try:
-        supabase = create_admin_client()
-        res = supabase.table("analytics_events")\
+        db = create_admin_client()
+        res = db.table("analytics_events")\
             .select("*")\
             .gte("created_at", cutoff.isoformat())\
             .order("created_at", desc=True)\
@@ -535,10 +613,10 @@ def check_analytics(timeframe: str = "week", filter_type: str = "all") -> None:
 
 def get_analytics_summary() -> str:
     try:
-        supabase = create_admin_client()
+        db = create_admin_client()
         now = datetime.utcnow()
         cutoff_month = now - timedelta(days=30)
-        res = supabase.table("analytics_events")\
+        res = db.table("analytics_events")\
             .select("event_name, created_at, metadata")\
             .gte("created_at", cutoff_month.isoformat())\
             .order("created_at", desc=True)\

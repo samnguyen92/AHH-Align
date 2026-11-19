@@ -61,10 +61,6 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
     missing = []
     if not os.environ.get("OPENROUTER_API_KEY"):
         missing.append("OPENROUTER_API_KEY")
-    if not os.environ.get("NEXT_PUBLIC_SUPABASE_URL"):
-        missing.append("NEXT_PUBLIC_SUPABASE_URL")
-    if not (os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")):
-        missing.append("SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY")
     if missing:
         _log(f"[!] Missing environment variables: {', '.join(missing)}", progress_callback)
         return False
@@ -125,15 +121,22 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
             data["images"] = [generated_image]
     _log(f"[4/5] Image count after enrichment: {len(data.get('images') or [])}.", progress_callback)
 
-    _log("[5/5] Upserting clinic into Supabase...", progress_callback)
+    _log("[5/5] Saving clinic to the database...", progress_callback)
     success = insert_clinic(data)
     if not success:
-        _log("[!] Supabase insert/update failed.", progress_callback)
+        _log("[!] Database insert/update failed.", progress_callback)
         return False
 
     q = compute_quality(data)
     missing_str = f" (missing: {', '.join(q['missing'])})" if q["missing"] else ""
     _log(f"[+] Saved clinic: {data.get('name')} — Quality score: {q['score']}/100{missing_str}", progress_callback)
+    saved_info = data.get("_saved") or {}
+    if saved_info.get("created"):
+        _log(
+            "[📝] Saved as a DRAFT: it is not visible on the website yet. "
+            "Review with /drafts, publish with /approve_clinic <slug>.",
+            progress_callback,
+        )
     _log("[*] Single URL pipeline complete.", progress_callback)
     return True
 
