@@ -63,9 +63,10 @@ from jobs import (
     seo_audit_job,
     seo_setup_job,
     site_analyze_job,
-    dev_diff_job,
-    rollback_code_job,
-    publish_code_job,
+    web_close_job,
+    web_merge_job,
+    web_prs_job,
+    web_revert_job,
     stats_question_job,
     stats_report_job,
     connect_gsc_job,
@@ -90,6 +91,13 @@ MAX_MESSAGE_LENGTH = 3900
 USER_COMMANDS = {"/users", "/user", "/user_add", "/user_role", "/user_disable", "/user_restore", "/users_purge"}
 USER_ROLES = ("user", "provider", "admin", "superadmin")
 PENDING_USER_ACTION_TTL_SECONDS = 600
+PENDING_WEB_MERGE_TTL_SECONDS = 1800  # reading a diff takes longer than confirming a role change
+LEGACY_PUBLISH_MESSAGE = (
+    "Publishing straight to main was removed on purpose: website edits now go through a Pull Request.\n\n"
+    "• /web_edit <what to change> — the agent edits a copy and opens a PR with preview screenshots\n"
+    "• approve the merge here (or /web_merge <number>) after you have looked at it\n"
+    "• /web_prs lists open ones, /web_close <number> discards one, /web_revert <number> undoes a merged one"
+)
 MAX_JOB_OUTPUT_CHUNKS = int(os.environ.get("TELEGRAM_MAX_JOB_OUTPUT_CHUNKS", "12"))
 MAX_MEMORY_CHARS = int(os.environ.get("OPENCLAW_MEMORY_MAX_CHARS", "60000"))
 MEMORY_PATH = os.path.join(os.path.dirname(__file__), "telegram_memory.json")
@@ -416,7 +424,10 @@ class TelegramBot:
         )
         return response.get("result", [])
 
-    def run_job(self, chat_id: int, name: str, fn: Callable[[], str], action_type: str = "job") -> None:
+    def run_job(
+        self, chat_id: int, name: str, fn: Callable[[], str], action_type: str = "job",
+        on_success: Optional[Callable[[str], None]] = None,
+    ) -> None:
         if name in self.running_jobs and self.running_jobs[name].is_alive():
             self.send_message(chat_id, f"{name} is already running.")
             return
@@ -445,6 +456,11 @@ class TelegramBot:
                     self.send_message(chat_id, self.format_content_job_message(name, summary))
                 else:
                     self.send_long_message(chat_id, summary, max_chunks=MAX_JOB_OUTPUT_CHUNKS)
+                if on_success:
+                    try:
+                        on_success(summary)
+                    except Exception as hook_exc:  # a follow-up step must never turn a finished job into a failure
+                        print(f"[!] Follow-up after {name} failed: {hook_exc!r}")
             except JobFailed as exc:
                 print(f"[!] Telegram job failed: {name}")
                 self.send_message(chat_id, f"❌ {name} failed.\n\n{exc.short()}\n\nUse /tail for the full log.")
@@ -485,14 +501,15 @@ class TelegramBot:
             "/directory_audit - show Track C entity/field/insurance/price coverage & Track E supply gaps\n"
             "/search_audit - run the Track D 30-query search benchmark suite\n"
             "/scout_gaps [count] - auto-scout top underserved (City x Specialty x Language) gaps\n"
-            "/web_edit <instruction> - ask the Autonomous Web-Dev Agent to edit UI/design/code in src/\n"
+            "/web_edit <instruction> - the Web-Dev Agent edits a copy of the site and opens a Pull Request with preview screenshots (nothing is live until merged)\n"
+            "/web_prs - list website Pull Requests waiting for review\n"
+            "/web_merge <number> - merge a website Pull Request (asks for approval; needs TELEGRAM_SUPERADMIN_IDS)\n"
+            "/web_close <number> - discard a website Pull Request\n"
+            "/web_revert <number> - open a Pull Request that undoes a merged website change\n"
             "/seo_audit [route] - audit Next.js metadata, JSON-LD schema, headings, alt tags, and DB SEO\n"
             "/seo_setup <instruction> - ask the SEO Agent to code/update metadata, JSON-LD, or sitemaps\n"
             "/site_analyze [route] - run deep Playwright UX/speed probe + database conversion funnel analysis\n"
             "/preview [route] - capture live Desktop & Mobile screenshots of a page\n"
-            "/dev_diff - view uncommitted code changes in src/ and public/\n"
-            "/publish [commit msg] - typecheck, git commit & push to GitHub main, and rebuild live web container\n"
-            "/rollback - discard uncommitted edits in src/ and public/\n"
             "/enrich_clinics_google - add Google Places photos, rating, reviews, and Maps links to existing clinics\n"
             "/repair_clinic_images - generate missing clinic directory images\n"
             "/repair_article_images - generate missing article images\n"
@@ -551,6 +568,124 @@ class TelegramBot:
                 urls.append(url)
 
         return urls
+
+    # ------------------------------------------------------------------ website edits as Pull Requests
+
+    def _gate_admin(self, chat_id: int, user_id: Optional[int], what: str) -> Optional[int]:
+        """Return the sender's id when they may do `what`, otherwise tell them why and return None."""
+        actor_id = user_id if user_id is not None else chat_id
+        if not self.user_admin_ids:
+            self.send_message(
+                chat_id,
+                f"{what} is switched off. Set TELEGRAM_SUPERADMIN_IDS in openclaw/.env to your Telegram user id "
+                "(get it from @userinfobot) and restart the bot. You can still merge on GitHub.",
+            )
+            return None
+        if not self.is_user_admin(actor_id):
+            self.send_message(chat_id, f"You are not allowed to do this ({what}).")
+            return None
+        if actor_id != chat_id:
+            self.send_message(chat_id, f"{what} only works in a private chat with the bot.")
+            return None
+        return actor_id
+
+    def start_web_pr_job(self, chat_id: int, instruction: str, kind: str = "web_edit", image_path: Optional[str] = None) -> None:
+        """Run a website edit (web_edit / seo_setup / revert): the agent edits a copy and opens a Pull Request."""
+        sink: dict = {}
+        progress = lambda msg: self.send_message(chat_id, msg)  # noqa: E731
+        if kind == "seo_setup":
+            fn = lambda: seo_setup_job(instruction, progress_callback=progress, result_sink=sink)  # noqa: E731
+        else:
+            fn = lambda: web_edit_job(instruction, image_path=image_path, progress_callback=progress, result_sink=sink)  # noqa: E731
+        label = f"{kind} (vision)" if image_path else kind
+        self.run_job(
+            chat_id, f"{label}: {instruction[:36]}", fn, action_type="web_edit",
+            on_success=lambda _summary: self.after_web_pr(chat_id, sink),
+        )
+
+    def after_web_pr(self, chat_id: int, result: dict) -> None:
+        """Send the preview screenshots and offer the merge once a Pull Request exists."""
+        number = result.get("pr_number")
+        if not number:
+            return
+        for path in result.get("screenshots") or []:
+            self.send_photo(chat_id, path, caption=f"Preview of Pull Request #{number}")
+        if self.is_user_admin(chat_id):
+            with self._pending_lock:
+                self.pending_actions[chat_id] = self._web_merge_action(chat_id, number, result.get("title") or "", result.get("pr_url") or "")
+            self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+        else:
+            self.send_message(
+                chat_id,
+                f"Review and merge it on GitHub: {result.get('pr_url')}\n"
+                "(To merge from Telegram, put your id in TELEGRAM_SUPERADMIN_IDS in openclaw/.env.)",
+            )
+
+    def _web_merge_action(self, actor_id: int, number: int, title: str, url: str, extra: str = "") -> dict:
+        from deploy import deploy_mode
+
+        return {
+            "type": "web_pr_merge",
+            "name": f"web_merge PR {number}",
+            "summary": (
+                f"Merge Pull Request #{number} into main?\n{title}\n{url}\n{extra}\n"
+                f"After the merge: live site update mode is '{deploy_mode()}'.\n"
+                "Reply `approve` within 30 minutes to merge, or `cancel` to leave it open "
+                f"(discard it later with /web_close {number})."
+            ).replace("\n\n\n", "\n\n"),
+            "pr_number": number,
+            "actor_id": actor_id,
+            "actor": f"telegram:{actor_id}",
+            "expires_at": time.time() + PENDING_WEB_MERGE_TTL_SECONDS,
+        }
+
+    def handle_web_pr_command(self, chat_id: int, command: str, text: str, user_id: Optional[int]) -> None:
+        args = text.split()[1:]
+
+        if command == "/web_prs":
+            self.run_job(chat_id, "web_prs", web_prs_job, action_type="web_prs")
+            return
+
+        actor_id = self._gate_admin(chat_id, user_id, "Merging, closing or reverting website changes")
+        if actor_id is None:
+            return
+        if not args or not args[0].lstrip("#").isdigit():
+            self.send_message(chat_id, f"Use: {command} <pull request number>")
+            return
+        number = int(args[0].lstrip("#"))
+
+        if command == "/web_close":
+            self.run_job(chat_id, f"web_close {number}", lambda: web_close_job(number), action_type="web_close")
+        elif command == "/web_revert":
+            sink: dict = {}
+            progress = lambda msg: self.send_message(chat_id, msg)  # noqa: E731
+            self.run_job(
+                chat_id, f"web_revert {number}", lambda: web_revert_job(number, progress_callback=progress, result_sink=sink),
+                action_type="web_edit", on_success=lambda _s: self.after_web_pr(chat_id, sink),
+            )
+        elif command == "/web_merge":
+            from github_api import GitHubError
+            from web_pr import WebPrError, get_web_pr
+
+            try:
+                pr = get_web_pr(number)
+            except (WebPrError, GitHubError) as exc:
+                self.send_message(chat_id, f"❌ {getattr(exc, 'message', None) or exc}")
+                return
+            if pr.get("merged") or pr.get("state") != "open":
+                self.send_message(chat_id, f"Pull Request #{number} is not open.")
+                return
+            extra = f"{pr.get('changed_files', '?')} file(s), +{pr.get('additions', '?')} -{pr.get('deletions', '?')}"
+            self.pending_actions[chat_id] = self._web_merge_action(actor_id, number, pr.get("title", ""), pr.get("html_url", ""), extra)
+            self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+
+    def run_web_merge(self, chat_id: int, action: dict) -> None:
+        """Run an approved merge. Permission is re-checked: the approval may arrive later and from someone else."""
+        if not self.is_user_admin(chat_id) or action.get("actor_id") != chat_id:
+            self.send_message(chat_id, "You are not allowed to merge website changes.")
+            return
+        number = action["pr_number"]
+        self.run_job(chat_id, action["name"], lambda: web_merge_job(number), action_type="web_merge")
 
     # ------------------------------------------------------------------ user management
 
@@ -1104,45 +1239,19 @@ class TelegramBot:
             filter_type = action.get("filter_type", "all")
             self.run_job(chat_id, action["name"], lambda: check_analytics_job(timeframe, filter_type), action_type=action_type)
         elif action_type == "web_edit":
-            instruction = action["instruction"]
-            img_path = action.get("image_path")
-            self.run_job(
-                chat_id,
-                action["name"],
-                lambda: web_edit_job(
-                    instruction,
-                    image_path=img_path,
-                    progress_callback=lambda msg: self.send_message(chat_id, msg),
-                ),
-                action_type=action_type,
-            )
+            self.start_web_pr_job(chat_id, action["instruction"], kind="web_edit", image_path=action.get("image_path"))
         elif action_type == "seo_audit":
             self.run_job(chat_id, action["name"], lambda: seo_audit_job(action.get("route")), action_type=action_type)
         elif action_type == "seo_setup":
-            instruction = action["instruction"]
-            self.run_job(
-                chat_id,
-                action["name"],
-                lambda: seo_setup_job(instruction, progress_callback=lambda msg: self.send_message(chat_id, msg)),
-                action_type=action_type,
-            )
+            self.start_web_pr_job(chat_id, action["instruction"], kind="seo_setup")
         elif action_type == "site_analyze":
             route = action.get("route", "/")
             tf = action.get("timeframe", "week")
             self.run_job(chat_id, action["name"], lambda: site_analyze_job(route, tf), action_type=action_type)
-        elif action_type == "publish_code":
-            commit_msg = action.get("commit_message")
-            self.run_job(
-                chat_id,
-                action["name"],
-                lambda: publish_code_job(
-                    commit_message=commit_msg,
-                    telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
-                ),
-                action_type=action_type,
-            )
-        elif action_type == "rollback_code":
-            self.send_message(chat_id, rollback_code_job())
+        elif action_type in {"publish_code", "rollback_code"}:
+            self.send_message(chat_id, LEGACY_PUBLISH_MESSAGE)
+        elif action_type == "web_pr_merge":
+            self.run_web_merge(chat_id, action)
         elif action_type == "stats_question":
             question = action.get("question") or action.get("name", "website analytics")
             period = action.get("period")
@@ -1310,15 +1419,7 @@ class TelegramBot:
                     "Cách dùng: `/web_edit <mô tả chỉnh sửa giao diện hoặc tính năng>`\nVí dụ: `/web_edit Đổi tiêu đề phụ ở trang /search và thêm badge Verified cho các thẻ phòng khám`",
                 )
             else:
-                self.run_job(
-                    chat_id,
-                    f"web_edit: {instruction[:42]}",
-                    lambda: web_edit_job(
-                        instruction,
-                        progress_callback=lambda msg: self.send_message(chat_id, msg),
-                    ),
-                    action_type="web_edit",
-                )
+                self.start_web_pr_job(chat_id, instruction, kind="web_edit")
         elif command == "/seo_audit":
             route = re.sub(r"^/seo_audit(?:@\w+)?", "", text, count=1).strip() or None
             self.run_job(
@@ -1335,15 +1436,7 @@ class TelegramBot:
                     "Cách dùng: `/seo_setup <yêu cầu tối ưu SEO>`\nVí dụ: `/seo_setup Kiểm tra và bổ sung JSON-LD Organization & WebSite vào src/app/layout.tsx`",
                 )
             else:
-                self.run_job(
-                    chat_id,
-                    f"seo_setup: {instruction[:42]}",
-                    lambda: seo_setup_job(
-                        instruction,
-                        progress_callback=lambda msg: self.send_message(chat_id, msg),
-                    ),
-                    action_type="seo_setup",
-                )
+                self.start_web_pr_job(chat_id, instruction, kind="seo_setup")
         elif command == "/site_analyze":
             arg = re.sub(r"^/site_analyze(?:@\w+)?", "", text, count=1).strip()
             route = arg if arg.startswith("/") else "/"
@@ -1359,21 +1452,10 @@ class TelegramBot:
                 target=lambda: self.send_preview_screenshots(chat_id, route),
                 daemon=True,
             ).start()
-        elif command in {"/dev_diff", "/git_status"}:
-            self.send_message(chat_id, dev_diff_job())
-        elif command == "/rollback":
-            self.send_message(chat_id, rollback_code_job())
-        elif command == "/publish":
-            commit_msg = re.sub(r"^/publish(?:@\w+)?", "", text, count=1).strip() or None
-            self.run_job(
-                chat_id,
-                "publish_to_github_and_live",
-                lambda: publish_code_job(
-                    commit_message=commit_msg,
-                    telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
-                ),
-                action_type="publish_code",
-            )
+        elif command in {"/dev_diff", "/git_status", "/rollback", "/publish"}:
+            self.send_message(chat_id, LEGACY_PUBLISH_MESSAGE)
+        elif command in {"/web_prs", "/web_merge", "/web_close", "/web_revert"}:
+            self.handle_web_pr_command(chat_id, command, text, user_id)
         elif command == "/prompt":
             self.send_message(chat_id, OPENCLAW_AGENT_SYSTEM_PROMPT)
         elif command == "/research":
@@ -1710,16 +1792,7 @@ class TelegramBot:
                             f"📸 Received screenshot with instruction: “{clean_instr}”. Forwarding to Web-Dev Agent..."
                         )
                         self.send_message(chat_id, notice)
-                        self.run_job(
-                            chat_id,
-                            f"web_edit (vision): {clean_instr[:36]}",
-                            lambda instr=clean_instr, img=local_img: web_edit_job(
-                                instr,
-                                image_path=img,
-                                progress_callback=lambda msg: self.send_message(chat_id, msg),
-                            ),
-                            action_type="web_edit",
-                        )
+                        self.start_web_pr_job(chat_id, clean_instr, kind="web_edit", image_path=local_img)
                         continue
 
                     if text.startswith("/"):

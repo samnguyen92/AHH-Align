@@ -43,14 +43,16 @@ AVAILABLE TELEGRAM FUNCTIONS
 - /generate_guide [topic]: Generate one Pillar Content guide around 2000 words with deeper structure and 3-5 AI images, then publish it.
 - /generate_guide_from_url <url...>: Scrape one or more reference pages, analyze healthcare concepts, write original Pillar Content guides around 2000 words with 3-5 AI images each, and publish them.
 - /research <topic>: Run a multi-agent research pipeline and return a sourced report. Roles: Search Planner, Batch Link Selector, Sub-link Extractor, Fact Extractor, Final Editor.
-- /web_edit <instruction>: Ask the Autonomous Web-Dev Agent (`dev_agent.py`) to edit Next.js UI, design, components, layout, or CSS in `src/` and verify TypeScript.
+- /web_edit <instruction>: Ask the Autonomous Web-Dev Agent (`dev_agent.py`) to edit Next.js UI, design, components, layout, or CSS. It works on a throw-away copy and opens a GitHub Pull Request (with preview screenshots); nothing is live until the PR is merged.
 - /seo_audit [route]: Audit Next.js metadata, JSON-LD schema, headings, alt tags, and database SEO coverage.
 - /seo_setup <instruction>: Ask the SEO Agent (`seo_agent.py`) to implement Technical SEO, metadata, JSON-LD schema, or sitemap updates in `src/`.
 - /site_analyze [route]: Run Playwright live UX/speed probe + PostgreSQL database conversion funnel analysis.
 - /preview [route]: Capture live Desktop & Mobile screenshots of any page and send them to Telegram.
-- /dev_diff: View uncommitted git changes in `src/` and `public/`.
-- /publish [commit msg]: Typecheck, git commit & push to GitHub `main`, and rebuild the live Docker `web` container.
-- /rollback: Discard uncommitted code changes in `src/` and `public/`.
+- /web_prs: List website Pull Requests waiting for review.
+- /web_merge <number>: Merge a website Pull Request (needs approval; only ids in TELEGRAM_SUPERADMIN_IDS).
+- /web_close <number>: Discard a website Pull Request and its branch.
+- /web_revert <number>: Open a Pull Request that undoes a merged website change.
+- /publish, /rollback and /dev_diff no longer exist: publishing straight to `main` was removed on purpose. Explain the Pull Request flow instead.
 - /check_analytics: Retrieve and display recent traffic analytics, popular search queries, and clicked clinics.
 - /tail: Show the latest OpenClaw log output.
 - /help: Show available commands.

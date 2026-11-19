@@ -1,0 +1,18 @@
+# OPTIONAL: lets the bot redeploy the site by itself after you merge a website Pull Request.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.deploy.yml up -d --build
+#
+# It gives the bot container the Docker socket, which is root-equivalent on the server. Only use it if you accept
+# that. The safer alternatives need no socket: leave OPENCLAW_DEPLOY_MODE=manual (run ./deploy_hostinger_vps.sh
+# yourself after a merge) or use OPENCLAW_DEPLOY_MODE=webhook with your own deploy hook.
+services:
+  openclaw-bot:
+    build:
+      context: .
+      dockerfile: openclaw/Dockerfile
+      args:
+        INSTALL_DOCKER_CLI: "true"
+    environment:
+      - OPENCLAW_DEPLOY_MODE=docker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

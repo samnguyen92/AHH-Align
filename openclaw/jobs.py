@@ -533,15 +533,103 @@ def scout_gaps_job(limit_gaps: int = 3, per_gap_limit: int = 2, telegram_updater
     return _run_with_captured_output(f"scout_gaps({len(gaps)})", run_all)
 
 
-def web_edit_job(instruction: str, image_path: str | None = None, progress_callback=None) -> str:
-    from dev_agent import run_web_dev_agent
+def _web_pr_errors(fn):
+    """Expected problems (no token, busy, unsafe change, GitHub refusal) are printed as a clear message,
+    not as a traceback: the person needs the sentence, not the stack."""
+    def wrapper():
+        from github_api import GitHubError
+        from web_pr import WebPrError
 
-    res = run_web_dev_agent(
-        instruction=instruction,
-        image_path=image_path,
-        progress_callback=progress_callback,
-    )
-    return res["summary"]
+        try:
+            fn()
+        except WebPrError as exc:
+            print(f"❌ {exc}")
+        except GitHubError as exc:
+            print(f"❌ {exc.message}")
+
+    return wrapper
+
+
+def web_edit_job(instruction: str, image_path: str | None = None, progress_callback=None, result_sink: dict | None = None) -> str:
+    """Edit the website through a Pull Request (nothing touches the live checkout or main)."""
+    def work():
+        from web_pr import run_web_edit_pr
+
+        res = run_web_edit_pr(instruction, image_path=image_path, progress_callback=progress_callback)
+        if result_sink is not None:
+            result_sink.update(res)
+        print(res["summary"])
+
+    return _run_with_captured_output("web_edit", work)
+
+
+def seo_setup_job(instruction: str, progress_callback=None, result_sink: dict | None = None) -> str:
+    """SEO code changes, also delivered as a Pull Request."""
+    def work():
+        from seo_agent import run_seo_setup
+
+        res = run_seo_setup(instruction=instruction, progress_callback=progress_callback)
+        if result_sink is not None:
+            result_sink.update(res)
+        print(res["summary"])
+
+    return _run_with_captured_output("seo_setup", work)
+
+
+def web_prs_job() -> str:
+    def work():
+        from web_pr import list_web_prs
+
+        prs = list_web_prs()
+        if not prs:
+            print("[*] No website Pull Requests are waiting for review.")
+            return
+        print(f"[*] {len(prs)} website Pull Request(s) waiting for review:\n")
+        for pr in prs:
+            print(
+                f"#{pr['number']} {pr['title']}\n"
+                f"    {pr.get('changed_files', '?')} file(s), +{pr.get('additions', '?')} -{pr.get('deletions', '?')} | {pr['html_url']}"
+            )
+        print("\nMerge one: /web_merge <number>   Discard one: /web_close <number>")
+
+    return _run_with_captured_output("web_prs", _web_pr_errors(work))
+
+
+def web_merge_job(number: int) -> str:
+    def work():
+        from deploy import deploy_after_merge
+        from web_pr import merge_web_pr
+
+        res = merge_web_pr(int(number))
+        print(f"[+] Merged Pull Request #{number}: {res['title']}")
+        print(deploy_after_merge())
+        print(f"    Undo it later with /web_revert {number}")
+
+    return _run_with_captured_output("web_merge", _web_pr_errors(work))
+
+
+def web_close_job(number: int) -> str:
+    def work():
+        from web_pr import close_web_pr
+
+        res = close_web_pr(int(number))
+        print(f"[+] Closed Pull Request #{number} and removed its branch: {res['title']}")
+
+    return _run_with_captured_output("web_close", _web_pr_errors(work))
+
+
+def web_revert_job(number: int, progress_callback=None, result_sink: dict | None = None) -> str:
+    def work():
+        from web_pr import revert_web_pr
+
+        res = revert_web_pr(int(number), progress_callback=progress_callback)
+        if result_sink is not None:
+            result_sink.update(res)
+        print(res["summary"])
+
+    return _run_with_captured_output("web_revert", _web_pr_errors(work))
+
+
 
 
 def seo_audit_job(target_route: str | None = None) -> str:
@@ -550,12 +638,6 @@ def seo_audit_job(target_route: str | None = None) -> str:
     return run_seo_audit(target_route=target_route)
 
 
-def seo_setup_job(instruction: str, progress_callback=None) -> str:
-    from seo_agent import run_seo_setup
-
-    res = run_seo_setup(instruction=instruction, progress_callback=progress_callback)
-    return res["summary"]
-
 
 def site_analyze_job(target_route: str = "/", timeframe: str = "week") -> str:
     from site_analyzer import run_site_analysis
@@ -563,25 +645,7 @@ def site_analyze_job(target_route: str = "/", timeframe: str = "week") -> str:
     return run_site_analysis(target_route=target_route, timeframe=timeframe)
 
 
-def dev_diff_job() -> str:
-    from git_publisher import get_git_diff_summary
 
-    return get_git_diff_summary()
-
-
-def rollback_code_job() -> str:
-    from git_publisher import rollback_changes
-
-    return rollback_changes()
-
-
-def publish_code_job(commit_message: str | None = None, telegram_updater_callback=None) -> str:
-    from git_publisher import publish_to_github_and_live
-
-    return publish_to_github_and_live(
-        commit_message=commit_message,
-        telegram_updater=telegram_updater_callback,
-    )
 
 
 def stats_question_job(question: str, period: str | None = None, lang: str = "en") -> str:

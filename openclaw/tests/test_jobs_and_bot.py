@@ -389,3 +389,216 @@ def test_help_lists_the_user_commands(bot):
     text = bot.help_text()
     for cmd in ("/users", "/user_add", "/user_role", "/user_disable", "/user_restore", "/users_purge"):
         assert cmd in text
+
+
+# --------------------------------------------------------------------------- website edits as Pull Requests
+
+@pytest.fixture()
+def web_bot(admin_bot, monkeypatch, tmp_path):
+    """Bot where 111 may merge; the PR-related jobs are scripted so nothing touches git or GitHub."""
+    shot = tmp_path / "preview.png"
+    shot.write_bytes(b"png")
+    admin_bot.photos = []
+    admin_bot.send_photo = lambda chat_id, path, caption="": admin_bot.photos.append((path, caption))
+    admin_bot.merged = []
+
+    def web_edit_job(instruction, image_path=None, progress_callback=None, result_sink=None):
+        admin_bot.edit_args = (instruction, image_path)
+        if result_sink is not None and not getattr(admin_bot, "edit_fails", False):
+            result_sink.update({"ok": True, "pr_number": 7, "pr_url": "https://github.test/pull/7",
+                                "title": "Web edit: bigger hero", "screenshots": [str(shot)]})
+        return "edit summary"
+
+    monkeypatch.setattr(telegram_bot, "web_edit_job", web_edit_job)
+    def seo_setup_job(instruction, progress_callback=None, result_sink=None):
+        admin_bot.seo_args = instruction
+        if result_sink is not None:
+            result_sink.update({"pr_number": 8, "pr_url": "https://github.test/pull/8", "title": "SEO", "screenshots": []})
+        return "seo summary"
+
+    monkeypatch.setattr(telegram_bot, "seo_setup_job", seo_setup_job)
+    monkeypatch.setattr(telegram_bot, "web_merge_job", lambda number: admin_bot.merged.append(number) or "merged it")
+    monkeypatch.setattr(telegram_bot, "web_close_job", lambda number: f"closed {number}")
+    monkeypatch.setattr(telegram_bot, "web_prs_job", lambda: "2 open PRs")
+    return admin_bot
+
+
+def test_web_edit_sends_previews_and_asks_before_merging(web_bot):
+    web_bot.handle_command(111, "/web_edit Make the hero bigger", user_id=111)
+    assert _wait_for(web_bot, lambda s: any("Merge Pull Request #7" in m for m in s))
+    assert web_bot.edit_args == ("Make the hero bigger", None)
+    assert [c for _, c in web_bot.photos] == ["Preview of Pull Request #7"]
+    pending = web_bot.pending_actions[111]
+    assert pending["type"] == "web_pr_merge" and pending["pr_number"] == 7 and pending["actor_id"] == 111
+    assert 1500 < pending["expires_at"] - time.time() <= 1800
+    summary = web_bot.sent[-1]
+    assert "https://github.test/pull/7" in summary and "approve" in summary and "mode is 'manual'" in summary
+    assert web_bot.merged == []  # nothing merged before the approval
+
+
+def test_approving_merges_the_pull_request(web_bot, monkeypatch):
+    import intent_agent
+
+    web_bot.handle_command(111, "/web_edit bigger hero", user_id=111)
+    assert _wait_for(web_bot, lambda s: any("Merge Pull Request" in m for m in s))
+    monkeypatch.setattr(telegram_bot, "run_intent_agent",
+                        lambda *a, **k: intent_agent.IntentResult(action="web_pr_merge", is_approval=True, requires_approval=False))
+    web_bot.handle_chat(111, "approve")
+    assert _wait_for(web_bot, lambda s: any("merged it" in m for m in s))
+    assert web_bot.merged == [7]
+
+
+def test_someone_who_cannot_merge_gets_the_github_link_instead(web_bot):
+    web_bot.handle_command(222, "/web_edit bigger hero", user_id=222)   # allowed to use the bot, not a superadmin
+    assert _wait_for(web_bot, lambda s: any("merge it on GitHub" in m for m in s))
+    assert 222 not in web_bot.pending_actions and any("TELEGRAM_SUPERADMIN_IDS" in m for m in web_bot.sent)
+
+
+def test_a_failed_edit_offers_no_merge(web_bot):
+    web_bot.edit_fails = True
+    web_bot.handle_command(111, "/web_edit bigger hero", user_id=111)
+    assert _wait_for(web_bot, lambda s: any("edit summary" in m for m in s))
+    time.sleep(0.1)
+    assert 111 not in web_bot.pending_actions and web_bot.photos == []
+
+
+def test_a_screenshot_with_instructions_goes_through_the_same_flow(web_bot):
+    web_bot.start_web_pr_job(111, "match this design", kind="web_edit", image_path="/tmp/shot.jpg")
+    assert _wait_for(web_bot, lambda s: any("Merge Pull Request #7" in m for m in s))
+    assert web_bot.edit_args == ("match this design", "/tmp/shot.jpg")
+
+
+def test_seo_setup_also_opens_a_pull_request(web_bot):
+    web_bot.handle_command(111, "/seo_setup add JSON-LD", user_id=111)
+    assert _wait_for(web_bot, lambda s: any("Merge Pull Request #8" in m for m in s))
+    assert web_bot.pending_actions[111]["pr_number"] == 8 and web_bot.seo_args == "add JSON-LD"
+
+
+def test_web_prs_is_read_only_and_open_to_every_allowed_user(web_bot):
+    web_bot.handle_command(222, "/web_prs", user_id=222)
+    assert _wait_for(web_bot, lambda s: any("2 open PRs" in m for m in s))
+
+
+def test_web_merge_command_shows_the_diff_size_and_waits(web_bot, monkeypatch):
+    import web_pr
+
+    monkeypatch.setattr(web_pr, "get_web_pr", lambda n: {"number": n, "title": "Web edit: logo", "state": "open", "merged": False,
+                                                         "html_url": "https://github.test/pull/9", "changed_files": 3, "additions": 40, "deletions": 5})
+    web_bot.handle_command(111, "/web_merge 9", user_id=111)
+    assert "Merge Pull Request #9" in web_bot.sent[-1] and "3 file(s), +40 -5" in web_bot.sent[-1]
+    assert web_bot.merged == []
+    web_bot.run_pending_action(111, web_bot.pending_actions.pop(111))
+    assert _wait_for(web_bot, lambda s: any("merged it" in m for m in s))
+    assert web_bot.merged == [9]
+
+
+def test_web_merge_validates_the_number_and_the_state(web_bot, monkeypatch):
+    import github_api
+    import web_pr
+
+    web_bot.handle_command(111, "/web_merge", user_id=111)
+    assert web_bot.sent[-1].startswith("Use: /web_merge")
+    web_bot.handle_command(111, "/web_merge abc", user_id=111)
+    assert web_bot.sent[-1].startswith("Use: /web_merge")
+    monkeypatch.setattr(web_pr, "get_web_pr", lambda n: {"number": n, "state": "closed", "merged": True})
+    web_bot.handle_command(111, "/web_merge 3", user_id=111)
+    assert "not open" in web_bot.sent[-1]
+
+    def refuse(n):
+        raise web_pr.WebPrError("Pull Request #4 was not created by the website-edit flow")
+
+    monkeypatch.setattr(web_pr, "get_web_pr", refuse)
+    web_bot.handle_command(111, "/web_merge 4", user_id=111)
+    assert "not created by the website-edit flow" in web_bot.sent[-1]
+    assert 111 not in web_bot.pending_actions and web_bot.merged == []
+
+
+def test_merging_closing_and_reverting_need_a_superadmin_in_a_private_chat(web_bot):
+    for command in ("/web_merge 7", "/web_close 7", "/web_revert 7"):
+        web_bot.handle_command(222, command, user_id=222)
+        assert "not allowed" in web_bot.sent[-1], command
+        web_bot.handle_command(-1001, command, user_id=111)
+        assert "private chat" in web_bot.sent[-1], command
+    web_bot.user_admin_ids = set()
+    web_bot.handle_command(111, "/web_merge 7", user_id=111)
+    assert "TELEGRAM_SUPERADMIN_IDS" in web_bot.sent[-1]
+    assert web_bot.merged == [] and not web_bot.pending_actions
+
+
+def test_an_expired_or_foreign_merge_approval_is_not_executed(web_bot, monkeypatch):
+    import intent_agent
+
+    web_bot.handle_command(111, "/web_edit bigger hero", user_id=111)
+    assert _wait_for(web_bot, lambda s: any("Merge Pull Request" in m for m in s))
+    web_bot.pending_actions[111]["expires_at"] = time.time() - 1
+    monkeypatch.setattr(telegram_bot, "run_intent_agent",
+                        lambda *a, **k: intent_agent.IntentResult(action="web_pr_merge", is_approval=True, requires_approval=False))
+    web_bot.handle_chat(111, "approve")
+    assert "expired" in web_bot.sent[-1] and web_bot.merged == []
+
+    action = web_bot._web_merge_action(111, 7, "t", "u")
+    web_bot.user_admin_ids = {111, 222}
+    web_bot.run_pending_action(222, action)           # created by 111, approved by 222
+    assert "not allowed" in web_bot.sent[-1] and web_bot.merged == []
+
+
+def test_web_close_is_immediate_and_web_revert_opens_a_pr_to_approve(web_bot, monkeypatch):
+    web_bot.handle_command(111, "/web_close 7", user_id=111)
+    assert _wait_for(web_bot, lambda s: any("closed 7" in m for m in s))
+
+    def revert_job(number, progress_callback=None, result_sink=None):
+        result_sink.update({"pr_number": 11, "pr_url": "https://github.test/pull/11", "title": f"Revert: PR {number}", "screenshots": []})
+        return "revert summary"
+
+    monkeypatch.setattr(telegram_bot, "web_revert_job", revert_job)
+    web_bot.handle_command(111, "/web_revert 7", user_id=111)
+    assert _wait_for(web_bot, lambda s: any("Merge Pull Request #11" in m for m in s))
+    assert web_bot.pending_actions[111]["pr_number"] == 11
+
+
+def test_the_old_direct_publish_commands_only_explain_the_new_flow(web_bot, monkeypatch):
+    assert not hasattr(telegram_bot, "publish_code_job") and not hasattr(telegram_bot, "rollback_code_job")
+    for command in ("/publish fix", "/rollback", "/dev_diff", "/git_status"):
+        web_bot.handle_command(111, command, user_id=111)
+        assert "removed on purpose" in web_bot.sent[-1] and "/web_edit" in web_bot.sent[-1]
+    for action_type in ("publish_code", "rollback_code"):   # the same via natural language
+        web_bot.run_pending_action(111, {"type": action_type, "name": action_type})
+        assert "removed on purpose" in web_bot.sent[-1]
+    assert web_bot.merged == []
+
+
+def test_help_lists_the_pull_request_commands_and_no_direct_publish(bot):
+    text = bot.help_text()
+    for cmd in ("/web_edit", "/web_prs", "/web_merge", "/web_close", "/web_revert"):
+        assert cmd in text
+    assert "/publish" not in text and "/rollback" not in text
+
+
+# --------------------------------------------------------------------------- the job wrappers
+
+def test_web_jobs_print_clear_messages_instead_of_tracebacks(monkeypatch):
+    import deploy
+    import github_api
+    import web_pr
+
+    monkeypatch.setattr(web_pr, "list_web_prs", lambda: [{"number": 3, "title": "Web edit: a", "html_url": "u", "changed_files": 2, "additions": 4, "deletions": 1}])
+    out = jobs.web_prs_job()
+    assert "#3 Web edit: a" in out and "/web_merge <number>" in out
+
+    monkeypatch.setattr(web_pr, "list_web_prs", lambda: [])
+    assert "No website Pull Requests" in jobs.web_prs_job()
+
+    monkeypatch.setattr(web_pr, "merge_web_pr", lambda n: {"merged": True, "title": "Web edit: a", "sha": "abc", "url": "u"})
+    monkeypatch.setattr(deploy, "deploy_after_merge", lambda: "DEPLOY-STATUS")
+    out = jobs.web_merge_job(3)
+    assert "Merged Pull Request #3" in out and "DEPLOY-STATUS" in out and "/web_revert 3" in out
+
+    def refuse(n):
+        raise web_pr.WebPrError("Pull Request #3 has conflicts with main.")
+
+    monkeypatch.setattr(web_pr, "merge_web_pr", refuse)
+    out = jobs.web_merge_job(3)           # a refusal is a message, not a failed job
+    assert "❌ Pull Request #3 has conflicts" in out and "Traceback" not in out
+
+    monkeypatch.setattr(web_pr, "close_web_pr", lambda n: (_ for _ in ()).throw(github_api.GitHubError(404, "GitHub says no")))
+    assert "❌ GitHub says no" in jobs.web_close_job(3)
