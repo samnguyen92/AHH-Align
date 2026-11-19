@@ -22,7 +22,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from pg_client import create_client
 
-from dev_agent import PROJECT_ROOT, run_web_dev_agent
+from dev_agent import PROJECT_ROOT
 
 _OPENCLAW_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(_OPENCLAW_DIR, ".env"))
@@ -205,9 +205,13 @@ def run_seo_setup(
     instruction: str,
     progress_callback: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
-    return run_web_dev_agent(
+    # Like every website edit, SEO changes are opened as a Pull Request for a person to review.
+    from web_pr import run_web_edit_pr
+
+    return run_web_edit_pr(
         instruction=instruction,
         extra_system_prompt=SEO_SPECIALIST_PROMPT,
         progress_callback=progress_callback,
+        kind="SEO setup",
     )
 

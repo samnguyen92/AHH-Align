@@ -1,8 +1,13 @@
 """
 dev_agent.py — Autonomous Web-Dev Coding Agent for Asian Health Hub.
 
-Allows editing the Next.js codebase (`src/`, `public/`) directly from Telegram
-via natural language instructions or screenshot images, with:
+Allows editing the Next.js codebase (`src/`, `public/`) from Telegram via natural language
+instructions or screenshot images. The agent NEVER edits the live checkout: web_pr.py gives it a
+throw-away clone (see `work_in`) and the result is opened as a Pull Request for a person to review.
+
+  Safety: it can only write under `src/` and `public/`, and never to security-critical code
+  (API routes, authentication, database layer). Paths are resolved with realpath so symlinks and
+  `..` cannot escape the working directory.
   1. Safe workspace file tools (`search_codebase`, `list_files`, `read_source_file`,
      `apply_code_patch`, `write_source_file`).
   2. Automatic TypeScript verification (`npx tsc --noEmit`) with self-healing retry.
@@ -11,6 +16,8 @@ via natural language instructions or screenshot images, with:
 """
 
 import base64
+import contextlib
+import contextvars
 import json
 import os
 import subprocess
@@ -33,25 +40,68 @@ ALLOWED_READ_PREFIXES = ("src/", "public/", "openclaw/", "scripts/", "package.js
 ALLOWED_WRITE_PREFIXES = ("src/", "public/")
 FORBIDDEN_SUBSTRINGS = (".env", ".git/", "node_modules/", ".next/", "SUPABASE_SECRET_KEY", "OPENROUTER_API_KEY")
 
+# A UI/SEO agent must not be able to change how people authenticate or how the database is reached,
+# even inside a Pull Request that a person will read: these paths are refused for writing.
+FORBIDDEN_WRITE_PREFIXES = (
+    "src/app/api/",
+    "src/lib/auth/",
+    "src/lib/db/",
+    "src/lib/supabase/",
+)
+FORBIDDEN_WRITE_FILES = (
+    "src/proxy.ts",
+    "src/services/auth-service.ts",
+    "src/services/supabase-server.ts",
+    "src/services/supabase-client.ts",
+)
+
+# The directory the tools work in. By default the checkout this process runs from; web_pr.py points it at
+# a disposable clone with `work_in(...)`. A ContextVar keeps concurrent jobs from seeing each other's root.
+_ROOT: "contextvars.ContextVar[str]" = contextvars.ContextVar("openclaw_dev_root", default=PROJECT_ROOT)
+
+
+def current_root() -> str:
+    return os.path.realpath(_ROOT.get())
+
+
+@contextlib.contextmanager
+def work_in(path: str):
+    """Run the agent tools against `path` (a clone of the repository) instead of the live checkout."""
+    token = _ROOT.set(os.path.realpath(path))
+    try:
+        yield
+    finally:
+        _ROOT.reset(token)
+
 
 def _resolve_safe_path(rel_path: str, for_write: bool = False) -> str:
     cleaned = (rel_path or "").strip().lstrip("/")
     if cleaned.startswith("./"):
         cleaned = cleaned[2:]
+    normalised = os.path.normpath(cleaned).replace(os.sep, "/") if cleaned else ""
 
     for bad in FORBIDDEN_SUBSTRINGS:
         if bad in cleaned:
             raise ValueError(f"Access denied to protected path: {rel_path}")
 
     allowed = ALLOWED_WRITE_PREFIXES if for_write else ALLOWED_READ_PREFIXES
-    if not any(cleaned == prefix or cleaned.startswith(prefix) for prefix in allowed):
+    if not any(normalised == prefix or normalised.startswith(prefix) for prefix in allowed):
         mode = "write" if for_write else "read"
         raise ValueError(
             f"Path '{rel_path}' is outside allowed {mode} directories ({', '.join(allowed)})."
         )
 
-    abs_path = os.path.abspath(os.path.join(PROJECT_ROOT, cleaned))
-    if not abs_path.startswith(PROJECT_ROOT):
+    if for_write and (
+        normalised in FORBIDDEN_WRITE_FILES or any(normalised.startswith(prefix) for prefix in FORBIDDEN_WRITE_PREFIXES)
+    ):
+        raise ValueError(
+            f"'{rel_path}' is security-critical (API routes, authentication, database layer) and cannot be edited by the agent."
+        )
+
+    root = os.path.realpath(current_root())
+    # realpath resolves symlinks: a link inside src/ that points outside the root is rejected below.
+    abs_path = os.path.realpath(os.path.join(root, cleaned))
+    if os.path.commonpath([root, abs_path]) != root:
         raise ValueError("Path traversal outside project root is forbidden.")
     return abs_path
 
@@ -68,7 +118,7 @@ def tool_list_files(directory: str = "src") -> str:
                 if f.startswith("."):
                     continue
                 full = os.path.join(root, f)
-                rel = os.path.relpath(full, PROJECT_ROOT)
+                rel = os.path.relpath(full, current_root())
                 results.append(rel)
                 if len(results) >= 200:
                     break
@@ -92,7 +142,7 @@ def tool_search_codebase(query: str, directory: str = "src") -> str:
                 if not fname.endswith((".tsx", ".ts", ".css", ".js", ".json", ".md")):
                     continue
                 fpath = os.path.join(root, fname)
-                rel = os.path.relpath(fpath, PROJECT_ROOT)
+                rel = os.path.relpath(fpath, current_root())
                 try:
                     with open(fpath, "r", encoding="utf-8", errors="ignore") as fh:
                         for idx, line in enumerate(fh, 1):
@@ -196,7 +246,7 @@ def tool_generate_mosaic_image(subject: str, kind: str = "web", filename: str = 
             with urllib.request.urlopen(image_value, timeout=30) as resp:
                 raw_bytes = resp.read()
         else:
-            return f"Error: Unexpected image payload format."
+            return "Error: Unexpected image payload format."
         with open(abs_path, "wb") as fh:
             fh.write(raw_bytes)
         public_url = f"/brand/photos/{slug}"
@@ -206,39 +256,45 @@ def tool_generate_mosaic_image(subject: str, kind: str = "web", filename: str = 
 
 
 def run_typecheck() -> Dict[str, Any]:
-    """Run `npx tsc --noEmit` in PROJECT_ROOT to verify TypeScript integrity."""
+    """Run `npx tsc --noEmit` in the working root to verify TypeScript integrity.
+
+    Returns {"ok", "skipped", "returncode", "output"}. `skipped` is True when the check could not run
+    (no dependencies installed / npx missing): callers must not report that as a pass.
+    """
+    root = current_root()
+    if not os.path.isdir(os.path.join(root, "node_modules")):
+        return {
+            "ok": False,
+            "skipped": True,
+            "returncode": None,
+            "output": "TypeScript check skipped: dependencies (node_modules) are not installed in the working copy.",
+        }
     try:
         proc = subprocess.run(
-            ["npx", "tsc", "--noEmit"],
-            cwd=PROJECT_ROOT,
+            ["npx", "--no-install", "tsc", "--noEmit"],
+            cwd=root,
             capture_output=True,
             text=True,
-            timeout=90,
+            timeout=180,
         )
         output = (proc.stdout or "") + "\n" + (proc.stderr or "")
         return {
             "ok": proc.returncode == 0,
+            "skipped": False,
             "returncode": proc.returncode,
             "output": output.strip()[:3000],
         }
     except FileNotFoundError:
-        return {
-            "ok": True,
-            "returncode": 0,
-            "output": "npx not installed in current runtime; skipped local tsc check.",
-        }
+        return {"ok": False, "skipped": True, "returncode": None, "output": "TypeScript check skipped: npx is not installed."}
     except Exception as exc:
-        return {
-            "ok": False,
-            "returncode": -1,
-            "output": f"Typecheck execution error: {exc}",
-        }
+        return {"ok": False, "skipped": False, "returncode": -1, "output": f"Typecheck execution error: {exc}"}
 
 
 def capture_page_screenshot(
     route_path: str = "/",
     viewport: str = "desktop",
     full_page: bool = False,
+    base_url: Optional[str] = None,
 ) -> Optional[str]:
     """
     Capture a live screenshot of `route_path` using Playwright and return the saved file path.
@@ -252,6 +308,8 @@ def capture_page_screenshot(
         os.environ.get("NEXT_PUBLIC_SITE_URL", "").rstrip("/"),
     ]
     base_candidates = [b for b in base_candidates if b]
+    if base_url:  # a preview server started for one specific change: use it and nothing else
+        base_candidates = [base_url.rstrip("/")]
 
     try:
         from playwright.sync_api import sync_playwright
@@ -264,7 +322,10 @@ def capture_page_screenshot(
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            launch_args = {"headless": True}
+            if os.environ.get("OPENCLAW_CHROMIUM_PATH"):  # a browser installed elsewhere (CI, other images)
+                launch_args["executable_path"] = os.environ["OPENCLAW_CHROMIUM_PATH"]
+            browser = p.chromium.launch(**launch_args)
             context = browser.new_context(viewport={"width": width, "height": height})
             page = context.new_page()
 
@@ -273,7 +334,14 @@ def capture_page_screenshot(
                 target_url = f"{base}{clean_route}"
                 try:
                     page.goto(target_url, wait_until="domcontentloaded", timeout=20000)
-                    page.wait_for_timeout(1200)
+                    if base_url:  # a dev server hydrates slowly: wait for the network to settle, then for animations
+                        try:
+                            page.wait_for_load_state("networkidle", timeout=15000)
+                        except Exception:
+                            pass
+                        page.wait_for_timeout(2500)
+                    else:
+                        page.wait_for_timeout(1200)
                     loaded = True
                     break
                 except Exception:
@@ -412,7 +480,8 @@ Workflow rules:
 4. Keep your final response concise, in Vietnamese, listing:
    - Các file đã chỉnh sửa (`src/...`)
    - Tóm tắt những thay đổi chính về giao diện / logic / SEO
-   - Gợi ý đường dẫn trang (ví dụ `/`, `/search`, `/clinics/great-care-dental`) để chụp ảnh preview và hướng dẫn gõ `/publish` nếu muốn đẩy lên GitHub & cập nhật Live.
+   - Gợi ý đường dẫn trang (ví dụ `/`, `/search`, `/clinics/great-care-dental`) để chụp ảnh preview.
+5. You work in a throw-away copy. Your changes are opened as a Pull Request for a person to review, so keep them small, focused and easy to read. You CANNOT edit API routes, authentication or the database layer (`src/app/api/`, `src/lib/auth/`, `src/lib/db/`, `src/proxy.ts`, `src/services/auth-service.ts`): do not try; if a request needs them, say so in your answer instead.
 """
 
 
@@ -573,10 +642,12 @@ def run_web_dev_agent(
 
     # Final safety typecheck if any TS/TSX files were modified
     typecheck_ok = True
+    typecheck_skipped = False
     if any(f.endswith((".ts", ".tsx")) for f in modified_files):
         tc_res = run_typecheck()
-        typecheck_ok = tc_res["ok"]
-        if not typecheck_ok:
+        typecheck_skipped = bool(tc_res.get("skipped"))
+        typecheck_ok = tc_res["ok"] and not typecheck_skipped
+        if not tc_res["ok"]:
             final_text += f"\n\n⚠️ Cảnh báo TypeScript:\n```\n{tc_res['output'][:800]}\n```"
 
     # Guess preview route from modified files
@@ -602,14 +673,14 @@ def run_web_dev_agent(
         files_bullet = "\n".join(f"• `{p}`" for p in modified_files)
         final_text += (
             f"\n\n📂 **File đã thay đổi ({len(modified_files)})**:\n{files_bullet}\n"
-            f"🧪 **TypeScript Check**: {'✅ PASS' if typecheck_ok else '⚠️ Cần kiểm tra'}\n"
-            "👉 Gõ `/publish <ghi chú>` để commit lên GitHub `main` và cập nhật bản Live, hoặc `/rollback` để hoàn tác."
+            f"🧪 **TypeScript Check**: {'⏭️ chưa chạy (thiếu node_modules)' if typecheck_skipped else ('✅ PASS' if typecheck_ok else '⚠️ Cần kiểm tra')}"
         )
 
     return {
         "summary": final_text,
         "modified_files": modified_files,
         "typecheck_ok": typecheck_ok,
+        "typecheck_skipped": typecheck_skipped,
         "preview_route": preview_route,
     }
 

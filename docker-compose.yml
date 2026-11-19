@@ -50,13 +50,18 @@ services:
     environment:
       - OPENCLAW_PREVIEW_BASE_URL=http://web:3000
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-ahh_secure_pass_2026}@db:5432/${POSTGRES_DB:-asian_health_hub}
+      # Website edits happen in disposable clones of the repository kept here (then opened as Pull Requests).
+      - OPENCLAW_WORK_DIR=/work
     working_dir: /app/openclaw
     volumes:
-      # Mount full workspace so the Web-Dev & SEO Agent can edit src/, run git push, and trigger live rebuilds on VPS.
       - .:/app
-      - /var/run/docker.sock:/var/run/docker.sock
+      - openclaw-work:/work
+      # NOTE: the Docker socket is deliberately NOT mounted (it is root on the server). The bot no longer edits
+      # or publishes the live checkout: edits become Pull Requests. If you want the bot to redeploy after a merge,
+      # opt in explicitly with docker-compose.deploy.yml (see that file).
     command: ["python", "telegram_bot.py"]
 
 volumes:
   pgdata:
+  openclaw-work:
 

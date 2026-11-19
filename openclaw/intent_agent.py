@@ -119,7 +119,7 @@ ALLOWED ACTIONS:
   English phrases: "detailed stats report", "full analytics report", "export report".
   Vietnamese phrases: "báo cáo chi tiết", "xuất báo cáo thống kê", "báo cáo đầy đủ".
   parameters: {"arg": str, "scopes": list, "period": "today"|"week"|"month"|"quarter"}
-- web_edit: Edit website UI, design, components, layout, hero, CSS in Next.js src/.
+- web_edit: Edit website UI, design, components, layout, hero, CSS in Next.js src/. The edit is opened as a GitHub Pull Request for review; nothing goes live until it is merged.
   English phrases: "edit homepage", "remove form in hero", "change button color", "fix navbar".
   Vietnamese phrases: "sửa trang chủ", "xóa form ở hero", "đổi màu nút", "chỉnh sửa giao diện".
   parameters: {"instruction": str}
@@ -129,9 +129,9 @@ ALLOWED ACTIONS:
   parameters: {"instruction": str}
 - site_analyze: Run deep UX/speed probe + conversion funnel.
   parameters: {"route": str, "timeframe": "week"|"month"}
-- publish_code: Typecheck, commit, push to GitHub main, and deploy to live Docker.
+- publish_code: REMOVED. Website changes are published by merging the Pull Request that /web_edit opened (/web_merge <number>). Choose this only so the bot can explain that.
   parameters: {"commit_message": str}
-- rollback_code: Discard uncommitted edits in src/ and public/.
+- rollback_code: REMOVED. To undo a merged change use /web_revert <number>; to discard a pending one use /web_close <number>. Choose this only so the bot can explain that.
   parameters: {}
 - inspect_clinic: Check, inspect, view, or verify an EXISTING clinic already on our website / database (languages, photos count, sections, status, URL). Does NOT require approval (requires_approval: false).
   English phrases: "check clinic anchor dental", "inspect clinic X", "check clinic X on our website", "show clinic details for X".
