@@ -50,22 +50,57 @@ export interface QueryResponse<T = any> {
   count: number | null;
 }
 
+// SQL identifiers (table/column/function names) cannot be sent as bound
+// parameters, so they are interpolated into the query text. Anything that is not a
+// plain identifier is rejected, which prevents SQL injection through names.
+const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const JSON_KEY_RE = /^[A-Za-z0-9_]+$/;
+const COLUMN_LIST_RE = /^\s*[A-Za-z_][A-Za-z0-9_]*(\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*\s*$/;
+const FUNCTION_RE = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/;
+
+function assertIdent(name: string, kind = 'identifier'): string {
+  const trimmed = String(name ?? '').trim();
+  if (!IDENT_RE.test(trimmed)) {
+    throw new Error(`[db] Invalid SQL ${kind}: ${JSON.stringify(trimmed).slice(0, 80)}`);
+  }
+  return trimmed;
+}
+
+function assertJsonKey(key: string): string {
+  const trimmed = String(key ?? '').trim();
+  if (!JSON_KEY_RE.test(trimmed)) {
+    throw new Error(`[db] Invalid JSON key: ${JSON.stringify(trimmed).slice(0, 80)}`);
+  }
+  return trimmed;
+}
+
+/** Returns true when `col` is a column reference this builder is willing to emit. */
+function isSafeColumnRef(col: string): boolean {
+  try {
+    formatColumnRef(col);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function formatColumnRef(col: string): string {
   if (col.includes('->>')) {
     const [left, right] = col.split('->>');
-    return `("${left.trim()}"->>'${right.trim()}')`;
+    return `("${assertIdent(left, 'column')}"->>'${assertJsonKey(right)}')`;
   }
   if (col.includes('->')) {
     const [left, right] = col.split('->');
-    return `("${left.trim()}"->'${right.trim()}')`;
+    return `("${assertIdent(left, 'column')}"->'${assertJsonKey(right)}')`;
   }
-  return `"${col.trim()}"`;
+  return `"${assertIdent(col, 'column')}"`;
 }
 
 export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
   private tableName: string;
   private action: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select';
   private selectCols: string = '*';
+  private returningCols: string = '*';
   private countMode: 'exact' | null = null;
   private whereClauses: string[] = [];
   private params: any[] = [];
@@ -78,16 +113,37 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
   private upsertTarget: string | null = null;
 
   constructor(tableName: string) {
-    this.tableName = tableName;
+    this.tableName = assertIdent(tableName, 'table name');
   }
 
+  /**
+   * `.select()` has two meanings, as in the Supabase client this adapter replaces:
+   *   - on its own it starts a SELECT query;
+   *   - AFTER insert/upsert/update/delete it only says which columns to return from that write
+   *     (`.update(...).eq(...).select('id').single()`). It must NOT turn the write into a SELECT,
+   *     otherwise the row is never written while the caller still receives data back.
+   */
   select(columns: string = '*', options?: { count?: 'exact' }): this {
+    if (this.action !== 'select') {
+      this.returningCols = columns || '*';
+      return this;
+    }
     this.action = 'select';
     this.selectCols = columns || '*';
     if (options?.count === 'exact') {
       this.countMode = 'exact';
     }
     return this;
+  }
+
+  /** Columns for `RETURNING`: the requested plain column list, otherwise every column. */
+  private returningSql(): string {
+    const cols = this.returningCols.trim();
+    if (cols === '*' || !COLUMN_LIST_RE.test(cols)) return '*';
+    return cols
+      .split(',')
+      .map((c) => `"${assertIdent(c, 'column')}"`)
+      .join(', ');
   }
 
   eq(col: string, val: any): this {
@@ -170,23 +226,36 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
 
   or(filterStr: string): this {
     if (!filterStr) return this;
-    const parts = filterStr.split(',');
     const orParts: string[] = [];
 
-    for (const part of parts) {
+    for (const part of filterStr.split(',')) {
       const trimmed = part.trim();
       if (!trimmed) continue;
 
-      if (trimmed.includes('.ilike.')) {
-        const [rawCol, rawPat] = trimmed.split('.ilike.');
-        const pattern = rawPat.replace(/^%/, '%').replace(/%$/, '%');
-        this.params.push(pattern);
-        orParts.push(`${formatColumnRef(rawCol)} ILIKE $${this.params.length}`);
-      } else if (trimmed.includes('.eq.')) {
-        const [rawCol, rawVal] = trimmed.split('.eq.');
-        this.params.push(rawVal);
-        orParts.push(`${formatColumnRef(rawCol)} = $${this.params.length}`);
+      // Split at the earliest operator so a value that happens to contain
+      // ".ilike." / ".eq." cannot be re-interpreted as another column.
+      const ilikeAt = trimmed.indexOf('.ilike.');
+      const eqAt = trimmed.indexOf('.eq.');
+      let opAt = -1;
+      let op: 'ilike' | 'eq' | null = null;
+      if (ilikeAt !== -1 && (eqAt === -1 || ilikeAt < eqAt)) {
+        opAt = ilikeAt;
+        op = 'ilike';
+      } else if (eqAt !== -1) {
+        opAt = eqAt;
+        op = 'eq';
       }
+      if (!op) continue;
+
+      const rawCol = trimmed.slice(0, opAt);
+      const rawVal = trimmed.slice(opAt + op.length + 2);
+
+      // Anything that is not a plain column reference is dropped, never interpolated.
+      if (!isSafeColumnRef(rawCol)) continue;
+
+      this.params.push(rawVal);
+      const sqlOp = op === 'ilike' ? 'ILIKE' : '=';
+      orParts.push(`${formatColumnRef(rawCol)} ${sqlOp} $${this.params.length}`);
     }
 
     if (orParts.length > 0) {
@@ -290,7 +359,7 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
           return { data: [] as unknown as T, error: null, count: 0 };
         }
 
-        const cols = Object.keys(this.payload[0]);
+        const cols = Object.keys(this.payload[0]).map((c) => assertIdent(c, 'column'));
         const colsSql = cols.map((c) => `"${c}"`).join(', ');
         const insertedRows: any[] = [];
 
@@ -303,7 +372,7 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
 
           let conflictSql = '';
           if (this.action === 'upsert') {
-            const conflictTarget = this.upsertTarget ? `("${this.upsertTarget}")` : '("id")';
+            const conflictTarget = this.upsertTarget ? `("${assertIdent(this.upsertTarget, 'column')}")` : '("id")';
             const updateCols = cols
               .filter((c) => c !== 'id' && c !== 'created_at' && c !== this.upsertTarget)
               .map((c) => `"${c}" = EXCLUDED."${c}"`);
@@ -314,7 +383,7 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
             }
           }
 
-          const insertSql = `INSERT INTO "${this.tableName}" (${colsSql}) VALUES (${placeholders.join(', ')}) ${conflictSql} RETURNING *`;
+          const insertSql = `INSERT INTO "${this.tableName}" (${colsSql}) VALUES (${placeholders.join(', ')}) ${conflictSql} RETURNING ${this.returningSql()}`;
           const res = await client.query(insertSql, rowParams);
           if (res.rows[0]) {
             insertedRows.push(res.rows[0]);
@@ -326,7 +395,10 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
       }
 
       if (this.action === 'update') {
-        const setCols = Object.keys(this.payload);
+        if (this.whereClauses.length === 0) {
+          throw new Error(`[db] Refusing to UPDATE "${this.tableName}" without a WHERE condition.`);
+        }
+        const setCols = Object.keys(this.payload).map((c) => assertIdent(c, 'column'));
         if (setCols.length === 0) {
           return { data: [] as unknown as T, error: null, count: 0 };
         }
@@ -345,14 +417,17 @@ export class PgQueryBuilder<T = any> implements PromiseLike<QueryResponse<T>> {
         const whereSqlAdjusted = adjustedWhere.length > 0 ? `WHERE ${adjustedWhere.join(' AND ')}` : '';
         const allParams = [...setParams, ...this.params];
 
-        const updateSql = `UPDATE "${this.tableName}" SET ${setClauses.join(', ')} ${whereSqlAdjusted} RETURNING *`;
+        const updateSql = `UPDATE "${this.tableName}" SET ${setClauses.join(', ')} ${whereSqlAdjusted} RETURNING ${this.returningSql()}`;
         const res = await client.query(updateSql, allParams);
         const returnData = this.isSingle || this.isMaybeSingle ? res.rows[0] || null : res.rows;
         return { data: returnData as unknown as T, error: null, count: res.rows.length };
       }
 
       if (this.action === 'delete') {
-        const deleteSql = `DELETE FROM "${this.tableName}" ${whereSql} RETURNING *`;
+        if (this.whereClauses.length === 0) {
+          throw new Error(`[db] Refusing to DELETE from "${this.tableName}" without a WHERE condition.`);
+        }
+        const deleteSql = `DELETE FROM "${this.tableName}" ${whereSql} RETURNING ${this.returningSql()}`;
         const res = await client.query(deleteSql, this.params);
         return { data: res.rows as unknown as T, error: null, count: res.rows.length };
       }
@@ -378,6 +453,14 @@ export function createPostgresClient() {
       return new PgQueryBuilder(table);
     },
     async rpc(fnName: string, args?: Record<string, any>) {
+      if (!FUNCTION_RE.test(fnName)) {
+        return { data: null, error: new Error(`[db] Invalid function name: ${JSON.stringify(fnName).slice(0, 80)}`) };
+      }
+      for (const key of Object.keys(args ?? {})) {
+        if (!IDENT_RE.test(key)) {
+          return { data: null, error: new Error(`[db] Invalid argument name: ${JSON.stringify(key).slice(0, 80)}`) };
+        }
+      }
       const client = getPool();
       if (!args || Object.keys(args).length === 0) {
         try {

@@ -2,7 +2,7 @@
 run_scout.py - Google Places scout pipeline for discovering new clinic profiles.
 
 The scout pipeline starts from a free-text Google Places query, keeps only places
-with official websites, skips clinics already in Supabase, scrapes/extracts the
+with official websites, skips clinics already in the database, scrapes/extracts the
 site content, enriches the result, and saves new clinic records.
 
 Filters applied:
@@ -144,14 +144,14 @@ def _is_valid_website(url: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-def _get_supabase_client():
+def _get_db_client():
     from pg_client import create_client
     return create_client()
 
 
 def _load_existing_clinic_keys() -> tuple[set[str], set[str]]:
-    supabase = _get_supabase_client()
-    rows = supabase.table("clinics").select("name, metadata").execute().data or []
+    db = _get_db_client()
+    rows = db.table("clinics").select("name, metadata").execute().data or []
     names: set[str] = set()
     websites: set[str] = set()
 
@@ -315,6 +315,7 @@ def run_scout_pipeline(
     _notify(telegram_updater_callback, f"Có {len(new_places)} cơ sở mới. Bắt đầu scrape...")
 
     saved = 0
+    drafts_created = 0
     failed = 0
     skipped = 0
     processed = 0
@@ -420,9 +421,16 @@ def run_scout_pipeline(
 
             if insert_clinic(data):
                 saved += 1
+                if (data.get("_saved") or {}).get("created"):
+                    drafts_created += 1
                 q = compute_quality(data)
                 missing_str = f" (thiếu: {', '.join(q['missing'])})" if q["missing"] else ""
-                _notify(telegram_updater_callback, f"✅ Đã lưu: {data.get('name') or name} — Điểm chất lượng: {q['score']}/100{missing_str}")
+                saved_info = data.get("_saved") or {}
+                if saved_info.get("created"):
+                    status_text = "📝 Đã lưu NHÁP (chưa hiện trên web, chờ bạn duyệt)"
+                else:
+                    status_text = f"🔄 Đã cập nhật (giữ nguyên trạng thái: {saved_info.get('status') or 'không đổi'})"
+                _notify(telegram_updater_callback, f"{status_text}: {data.get('name') or name} — Điểm chất lượng: {q['score']}/100{missing_str}")
             else:
                 failed += 1
                 _notify(telegram_updater_callback, f"Lưu thất bại: {name}")
@@ -442,10 +450,17 @@ def run_scout_pipeline(
         "new": len(new_places),
         "processed": processed,
         "saved": saved,
+        "drafts_created": drafts_created,
         "skipped": skipped,
         "failed": failed,
     }
     _notify(telegram_updater_callback, f"Hoàn tất! Đã lưu {saved}/{limit} phòng khám.")
+    if drafts_created:
+        _notify(
+            telegram_updater_callback,
+            f"📝 {drafts_created} phòng khám mới đang ở trạng thái NHÁP. Xem và duyệt bằng /drafts, "
+            f"duyệt từng cái bằng /approve_clinic <slug>, hoặc tất cả bằng /approve_clinic all.",
+        )
     return summary
 
 

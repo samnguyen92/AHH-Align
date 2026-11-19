@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:security": "node --experimental-strip-types --no-warnings --test \"tests/security/*.test.mjs\""
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

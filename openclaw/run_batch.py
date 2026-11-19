@@ -8,7 +8,7 @@ Reads targets from targets.json (same directory). Each target may have:
   force_refresh (optional) — set true to re-scrape even if already in DB
 
 Idempotency: before scraping, checks if a clinic with the same slug already
-exists in Supabase. Skips if found (unless force_refresh = true).
+exists in the database. Skips if found (unless force_refresh = true).
 """
 
 import json
@@ -43,14 +43,14 @@ def _load_targets() -> list:
     if not os.path.exists(TARGETS_FILE):
         print(f"[!] targets.json not found at {TARGETS_FILE}")
         print("    Create targets.json with a JSON array of {name, domain} objects.")
-        sys.exit(1)
+        raise RuntimeError("run_batch cannot start: see the message above")
 
     with open(TARGETS_FILE, encoding="utf-8") as f:
         targets = json.load(f)
 
     if not isinstance(targets, list) or not targets:
         print("[!] targets.json must be a non-empty JSON array.")
-        sys.exit(1)
+        raise RuntimeError("run_batch cannot start: see the message above")
 
     return targets
 
@@ -62,7 +62,7 @@ def _check_env() -> None:
 
     if missing:
         print(f"[!] Missing environment variables: {', '.join(missing)}")
-        sys.exit(1)
+        raise RuntimeError("run_batch cannot start: see the message above")
 
 
 def _clinic_already_exists(name: str) -> bool:
@@ -73,9 +73,9 @@ def _clinic_already_exists(name: str) -> bool:
     try:
         from pg_client import create_client
 
-        supabase = create_client()
+        db = create_client()
         slug = generate_slug(name)
-        result = supabase.table("clinics").select("id, name").eq("slug", slug).limit(1).execute()
+        result = db.table("clinics").select("id, name").eq("slug", slug).limit(1).execute()
         if result.data:
             print(f"[*] Clinic already in DB (slug: {slug}): {result.data[0].get('name')}")
             return True
@@ -158,7 +158,7 @@ def _process_target(target: dict) -> bool:
         if generated_image:
             data["images"] = [generated_image]
 
-    # ── 5. Save to Supabase ────────────────────────────────────────────────────
+    # ── 5. Save to the database ────────────────────────────────────────────────────
     success = insert_clinic(data)
     if success:
         print(f"[+] Saved clinic: {name}")

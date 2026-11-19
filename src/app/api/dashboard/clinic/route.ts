@@ -5,6 +5,32 @@ import { normalizeLanguageList } from '@/lib/languages';
 
 export const dynamic = 'force-dynamic';
 
+// Metadata keys owned by the platform (ratings, reviews, verification, scoring, Google data).
+// A clinic owner must not be able to set these through the dashboard.
+const SYSTEM_METADATA_KEYS = new Set([
+  'rating',
+  'rating_count',
+  'review_profile',
+  'review_summary',
+  'reviews',
+  'quality_score',
+  'quality_missing',
+  'languages_verified',
+  'languages_evidence',
+  'languages_source',
+  'third_party_profiles',
+  'external_sources',
+  'google_photo_attributions',
+]);
+
+function stripSystemMetadata(input: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(input).filter(
+      ([key]) => !SYSTEM_METADATA_KEYS.has(key) && !key.startsWith('google_')
+    )
+  );
+}
+
 export async function PATCH(request: NextRequest) {
   const user = await getUserFromAccessToken(getBearerToken(request));
 
@@ -45,8 +71,8 @@ export async function PATCH(request: NextRequest) {
   const currentMetadata =
     clinic.metadata && typeof clinic.metadata === 'object' ? clinic.metadata : {};
   const baseMetadata =
-    body.metadata && typeof body.metadata === 'object'
-      ? { ...currentMetadata, ...body.metadata }
+    body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+      ? { ...currentMetadata, ...stripSystemMetadata(body.metadata as Record<string, unknown>) }
       : currentMetadata;
   // languages typed by the owner are authoritative: scrapers must not overwrite them with a weaker guess
   const nextMetadata = Array.isArray(body.languages) ? { ...baseMetadata, languages_source: 'manual' } : baseMetadata;

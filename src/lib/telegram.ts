@@ -3,6 +3,14 @@
  * Reads TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_CHAT_ID from environment variables.
  */
 
+/** Escape user-supplied text before embedding it in a Telegram `parse_mode: 'HTML'` message. */
+export function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 const TELEGRAM_API_BASE = 'https://api.telegram.org';
 
 export async function sendTelegramMessage(text: string): Promise<void> {

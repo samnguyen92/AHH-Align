@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Mail, Lock, Loader2 } from 'lucide-react';
+import { safeNextPath } from '@/lib/safe-redirect';
 import { persistAuthToken } from '@/lib/auth/session-cookie';
 
 function getNextPath() {
@@ -12,7 +13,7 @@ function getNextPath() {
   }
 
   const next = new URLSearchParams(window.location.search).get('next');
-  return next?.startsWith('/') ? next : null;
+  return safeNextPath(next);
 }
 
 async function getRoleDestination(token: string) {

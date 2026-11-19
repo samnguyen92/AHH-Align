@@ -10,8 +10,8 @@ load_dotenv("../.env.local")
 
 
 def main():
-    supabase = create_client()
-    clinics = supabase.table("clinics").select(
+    db = create_client()
+    clinics = db.table("clinics").select(
         "id, name, slug, description, address, city, state, zip_code, phone, specialty, languages, metadata"
     ).execute().data or []
 
@@ -43,7 +43,7 @@ def main():
             if enriched.get(field) and not clinic.get(field):
                 payload[field] = enriched[field]
 
-        supabase.table("clinics").update(payload).eq("id", clinic["id"]).execute()
+        db.table("clinics").update(payload).eq("id", clinic["id"]).execute()
         updated += 1
         print(f"[+] Updated Google Places metadata: {clinic['name']}")
 

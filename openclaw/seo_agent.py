@@ -7,7 +7,7 @@ Provides:
        for metadata (`generateMetadata` / `metadata`), canonical tags, OpenGraph, and JSON-LD schema.
      - Audits live rendered HTML on `localhost:3000` (via HTTP/Playwright) for `<title>`,
        `<meta name="description">`, `<h1>` hierarchy, image `alt` coverage, and `<script type="application/ld+json">`.
-     - Audits Supabase database SEO readiness (articles missing `seo_meta.description`, clinics missing `short_description` or `faqs`).
+     - Audits PostgreSQL database SEO readiness (articles missing `seo_meta.description`, clinics missing `short_description` or `faqs`).
   2. `run_seo_setup(instruction, progress_callback=None)`:
      - Delegates to `run_web_dev_agent` with specialized Next.js Technical SEO & Schema.org rules
        so the agent can write/patch metadata, JSON-LD, sitemaps, or internal links directly.
@@ -188,7 +188,7 @@ def run_seo_audit(target_route: Optional[str] = None) -> str:
     if db_seo:
         lines.extend(
             [
-                "\n🗄️ **Độ phủ SEO trong Cơ sở dữ liệu (Supabase):**",
+                "\n🗄️ **Độ phủ SEO trong Cơ sở dữ liệu (PostgreSQL):**",
                 f"• Phòng khám có mô tả chuẩn SEO: `{db_seo['total_clinics'] - db_seo['clinics_missing_desc']}/{db_seo['total_clinics']}`",
                 f"• Phòng khám có cấu trúc FAQ Schema: `{db_seo['clinics_with_faq']}/{db_seo['total_clinics']}`",
                 f"• Bài viết Published có Meta Description: `{db_seo['published_articles'] - db_seo['articles_missing_meta_desc']}/{db_seo['published_articles']}`",

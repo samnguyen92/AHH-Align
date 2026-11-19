@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 from pg_client import create_client
-Client = object
+from pg_client import PGClient as Client
 
 from image_generator import generate_clinic_image
 
@@ -25,14 +25,8 @@ def has_usable_image(metadata: dict) -> bool:
 
 
 def main():
-    url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-
-    if not url or not key:
-        raise RuntimeError("Missing NEXT_PUBLIC_SUPABASE_URL or Supabase secret key")
-
-    supabase: Client = create_client(url, key)
-    clinics = supabase.table("clinics").select(
+    db = create_client()
+    clinics = db.table("clinics").select(
         "id, name, slug, city, state, specialty, languages, metadata"
     ).execute().data
 
@@ -50,7 +44,7 @@ def main():
             continue
 
         metadata["images"] = [image_url]
-        supabase.table("clinics").update({"metadata": metadata}).eq("id", clinic["id"]).execute()
+        db.table("clinics").update({"metadata": metadata}).eq("id", clinic["id"]).execute()
         updated += 1
         print(f"[+] Updated {clinic['name']}: {image_url}")
 

@@ -25,7 +25,9 @@ function getStatusBadge(status: string) {
     case "Pending Review":
       return <span className="inline-flex items-center rounded-full bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-600">Pending Review</span>
     case "Draft":
-      return <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">Draft</span>
+      return <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">Draft · hidden</span>
+    case "Archived":
+      return <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">Archived · hidden</span>
     default:
       return <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">{status}</span>
   }
@@ -42,10 +44,39 @@ export function ClinicsManagement({
   const [editingClinic, setEditingClinic] = useState<any>(null)
   const [fetchingId, setFetchingId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<
     "general" | "hours_contact" | "about" | "highlights" | "services" | "team" | "pricing" | "memberships" | "locations" | "care_diagnostics" | "insurance" | "images"
   >("general")
+
+  // Publish a draft (new clinics from the OpenClaw scout start hidden) or restore an archived one.
+  const handleSetStatus = async (clinicId: string, status: "published" | "archived") => {
+    setStatusUpdatingId(clinicId)
+    setErrorMessage(null)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData.session?.access_token
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`
+      }
+      const res = await fetch(`/api/admin/clinics/${clinicId}/status`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ status }),
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || "Failed to update the clinic status")
+      }
+      router.refresh()
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Failed to update the clinic status")
+    } finally {
+      setStatusUpdatingId(null)
+    }
+  }
 
   const handleEditClick = async (clinicId: string) => {
     setFetchingId(clinicId)
@@ -280,6 +311,16 @@ export function ClinicsManagement({
                           )}
                           Edit
                         </button>
+                        {clinic.publishStatus !== "published" && (
+                          <button
+                            onClick={() => handleSetStatus(clinic.id, "published")}
+                            disabled={statusUpdatingId === clinic.id}
+                            className="flex items-center gap-1 text-sm font-medium text-green-700 hover:text-green-800 transition-colors disabled:opacity-50"
+                          >
+                            {statusUpdatingId === clinic.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                            {clinic.publishStatus === "archived" ? "Restore" : "Publish"}
+                          </button>
+                        )}
                         <button className="flex items-center gap-1 text-sm text-destructive hover:text-destructive/80 transition-colors">
                           <Trash2 className="h-4 w-4" />
                           Delete

@@ -41,6 +41,15 @@ NEXT_TELEMETRY_DISABLED=1
 EOT
 fi
 
+# Session tokens are signed with AUTH_SECRET. The web app refuses to start signing/verifying in
+# production without a strong secret, so make sure one exists (never reuse a value from the repo).
+if ! grep -q '^AUTH_SECRET=.\{32,\}' .env.local; then
+    echo "[*] Generating AUTH_SECRET in .env.local (existing sessions will be signed out)..."
+    NEW_SECRET="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    sed -i '/^AUTH_SECRET=/d' .env.local
+    echo "AUTH_SECRET=${NEW_SECRET}" >> .env.local
+fi
+
 if [ ! -f openclaw/.env ]; then
     echo "[!] openclaw/.env not found. Creating default..."
     cat <<EOT > openclaw/.env

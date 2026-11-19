@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/services/supabase-server';
-import { sendTelegramMessage } from '@/lib/telegram';
+import { escapeHtml, sendTelegramMessage } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
   await sendTelegramMessage(
     `📧 <b>New Newsletter Subscription</b>\n\n` +
-    `• <b>Email:</b> ${email}\n` +
+    `• <b>Email:</b> ${escapeHtml(email)}\n` +
     `• <b>Time (PT):</b> ${now}`
   );
 

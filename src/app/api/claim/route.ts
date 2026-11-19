@@ -6,7 +6,7 @@ import {
   getUserFromAccessToken,
 } from '@/services/auth-service';
 import { AUTH_COOKIE_NAME } from '@/lib/auth/session-cookie';
-import { sendTelegramMessage } from '@/lib/telegram';
+import { escapeHtml as esc, sendTelegramMessage } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,12 +83,12 @@ export async function POST(request: NextRequest) {
     const now = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
     await sendTelegramMessage(
       `🏥 <b>New Clinic Profile Submission</b>\n\n` +
-      `• <b>Clinic Name:</b> ${clinic_name}\n` +
-      `• <b>Submitted By:</b> ${full_name} (${role})\n` +
-      `• <b>Email:</b> ${email}\n` +
-      `• <b>Phone:</b> ${phone}\n` +
-      (body.website ? `• <b>Website:</b> ${body.website}\n` : '') +
-      (body.updates ? `• <b>Requested Updates:</b> ${body.updates}\n` : '') +
+      `• <b>Clinic Name:</b> ${esc(clinic_name)}\n` +
+      `• <b>Submitted By:</b> ${esc(full_name)} (${esc(role)})\n` +
+      `• <b>Email:</b> ${esc(email)}\n` +
+      `• <b>Phone:</b> ${esc(phone)}\n` +
+      (body.website ? `• <b>Website:</b> ${esc(body.website)}\n` : '') +
+      (body.updates ? `• <b>Requested Updates:</b> ${esc(body.updates)}\n` : '') +
       `• <b>Time (PT):</b> ${now}\n` +
       `• <b>Submission ID:</b> <code>${data.id}</code>\n\n` +
       `<i>Use /check_claims to review pending submissions.</i>`
@@ -181,13 +181,13 @@ export async function POST(request: NextRequest) {
   const now = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
   await sendTelegramMessage(
     `🔐 <b>New Clinic Claim Request</b>\n\n` +
-    `• <b>Clinic:</b> ${clinic.name}\n` +
-    `• <b>Clinic ID:</b> <code>${body.clinic_id}</code>\n` +
-    `• <b>Claimant:</b> ${claimantName} (${claimantRole})\n` +
-    `• <b>Email:</b> ${claimantEmail}\n` +
-    `• <b>Phone:</b> ${claimantPhone}\n` +
+    `• <b>Clinic:</b> ${esc(clinic.name)}\n` +
+    `• <b>Clinic ID:</b> <code>${esc(body.clinic_id)}</code>\n` +
+    `• <b>Claimant:</b> ${esc(claimantName)} (${esc(claimantRole)})\n` +
+    `• <b>Email:</b> ${esc(claimantEmail)}\n` +
+    `• <b>Phone:</b> ${esc(claimantPhone)}\n` +
     `• <b>Proof Type:</b> ${proofType}\n` +
-    (body.notes ? `• <b>Notes:</b> ${body.notes}\n` : '') +
+    (body.notes ? `• <b>Notes:</b> ${esc(body.notes)}\n` : '') +
     `• <b>Time (PT):</b> ${now}\n` +
     `• <b>Request ID:</b> <code>${data.id}</code>\n\n` +
     `<i>Use /check_claims to review pending claim requests.</i>`

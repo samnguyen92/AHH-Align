@@ -1,5 +1,5 @@
-fastapi
-uvicorn
+# OpenClaw runtime dependencies. Every third-party module imported anywhere under openclaw/
+# (outside legacy/) must be listed here; tests/test_imports.py enforces this.
 playwright
 playwright-stealth
 openai
@@ -11,3 +11,7 @@ duckduckgo-search
 python-dotenv
 Pillow
 psycopg2-binary
+certifi
+requests
+matplotlib
+google-auth
