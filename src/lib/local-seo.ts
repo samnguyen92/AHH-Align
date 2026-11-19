@@ -61,3 +61,22 @@ export function cityRoute(state: string, city: string) {
 export function specialtyRoute(state: string, city: string, specialty: string) {
   return `${cityRoute(state, city)}/${slugifySegment(specialty)}`;
 }
+
+// A slug is lossy ("Acupuncture & TCM" and "OB/GYN" lose their symbols, "St. Louis" its dot), so a URL can never be
+// turned back into the stored value by capitalising words. Find the real value among the combos built from the data.
+export function findCityMatch<T extends { stateSlug: string; citySlug: string }>(
+  combos: T[],
+  stateSlug: string,
+  citySlug: string,
+): T | undefined {
+  return combos.find((c) => c.stateSlug === stateSlug && c.citySlug === citySlug);
+}
+
+export function findSpecialtyMatch<T extends { stateSlug: string; citySlug: string; specialtySlug: string }>(
+  combos: T[],
+  stateSlug: string,
+  citySlug: string,
+  specialtySlug: string,
+): T | undefined {
+  return combos.find((c) => c.stateSlug === stateSlug && c.citySlug === citySlug && c.specialtySlug === specialtySlug);
+}

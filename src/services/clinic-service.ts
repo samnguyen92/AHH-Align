@@ -3,6 +3,7 @@
  * Dùng cho Server Components & Route Handlers
  */
 
+import { cache } from 'react';
 import { createServerAnonClient } from './supabase-server';
 import type {
   Clinic,
@@ -12,6 +13,8 @@ import type {
 } from '@/types/database';
 import {
   cityRoute,
+  findCityMatch,
+  findSpecialtyMatch,
   slugifySegment,
   specialtyRoute,
   stateToSlug,
@@ -757,6 +760,16 @@ export interface SpecialtySeoCombo extends CitySeoCombo {
   specialty: string;
   specialtySlug: string;
 }
+
+// Turn the slugs of a local page back into the values stored in the database (see findCityMatch).
+// cache(): generateMetadata and the page both ask, but the database is only queried once per request.
+export const resolveCityCombo = cache(async (stateSlug: string, citySlug: string): Promise<CitySeoCombo | null> =>
+  findCityMatch(await getTopCityCombos(5000), stateSlug, citySlug) ?? null);
+
+export const resolveSpecialtyCombo = cache(
+  async (stateSlug: string, citySlug: string, specialtySlug: string): Promise<SpecialtySeoCombo | null> =>
+    findSpecialtyMatch(await getTopSpecialtyCombos(5000), stateSlug, citySlug, specialtySlug) ?? null,
+);
 
 export async function getClinicSitemapEntries(limit = 50000): Promise<ClinicSitemapEntry[]> {
   const supabase = createServerAnonClient();
