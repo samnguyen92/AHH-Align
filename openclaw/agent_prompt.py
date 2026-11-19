@@ -30,6 +30,9 @@ AVAILABLE TELEGRAM FUNCTIONS
 - /newsletter_list [limit]: List newsletter subscribers after approval.
 - /newsletter_add <email>: Manually add a newsletter subscriber after approval.
 - /newsletter_remove <email>: Unsubscribe an email address after approval.
+- /drafts [limit]: List clinics waiting for review. New clinics saved by /find_clinics, /scrape_clinic_url and /run_batch start as drafts and are hidden from the public site until approved.
+- /approve_clinic <slug|id|name|all>: Publish a draft clinic (or all drafts, after approval).
+- /reject_clinic <slug|id|name>: Archive a clinic so it is hidden from the site (reversible).
 - /check_claims: List pending clinic claim requests and submissions after approval.
 - /approve_claim <id>: Approve a claim request or clinic submission after approval.
 - /reject_claim <id>: Reject a claim request or clinic submission after approval.

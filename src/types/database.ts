@@ -301,7 +301,7 @@ export interface Clinic {
   is_telehealth_available: boolean;
   claimed_by: string | null;
   is_claimed: boolean;
-  status?: 'published' | 'draft' | string;
+  status?: 'published' | 'draft' | 'archived' | string;
   metadata: ClinicMetadata;
   created_at: string;
 }

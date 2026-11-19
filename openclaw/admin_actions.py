@@ -188,6 +188,84 @@ def change_clinic_feature_image(identifier: str, image_url: Optional[str] = None
         print(f"[!] Error updating clinic metadata: {e}")
 
 
+CLINIC_STATUSES = ("draft", "published", "archived")
+
+
+def _clinic_review_line(index: int, row: dict) -> str:
+    meta = row.get("metadata") or {}
+    langs = ", ".join(row.get("languages") or []) or "no languages"
+    verified = meta.get("languages_verified")
+    lang_flag = "verified" if verified else "UNVERIFIED"
+    quality = meta.get("quality_score")
+    quality_text = f"{quality}/100" if quality is not None else "n/a"
+    place = ", ".join(p for p in (row.get("city"), row.get("state")) if p) or "no location"
+    return (
+        f"[{index}] {row.get('name')} — {place} — {row.get('specialty') or 'no specialty'}\n"
+        f"    languages: {langs} ({lang_flag}) | quality: {quality_text}\n"
+        f"    slug: {row.get('slug')} | id: {row.get('id')}"
+    )
+
+
+def count_draft_clinics() -> int:
+    db = create_admin_client()
+    result = db.table("clinics").select("id", count="exact").eq("status", "draft").limit(1).execute()
+    return int(result.count or 0)
+
+
+def list_draft_clinics(limit: int = 20) -> None:
+    """Print clinics waiting for review (status = draft), newest first."""
+    db = create_admin_client()
+    limit = max(1, min(int(limit or 20), 50))
+    result = (
+        db.table("clinics")
+        .select("id, name, slug, city, state, specialty, languages, metadata, created_at", count="exact")
+        .eq("status", "draft")
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    rows = result.data or []
+    total = result.count if result.count is not None else len(rows)
+    if not rows:
+        print("[+] No clinics are waiting for review.")
+        return
+    print(f"[*] {total} clinic(s) waiting for review (showing {len(rows)}):\n")
+    for index, row in enumerate(rows, 1):
+        print(_clinic_review_line(index, row))
+    print("\nApprove one: /approve_clinic <slug|id|name>   Approve all: /approve_clinic all")
+    print("Reject one:  /reject_clinic <slug|id|name>   (archives it, can be restored)")
+
+
+def set_clinic_status(identifier: str, new_status: str) -> None:
+    """Change one clinic's status. Matches exactly one clinic by id, slug or name."""
+    if new_status not in CLINIC_STATUSES:
+        raise ValueError(f"Invalid clinic status: {new_status!r}")
+    db = create_admin_client()
+    row = find_one_by_identifier(db, "clinics", identifier)
+    if not row:
+        print(f"[!] Clinic not found: {identifier}")
+        return
+    if row.get("status") == new_status:
+        print(f"[*] '{row.get('name')}' is already {new_status}.")
+        return
+    updated = db.table("clinics").update({"status": new_status}).eq("id", row["id"]).execute()
+    if not updated.data:
+        raise RuntimeError(f"Clinic {row['id']} was not updated")
+    print(f"[+] '{row.get('name')}' ({row.get('slug')}): {row.get('status')} -> {new_status}")
+    if new_status == "published":
+        print(f"    Live at /clinics/{row.get('slug')}")
+
+
+def approve_all_draft_clinics() -> None:
+    """Publish every clinic that is currently a draft."""
+    db = create_admin_client()
+    updated = db.table("clinics").update({"status": "published"}).eq("status", "draft").execute()
+    names = [row.get("name") for row in (updated.data or [])]
+    print(f"[+] Published {len(names)} clinic(s).")
+    for name in names[:30]:
+        print(f"    - {name}")
+
+
 def list_newsletter_subscribers(limit: int = 50) -> None:
     db = create_admin_client()
     try:

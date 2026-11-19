@@ -173,3 +173,42 @@ def test_values_are_always_bound_parameters(client):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_lists_go_to_array_columns_as_arrays_and_to_jsonb_columns_as_json(client):
+    """Regression: every list used to be sent as JSON, so TEXT[] columns (clinics.languages,
+    articles.tags) rejected the write with 'malformed array literal'."""
+    row = {
+        "id": "00000000-0000-0000-0000-00000000bb01",
+        "name": "PgClient Array Test",
+        "slug": "pgclient-array-test",
+        "languages": ["English", "Vietnamese"],      # TEXT[]
+        "metadata": {"tags": ["a", "b"], "n": 1},    # jsonb (object containing a list)
+    }
+    try:
+        client.table("clinics").delete().eq("slug", "pgclient-array-test").execute()
+        client.table("clinics").insert(row).execute()
+        got = client.table("clinics").select("languages, metadata").eq("slug", "pgclient-array-test").single().execute().data
+        assert got["languages"] == ["English", "Vietnamese"]
+        assert got["metadata"] == {"tags": ["a", "b"], "n": 1}
+
+        # update path, and a top-level list stored in a jsonb column
+        client.table("clinics").update({"languages": ["Korean"], "metadata": [1, 2, 3]}).eq("slug", "pgclient-array-test").execute()
+        got = client.table("clinics").select("languages, metadata").eq("slug", "pgclient-array-test").single().execute().data
+        assert got["languages"] == ["Korean"]
+        assert got["metadata"] == [1, 2, 3]
+
+        # upsert (what insert_clinic uses)
+        client.table("clinics").upsert({**row, "languages": ["Chinese"], "metadata": {"x": 1}}).execute()
+        got = client.table("clinics").select("languages").eq("slug", "pgclient-array-test").single().execute().data
+        assert got["languages"] == ["Chinese"]
+    finally:
+        client.table("clinics").delete().eq("slug", "pgclient-array-test").execute()
+
+
+def test_select_after_a_write_does_not_turn_it_into_a_select(client):
+    """Regression: .update(...).select() must still write."""
+    client.table(TABLE).insert({"email": "pgtest-sel@example.com"}).execute()
+    client.table(TABLE).update({"email": "pgtest-sel2@example.com"}).eq("email", "pgtest-sel@example.com").select("id").execute()
+    assert client.table(TABLE).select("id").eq("email", "pgtest-sel2@example.com").execute().data
+    assert not client.table(TABLE).select("id").eq("email", "pgtest-sel@example.com").execute().data

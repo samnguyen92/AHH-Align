@@ -22,6 +22,20 @@ import { getStateName, normalizeStateCode } from '@/lib/states';
 
 const DEFAULT_PAGE_SIZE = 20;
 
+/**
+ * Visitors may only see published clinics. New clinics created by the OpenClaw bot start as
+ * `draft` (waiting for a person to review them) and rejected ones are `archived`; neither may
+ * appear in search, on a profile page, in the sitemap or in any filter list.
+ */
+export function onlyPublic<Q extends { neq: (column: string, value: unknown) => Q }>(query: Q): Q {
+  return query.neq('status', 'draft').neq('status', 'archived');
+}
+
+export interface ClinicLookupOptions {
+  /** Admins previewing a draft before approving it. Never set this for anonymous visitors. */
+  includeUnpublished?: boolean;
+}
+
 function sanitizePostgrestPattern(raw: string): string {
   return raw.replace(/[,()]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -45,10 +59,11 @@ export async function searchClinics(
 
   try {
     // Xây dựng query cơ bản
-    let query = supabase
-      .from('clinics')
-      .select('*', { count: 'exact' })
-      .neq('status', 'draft');
+    let query = onlyPublic(
+      supabase
+        .from('clinics')
+        .select('*', { count: 'exact' })
+    );
 
     // 1. City filter (hỗ trợ chọn nhiều cities cách nhau bởi dấu phẩy)
     if (params.city) {
@@ -239,7 +254,7 @@ export async function searchClinics(
 /**
  * Lấy chi tiết một phòng khám theo ID.
  */
-export async function getClinicById(id: string): Promise<Clinic | null> {
+export async function getClinicById(id: string, options: ClinicLookupOptions = {}): Promise<Clinic | null> {
   const supabase = createServerAnonClient();
 
   if (!supabase) {
@@ -247,11 +262,11 @@ export async function getClinicById(id: string): Promise<Clinic | null> {
   }
 
   try {
-    const { data, error } = await supabase
+    const base = supabase
       .from('clinics')
       .select('*')
-      .eq('id', id)
-      .single();
+      .eq('id', id);
+    const { data, error } = await (options.includeUnpublished ? base : onlyPublic(base)).single();
 
     if (error) {
       throw error;
@@ -661,7 +676,7 @@ export const SAMPLE_NEXT_HEALTH_CLINIC: Clinic = {
 /**
  * Lấy chi tiết một phòng khám theo Slug.
  */
-export async function getClinicBySlug(slug: string): Promise<Clinic | null> {
+export async function getClinicBySlug(slug: string, options: ClinicLookupOptions = {}): Promise<Clinic | null> {
   const supabase = createServerAnonClient();
 
   if (!supabase) {
@@ -669,11 +684,11 @@ export async function getClinicBySlug(slug: string): Promise<Clinic | null> {
   }
 
   try {
-    const { data, error } = await supabase
+    const base = supabase
       .from('clinics')
       .select('*')
-      .eq('slug', slug)
-      .maybeSingle();
+      .eq('slug', slug);
+    const { data, error } = await (options.includeUnpublished ? base : onlyPublic(base)).maybeSingle();
 
     if (error) {
       throw error;
@@ -701,9 +716,11 @@ export async function getAvailableLanguages(): Promise<string[]> {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('clinics')
-      .select('languages');
+    const { data, error } = await onlyPublic(
+      supabase
+        .from('clinics')
+        .select('languages')
+    );
 
     if (error) {
       throw error;
@@ -749,10 +766,12 @@ export async function getClinicSitemapEntries(limit = 50000): Promise<ClinicSite
   }
 
   try {
-    const { data, error } = await supabase
-      .from('clinics')
-      .select('slug,created_at')
-      .not('slug', 'is', null)
+    const { data, error } = await onlyPublic(
+      supabase
+        .from('clinics')
+        .select('slug,created_at')
+        .not('slug', 'is', null)
+    )
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -773,12 +792,13 @@ export async function getTopCityCombos(limit = 200): Promise<CitySeoCombo[]> {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('clinics')
-      .select('city,state')
-      .not('city', 'is', null)
-      .not('state', 'is', null)
-      .limit(5000);
+    const { data, error } = await onlyPublic(
+      supabase
+        .from('clinics')
+        .select('city,state')
+        .not('city', 'is', null)
+        .not('state', 'is', null)
+    ).limit(5000);
 
     if (error) throw error;
 
@@ -822,13 +842,14 @@ export async function getTopSpecialtyCombos(limit = 1000): Promise<SpecialtySeoC
   }
 
   try {
-    const { data, error } = await supabase
-      .from('clinics')
-      .select('city,state,specialty')
-      .not('city', 'is', null)
-      .not('state', 'is', null)
-      .not('specialty', 'is', null)
-      .limit(5000);
+    const { data, error } = await onlyPublic(
+      supabase
+        .from('clinics')
+        .select('city,state,specialty')
+        .not('city', 'is', null)
+        .not('state', 'is', null)
+        .not('specialty', 'is', null)
+    ).limit(5000);
 
     if (error) throw error;
 
@@ -896,10 +917,11 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('clinics')
-      .select('specialty, languages, city, state, metadata, status')
-      .neq('status', 'draft');
+    const { data, error } = await onlyPublic(
+      supabase
+        .from('clinics')
+        .select('specialty, languages, city, state, metadata, status')
+    );
 
     if (error) {
       throw error;
