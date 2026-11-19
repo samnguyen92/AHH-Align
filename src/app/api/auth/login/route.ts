@@ -28,6 +28,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
+    // Checked only AFTER the password so that nobody can probe which accounts are disabled.
+    if (userRow.disabled_at) {
+      return NextResponse.json({ error: 'This account has been disabled. Please contact support.' }, { status: 403 });
+    }
+
+    // Best effort: the column is created on first start and must never block a sign-in.
+    pool.query('UPDATE auth.users SET last_sign_in_at = NOW() WHERE id = $1', [userRow.id]).catch(() => undefined);
+
     // Fetch user role
     const roleRes = await pool.query('SELECT role FROM public.user_roles WHERE user_id = $1', [userRow.id]);
     const role = roleRes.rows[0]?.role || (userRow.raw_user_meta_data || {}).role || 'provider';

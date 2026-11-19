@@ -18,6 +18,7 @@ Reliability / safety properties (each one is covered by tests/test_pg_client.py)
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import threading
@@ -404,6 +405,55 @@ class PGClient:
         self._local.last_used = time.monotonic()
         return conn
 
+    # ---- raw SQL (for schemas/queries the table builder does not cover, e.g. auth.users) ----------
+
+    def query(self, sql: str, params=None) -> List[dict]:
+        """Run one parameterised statement and return its rows ([] when it returns none).
+
+        `sql` must be a literal written in code (never built from user input); every value goes in `params`
+        (`%s` placeholders). Commits on success, rolls back on error.
+        """
+        conn = self._get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            cur.execute(sql, params or ())
+            rows = [dict(r) for r in cur.fetchall()] if cur.description else []
+            conn.commit()
+            return rows
+        except BaseException:
+            try:
+                conn.rollback()
+            except Exception:
+                self._discard_conn()
+            raise
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+
+    @contextlib.contextmanager
+    def transaction(self):
+        """Several statements that must succeed or fail together:
+
+            with db.transaction() as tx:
+                rows = tx.query("SELECT ... FOR UPDATE", (...))
+                tx.query("UPDATE ...", (...))
+
+        Commits when the block ends, rolls back if it raises. Do not use the table builder (`db.table`)
+        inside the block: it commits on its own.
+        """
+        conn = self._get_conn()
+        try:
+            yield _Transaction(conn)
+            conn.commit()
+        except BaseException:
+            try:
+                conn.rollback()
+            except Exception:
+                self._discard_conn()
+            raise
+
     def close(self) -> None:
         """Close the calling thread's connection (long-lived threads may call this when done)."""
         self._discard_conn()
@@ -437,6 +487,21 @@ class PGClient:
                 cur.close()
             except Exception:
                 pass
+
+
+class _Transaction:
+    """Handle passed to `PGClient.transaction()` blocks."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def query(self, sql: str, params=None) -> List[dict]:
+        cur = self._conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            cur.execute(sql, params or ())
+            return [dict(r) for r in cur.fetchall()] if cur.description else []
+        finally:
+            cur.close()
 
 
 _COLUMN_TYPES: dict = {}  # (db_url, table) -> {column: udt_name}; array types start with "_"

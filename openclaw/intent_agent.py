@@ -207,6 +207,7 @@ ALLOWED ACTIONS:
   parameters: {"timeframe": "week", "filter_type": "all"}
 - check_anomalies: Check for anomalies (traffic drops, broken links).
   parameters: {}
+- User management is NEVER an action you can choose. If the user asks to add, invite, delete, disable, restore or change the role of a person/account, answer with action "chat" and tell them to use the slash commands /users, /user, /user_add, /user_role, /user_disable, /user_restore or /users_purge.
 - chat: Casual conversation, greeting, or general question about Asian Health Hub.
   parameters: {}
 

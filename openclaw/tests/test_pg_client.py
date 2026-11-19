@@ -247,3 +247,35 @@ def test_idle_connection_is_pinged_and_replaced_before_use(client, monkeypatch):
     monkeypatch.setattr(pg_client, "IDLE_PING_SECONDS", -1)  # treat the connection as idle
     assert client.table(TABLE).select("id").limit(1).execute().data is not None  # no error, no retry needed
     assert client._get_conn().get_backend_pid() != pid
+
+
+# ------------------------------------------------------------------ raw SQL + transactions
+
+def test_query_runs_parameterised_sql_on_any_schema(client):
+    rows = client.query("SELECT %s::int AS n, %s::text AS t", (7, "x'; DROP TABLE y; --"))
+    assert rows == [{"n": 7, "t": "x'; DROP TABLE y; --"}]
+    assert client.query("SELECT count(*) AS c FROM auth.users")[0]["c"] >= 0
+    # a statement without a result set returns []
+    assert client.query("UPDATE newsletter_subscriptions SET email = email WHERE false") == []
+
+
+def test_query_error_rolls_back_and_connection_stays_usable(client):
+    with pytest.raises(psycopg2.errors.UndefinedTable):
+        client.query("SELECT * FROM no_such_table_zzz")
+    assert client.query("SELECT 1 AS ok") == [{"ok": 1}]
+
+
+def test_transaction_commits_all_statements_together(client):
+    with client.transaction() as tx:
+        tx.query("INSERT INTO newsletter_subscriptions (email) VALUES (%s)", ("pgtest-tx1@example.com",))
+        tx.query("INSERT INTO newsletter_subscriptions (email) VALUES (%s)", ("pgtest-tx2@example.com",))
+    assert len(client.table(TABLE).select("id").ilike("email", "pgtest-tx%").execute().data) == 2
+
+
+def test_transaction_rolls_back_everything_on_error(client):
+    with pytest.raises(RuntimeError):
+        with client.transaction() as tx:
+            tx.query("INSERT INTO newsletter_subscriptions (email) VALUES (%s)", ("pgtest-txfail@example.com",))
+            raise RuntimeError("boom")
+    assert client.table(TABLE).select("id").eq("email", "pgtest-txfail@example.com").execute().data == []
+    assert client.query("SELECT 1 AS ok") == [{"ok": 1}]  # connection healthy afterwards

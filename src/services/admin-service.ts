@@ -63,6 +63,8 @@ export interface AdminUserRow {
   role: AdminUserRole;
   createdAt: string;
   lastSignInAt: string | null;
+  /** Disabled accounts cannot sign in; the bot can restore them for 30 days. */
+  disabled: boolean;
 }
 
 function formatRelativeTime(value: string | null | undefined) {
@@ -340,6 +342,7 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
       role: roleByUserId.get(user.id) ?? 'provider',
       createdAt: user.created_at,
       lastSignInAt: user.last_sign_in_at ?? null,
+      disabled: Boolean(user.disabled_at),
     };
   });
 }

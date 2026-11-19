@@ -118,6 +118,11 @@ export function UsersManagement({ users, currentUserId }: UsersManagementProps) 
                       {user.name || user.email}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">{user.email}</div>
+                    {user.disabled && (
+                      <span className="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                        Disabled · cannot sign in
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-4">
                     <Badge variant={roleVariant(user.role)} className="capitalize">

@@ -231,3 +231,161 @@ def test_help_lists_the_review_commands(bot):
     text = bot.help_text()
     for cmd in ("/drafts", "/approve_clinic", "/reject_clinic"):
         assert cmd in text
+
+
+# --------------------------------------------------------------------------- user management commands
+
+@pytest.fixture()
+def admin_bot(bot, monkeypatch):
+    """A bot whose Telegram id 111 may manage users (222 is only allowed to use the bot)."""
+    bot.user_admin_ids = {111}
+    calls = []
+    for name in ("list_users_job", "show_user_job", "restore_user_job", "create_user_invite_job",
+                 "set_user_role_job", "disable_user_job", "purge_disabled_users_job"):
+        monkeypatch.setattr(telegram_bot, name, (lambda n: lambda *a, **k: calls.append((n, a)) or f"{n} done")(name))
+    import user_admin
+
+    monkeypatch.setattr(user_admin, "user_brief", lambda email: {"role": "provider", "email": email} if "ghost" not in email else None)
+    monkeypatch.setattr(user_admin, "purgeable_count", lambda: 3)
+    bot.calls = calls
+    return bot
+
+
+def test_user_management_is_off_until_superadmin_ids_are_configured(bot):
+    assert bot.user_admin_ids == set()
+    bot.handle_command(111, "/users", user_id=111)
+    assert "TELEGRAM_SUPERADMIN_IDS" in bot.sent[-1]
+
+
+def test_only_listed_superadmins_may_manage_users(admin_bot):
+    admin_bot.handle_command(222, "/user_add a@example.com", user_id=222)
+    assert "not allowed to manage users" in admin_bot.sent[-1]
+    assert 222 not in admin_bot.pending_actions and admin_bot.calls == []
+
+
+def test_user_management_requires_a_private_chat(admin_bot):
+    admin_bot.handle_command(-1001, "/users", user_id=111)  # a group chat
+    assert "private chat" in admin_bot.sent[-1] and admin_bot.calls == []
+
+
+def test_users_and_user_are_read_only_and_run_immediately(admin_bot):
+    admin_bot.handle_command(111, "/users ann", user_id=111)
+    admin_bot.handle_command(111, "/user Ann@Example.com", user_id=111)
+    assert _wait_for(admin_bot, lambda s: len(s) >= 4)
+    assert admin_bot.calls == [("list_users_job", ("ann", 20)), ("show_user_job", ("ann@example.com",))]
+    assert 111 not in admin_bot.pending_actions
+
+
+def test_user_add_needs_approval_then_runs_with_the_actor(admin_bot):
+    admin_bot.handle_command(111, "/user_add New@Example.com", user_id=111)
+    pending = admin_bot.pending_actions[111]
+    assert pending["type"] == "user_add" and pending["email"] == "new@example.com" and pending["role"] == "provider"
+    assert "INVITE new@example.com as 'provider'" in admin_bot.sent[-1] and "approve" in admin_bot.sent[-1]
+    assert admin_bot.calls == []  # nothing happens before approval
+
+    admin_bot.run_pending_action(111, admin_bot.pending_actions.pop(111))
+    assert _wait_for(admin_bot, lambda s: any("create_user_invite_job done" in m for m in s))
+    assert admin_bot.calls == [("create_user_invite_job", ("new@example.com", "provider", "telegram:111"))]
+
+
+def test_user_add_validates_email_and_role_before_asking(admin_bot):
+    admin_bot.handle_command(111, "/user_add not-an-email", user_id=111)
+    assert "not a valid e-mail" in admin_bot.sent[-1]
+    admin_bot.handle_command(111, "/user_add a@example.com owner", user_id=111)
+    assert "Invalid role" in admin_bot.sent[-1]
+    admin_bot.handle_command(111, "/user_add", user_id=111)
+    assert admin_bot.sent[-1].startswith("Use: /user_add")
+    assert 111 not in admin_bot.pending_actions
+
+
+def test_granting_superadmin_shows_a_warning(admin_bot):
+    admin_bot.handle_command(111, "/user_add a@example.com superadmin", user_id=111)
+    assert "⚠️" in admin_bot.sent[-1]
+
+
+def test_user_role_shows_current_and_new_role_and_waits_for_approval(admin_bot):
+    admin_bot.handle_command(111, "/user_role a@example.com admin", user_id=111)
+    assert "provider -> admin" in admin_bot.sent[-1] and admin_bot.calls == []
+    admin_bot.run_pending_action(111, admin_bot.pending_actions.pop(111))
+    assert _wait_for(admin_bot, lambda s: any("set_user_role_job done" in m for m in s))
+    assert admin_bot.calls == [("set_user_role_job", ("a@example.com", "admin", "telegram:111"))]
+
+
+def test_user_role_unknown_user_or_bad_role_creates_nothing(admin_bot):
+    admin_bot.handle_command(111, "/user_role ghost@example.com admin", user_id=111)
+    assert "No user with e-mail ghost@example.com" in admin_bot.sent[-1]
+    admin_bot.handle_command(111, "/user_role a@example.com root", user_id=111)
+    assert admin_bot.sent[-1].startswith("Use: /user_role")
+    assert 111 not in admin_bot.pending_actions
+
+
+def test_user_disable_waits_for_approval_and_mentions_the_30_day_restore(admin_bot):
+    admin_bot.handle_command(111, "/user_disable a@example.com", user_id=111)
+    assert "30 days" in admin_bot.sent[-1] and admin_bot.calls == []
+    admin_bot.run_pending_action(111, admin_bot.pending_actions.pop(111))
+    assert _wait_for(admin_bot, lambda s: any("disable_user_job done" in m for m in s))
+    assert admin_bot.calls == [("disable_user_job", ("a@example.com", "telegram:111"))]
+
+
+def test_user_restore_is_immediate(admin_bot):
+    admin_bot.handle_command(111, "/user_restore a@example.com", user_id=111)
+    assert _wait_for(admin_bot, lambda s: any("restore_user_job done" in m for m in s))
+    assert admin_bot.calls == [("restore_user_job", ("a@example.com", "telegram:111"))]
+
+
+def test_users_purge_shows_the_count_and_waits_for_approval(admin_bot):
+    admin_bot.handle_command(111, "/users_purge", user_id=111)
+    assert "PERMANENTLY DELETE 3 user(s)" in admin_bot.sent[-1] and admin_bot.calls == []
+    admin_bot.run_pending_action(111, admin_bot.pending_actions.pop(111))
+    assert _wait_for(admin_bot, lambda s: any("purge_disabled_users_job done" in m for m in s))
+
+
+def test_users_purge_with_nothing_to_purge_asks_nothing(admin_bot, monkeypatch):
+    import user_admin
+
+    monkeypatch.setattr(user_admin, "purgeable_count", lambda: 0)
+    admin_bot.handle_command(111, "/users_purge", user_id=111)
+    assert "Nothing to purge" in admin_bot.sent[-1] and 111 not in admin_bot.pending_actions
+
+
+def test_an_expired_user_request_is_not_executed(admin_bot, monkeypatch):
+    import intent_agent
+
+    admin_bot.handle_command(111, "/user_disable a@example.com", user_id=111)
+    admin_bot.pending_actions[111]["expires_at"] = time.time() - 1
+    monkeypatch.setattr(
+        telegram_bot, "run_intent_agent",
+        lambda *a, **k: intent_agent.IntentResult(action="user_disable", is_approval=True, requires_approval=False),
+    )
+    admin_bot.handle_chat(111, "approve")
+    assert "expired" in admin_bot.sent[-1] and admin_bot.calls == []
+    assert 111 not in admin_bot.pending_actions  # a stale request cannot be approved later either
+
+
+def test_permission_is_rechecked_when_the_approval_arrives(admin_bot):
+    admin_bot.handle_command(111, "/user_disable a@example.com", user_id=111)
+    action = admin_bot.pending_actions.pop(111)
+    admin_bot.user_admin_ids = set()  # access removed in the meantime
+    admin_bot.run_pending_action(111, action)
+    assert "not allowed to manage users" in admin_bot.sent[-1] and admin_bot.calls == []
+
+
+def test_an_action_created_by_someone_else_is_refused(admin_bot):
+    admin_bot.user_admin_ids = {111, 222}
+    admin_bot.handle_command(111, "/user_disable a@example.com", user_id=111)
+    action = admin_bot.pending_actions.pop(111)
+    admin_bot.run_pending_action(222, action)  # a different person approves
+    assert "not allowed" in admin_bot.sent[-1] and admin_bot.calls == []
+
+
+def test_invite_tokens_are_redacted_from_chat_memory_and_logs(bot):
+    link = "https://hub.example.org/auth/accept-invite?token=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-"
+    bot.remember_job_output(1, "user_add", f"[+] Invite created\n{link}")
+    assert "AbCdEf" not in bot.chat_memory[1]["text"] and "token=<redacted>" in bot.chat_memory[1]["text"]
+    assert "AbCdEf" not in jobs.redact_secrets(link)
+
+
+def test_help_lists_the_user_commands(bot):
+    text = bot.help_text()
+    for cmd in ("/users", "/user_add", "/user_role", "/user_disable", "/user_restore", "/users_purge"):
+        assert cmd in text
