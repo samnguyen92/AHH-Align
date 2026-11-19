@@ -11,7 +11,7 @@ from typing import Callable, List, Optional
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from openai import OpenAI
-from pg_client import create_client as create_supabase_client
+from pg_client import create_client as create_pg_client
 
 from scraper import scrape_content_from_url
 
@@ -616,9 +616,9 @@ def build_clinic_database_fact_sheets(user_request: str) -> List[dict]:
         return []
 
     try:
-        supabase = create_supabase_client()
+        db = create_pg_client()
         rows = (
-            supabase.table("clinics")
+            db.table("clinics")
             .select("name,slug,description,address,city,state,phone,languages,specialty,metadata")
             .limit(100)
             .execute()
@@ -662,7 +662,7 @@ def build_clinic_database_fact_sheets(user_request: str) -> List[dict]:
     fact_sheets = []
     for row in selected_rows:
         slug = row.get("slug") or ""
-        source_url = f"/clinics/{slug}" if slug else "Supabase clinics table"
+        source_url = f"/clinics/{slug}" if slug else "PostgreSQL clinics table"
         metadata = row.get("metadata") or {}
         facts = [
             f"Clinic name: {row.get('name')}",
@@ -686,7 +686,7 @@ def build_clinic_database_fact_sheets(user_request: str) -> List[dict]:
                 "key_facts": facts,
                 "important_quotes_or_terms": row.get("languages") or [],
                 "limitations": [
-                    "Fallback source from Asian Health Hub Supabase clinic database because web search returned no usable links.",
+                    "Fallback source from Asian Health Hub PostgreSQL clinic database because web search returned no usable links.",
                     "Language availability and clinic details should be verified with the clinic before publishing a ranked recommendation.",
                 ],
             }

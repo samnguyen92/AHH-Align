@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from pg_client import create_client
-Client = object
+from pg_client import PGClient as Client
 
 from storage import safe_storage_name, upload_image_bytes
 

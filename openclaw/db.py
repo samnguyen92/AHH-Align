@@ -132,7 +132,7 @@ def insert_clinic(clinic_data: dict):
     """
     Insert or update clinic data in PostgreSQL.
     """
-    supabase = create_client()
+    db = create_client()
     
     # Construct DB payload
     slug = generate_slug(clinic_data.get("name", ""))
@@ -210,7 +210,7 @@ def insert_clinic(clinic_data: dict):
     try:
         # Check if clinic already exists by slug (safer than name)
         existing = (
-            supabase.table("clinics")
+            db.table("clinics")
             .select("id, metadata, description, address, city, state, zip_code, phone, specialty, languages")
             .eq("slug", slug)
             .execute()
@@ -241,11 +241,11 @@ def insert_clinic(clinic_data: dict):
             db_payload["id"] = existing_row["id"]
             db_payload["metadata"] = merged_metadata
             _attach_quality(db_payload)
-            response = supabase.table("clinics").upsert(db_payload).execute()
+            response = db.table("clinics").upsert(db_payload).execute()
             print(f"[*] Updated existing clinic in DB: {db_payload['name']}")
         else:
             _attach_quality(db_payload)
-            response = supabase.table("clinics").insert(db_payload).execute()
+            response = db.table("clinics").insert(db_payload).execute()
             print(f"[*] Inserted new clinic into DB: {db_payload['name']}")
         print(f"[*] Quality score: {db_payload['metadata'].get('quality_score')}/100; missing: {', '.join(db_payload['metadata'].get('quality_missing') or []) or 'none'}")
             

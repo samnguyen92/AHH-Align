@@ -6,7 +6,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 from pg_client import create_client
-Client = object
+from pg_client import PGClient as Client
 from storage import upload_image_value
 
 load_dotenv(".env")
@@ -119,15 +119,13 @@ def find_article(articles: list[dict], identifier: str) -> dict:
 
 def regenerate_article_images(identifier: str, image_count: int = 3) -> None:
     openrouter_key = os.environ.get("OPENROUTER_API_KEY")
-    supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-    if not openrouter_key or not supabase_url or not supabase_key:
-        raise RuntimeError("Missing OPENROUTER_API_KEY, NEXT_PUBLIC_SUPABASE_URL, or Supabase secret key")
+    if not openrouter_key:
+        raise RuntimeError("Missing OPENROUTER_API_KEY")
 
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=openrouter_key)
-    supabase: Client = create_client(supabase_url, supabase_key)
-    articles = supabase.table("articles").select("id, slug, title, excerpt, category, seo_meta").execute().data
+    db = create_client()
+    articles = db.table("articles").select("id, slug, title, excerpt, category, seo_meta").execute().data
     article = find_article(articles, identifier)
     count = max(1, min(int(image_count or 3), 5))
 
@@ -152,23 +150,21 @@ def regenerate_article_images(identifier: str, image_count: int = 3) -> None:
 
     seo_meta["og_image"] = image_urls[0]
     seo_meta["images"] = image_urls[:5]
-    supabase.table("articles").update({"seo_meta": seo_meta}).eq("id", article["id"]).execute()
+    db.table("articles").update({"seo_meta": seo_meta}).eq("id", article["id"]).execute()
     print(f"[+] Replaced article images: {len(image_urls)} image(s)")
     print(f"[*] og_image: {image_urls[0]}")
 
 
 def main():
     openrouter_key = os.environ.get("OPENROUTER_API_KEY")
-    supabase_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    supabase_key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-    if not openrouter_key or not supabase_url or not supabase_key:
-        raise RuntimeError("Missing OPENROUTER_API_KEY, NEXT_PUBLIC_SUPABASE_URL, or Supabase secret key")
+    if not openrouter_key:
+        raise RuntimeError("Missing OPENROUTER_API_KEY")
 
     client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=openrouter_key)
-    supabase: Client = create_client(supabase_url, supabase_key)
+    db = create_client()
 
-    articles = supabase.table("articles").select("id, slug, title, excerpt, category, seo_meta").execute().data
+    articles = db.table("articles").select("id, slug, title, excerpt, category, seo_meta").execute().data
 
     for article in articles:
         seo_meta = article.get("seo_meta") or {}
@@ -199,7 +195,7 @@ def main():
 
         seo_meta["og_image"] = current_images[0]
         seo_meta["images"] = current_images[:5]
-        supabase.table("articles").update({"seo_meta": seo_meta}).eq("id", article["id"]).execute()
+        db.table("articles").update({"seo_meta": seo_meta}).eq("id", article["id"]).execute()
         print(f"[+] Updated article images: {len(seo_meta['images'])} image(s)")
 
 

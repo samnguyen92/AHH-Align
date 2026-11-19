@@ -57,11 +57,33 @@ def _write_log(text: str) -> None:
     _openclaw_logger.info("\n[%s]\n%s", timestamp, text)
 
 
+class JobFailed(Exception):
+    """Raised when a job ended with an error, so callers can report a failure instead of "finished"."""
+
+    def __init__(self, name: str, output: str, cause: Optional[BaseException] = None) -> None:
+        self.name = name
+        self.output = output
+        self.cause = cause
+        super().__init__(f"{name} failed: {cause!r}" if cause else f"{name} failed")
+
+    def short(self, max_lines: int = 12, max_chars: int = 1500) -> str:
+        """The part of the output a person needs: the last lines, which hold the error."""
+        lines = [line for line in (self.output or "").splitlines() if line.strip()]
+        text = "\n".join(lines[-max_lines:])
+        return text[-max_chars:]
+
+
 def _run_with_captured_output(name: str, fn: Callable[[], None]) -> str:
+    """Run a job, capture its output and log it.
+
+    Returns the captured output on success. Raises `JobFailed` when the job raised ANY error
+    (including SystemExit, which `except Exception` would silently let kill a bot thread).
+    """
     buffer = io.StringIO()
     started = datetime.now()
     stdout_tee = TeeWriter(buffer, sys.__stdout__)
     stderr_tee = TeeWriter(buffer, sys.__stderr__)
+    failure: Optional[BaseException] = None
 
     with contextlib.redirect_stdout(stdout_tee), contextlib.redirect_stderr(stderr_tee):
         print(f"[*] Starting job: {name}")
@@ -69,12 +91,15 @@ def _run_with_captured_output(name: str, fn: Callable[[], None]) -> str:
         try:
             fn()
             print(f"[*] Finished job: {name}")
-        except Exception:
+        except (Exception, SystemExit) as exc:
+            failure = exc
             print(f"[!] Job failed: {name}")
             print(traceback.format_exc())
 
     output = buffer.getvalue().strip()
     _write_log(output)
+    if failure is not None:
+        raise JobFailed(name, output, failure)
     return output
 
 
@@ -242,9 +267,6 @@ def research_job(user_request: str) -> str:
 
 def check_status() -> str:
     missing = []
-    if not (os.environ.get("DATABASE_URL") or os.path.exists("/app") or os.environ.get("POSTGRES_DB")):
-        # Default connection string exists in pg_client
-        pass
     if not os.environ.get("OPENROUTER_API_KEY"):
         missing.append("OPENROUTER_API_KEY")
     if not os.environ.get("TELEGRAM_BOT_TOKEN"):
@@ -256,18 +278,18 @@ def check_status() -> str:
     try:
         from pg_client import create_client
 
-        supabase = create_client()
-        clinics = supabase.table("clinics").select("id", count="exact").limit(1).execute()
-        articles = supabase.table("articles").select("id", count="exact").limit(1).execute()
+        db = create_client()
+        clinics = db.table("clinics").select("id", count="exact").limit(1).execute()
+        articles = db.table("articles").select("id", count="exact").limit(1).execute()
         lines.append(f"Clinics: {clinics.count}")
         lines.append(f"Articles: {articles.count}")
         try:
-            subscribers = supabase.table("newsletter_subscriptions").select("id", count="exact").limit(1).execute()
+            subscribers = db.table("newsletter_subscriptions").select("id", count="exact").limit(1).execute()
             lines.append(f"Subscribers: {subscribers.count}")
         except Exception:
             pass
     except Exception as exc:
-        lines.append(f"Supabase check failed: {exc}")
+        lines.append(f"Database check failed: {exc}")
 
     lines.append(f"Log file: {LOG_PATH}")
     return "\n".join(lines)
@@ -351,9 +373,9 @@ def check_clinic_quality(threshold: int = 85, limit: int = 15) -> str:
     from normalize import compute_quality
 
     try:
-        supabase = create_client()
+        db = create_client()
         rows = (
-            supabase.table("clinics")
+            db.table("clinics")
             .select("name,slug,city,state,specialty,phone,address,zip_code,languages,metadata")
             .limit(2000)
             .execute()

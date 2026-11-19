@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional, List
 from openai import OpenAI
 from pg_client import create_client
-Client = object
+from pg_client import PGClient as Client
 from dotenv import load_dotenv
 
 # Import helpers from generate_insights to reuse core clients, storage and image pipelines
@@ -28,10 +28,10 @@ load_dotenv(".env")
 load_dotenv("../.env.local")
 
 
-def get_next_issue_info(supabase: Client) -> tuple[str, str]:
+def get_next_issue_info(db: Client) -> tuple[str, str]:
     """Retrieve all existing Pulse newsletters to calculate the next issue number and label."""
     try:
-        res = supabase.table("articles").select("seo_meta").eq("category", "pulse").execute()
+        res = db.table("articles").select("seo_meta").eq("category", "pulse").execute()
         existing_articles = res.data or []
     except Exception as exc:
         print(f"[!] Error fetching pulse articles: {exc}")
@@ -51,10 +51,10 @@ def get_next_issue_info(supabase: Client) -> tuple[str, str]:
     return f"#{next_issue}", month_label
 
 
-def get_recent_clinics(supabase: Client, limit: int = 5) -> List[dict]:
+def get_recent_clinics(db: Client, limit: int = 5) -> List[dict]:
     """Fetch recently verified/added clinics to showcase in the spotlight section of the newsletter."""
     try:
-        res = supabase.table("clinics").select("name, specialty, city, state, languages").order("created_at", desc=True).limit(limit).execute()
+        res = db.table("clinics").select("name, specialty, city, state, languages").order("created_at", desc=True).limit(limit).execute()
         return res.data or []
     except Exception as exc:
         print(f"[!] Error fetching recent clinics: {exc}")
@@ -64,14 +64,14 @@ def get_recent_clinics(supabase: Client, limit: int = 5) -> List[dict]:
 def create_pulse(topic: Optional[str] = None) -> None:
     """Core function to create and publish a new Pulse newsletter issue via AI agent."""
     print("[*] Starting monthly Pulse newsletter generation...")
-    client, supabase = create_clients()
+    client, db = create_clients()
 
     # 1. Fetch metadata
-    issue_number, month_label = get_next_issue_info(supabase)
+    issue_number, month_label = get_next_issue_info(db)
     print(f"[*] Preparing Issue: {issue_number} for {month_label}")
 
     # 2. Gather clinic spotlight list
-    recent_clinics = get_recent_clinics(supabase, limit=5)
+    recent_clinics = get_recent_clinics(db, limit=5)
     clinics_summary = ""
     if recent_clinics:
         for c in recent_clinics:
@@ -167,14 +167,14 @@ def create_pulse(topic: Optional[str] = None) -> None:
         )
         image_value = generate_image_value(client, image_prompt, kind="pulse_cover")
         base_slug = generate_slug(data["title"])
-        slug = make_unique_slug(supabase, base_slug)
+        slug = make_unique_slug(db, base_slug)
         cover_image_url = save_generated_image(image_value, slug, "cover")
     except Exception as exc:
         print(f"[!] Cover image generation failed: {exc}")
         base_slug = generate_slug(data["title"])
-        slug = make_unique_slug(supabase, base_slug)
+        slug = make_unique_slug(db, base_slug)
 
-    # 6. Publish to Supabase under 'articles' with category = 'pulse'
+    # 6. Save to the database under 'articles' with category = 'pulse'
     seo_meta = {
         "description": data["seo_description"],
         "keywords": data["tags"],
@@ -199,11 +199,11 @@ def create_pulse(topic: Optional[str] = None) -> None:
     }
 
     try:
-        report_progress("🚀 Đang xuất bản bản tin lên Supabase...")
-        supabase.table("articles").insert(article_payload).execute()
+        report_progress("🚀 Đang lưu bản tin vào cơ sở dữ liệu...")
+        db.table("articles").insert(article_payload).execute()
         print(f"[+] Article published successfully: /pulse/{slug}")
     except Exception as e:
-        print(f"[!] Failed to insert article into Supabase: {e}")
+        print(f"[!] Failed to insert article into the database: {e}")
 
 
 if __name__ == "__main__":

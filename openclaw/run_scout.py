@@ -2,7 +2,7 @@
 run_scout.py - Google Places scout pipeline for discovering new clinic profiles.
 
 The scout pipeline starts from a free-text Google Places query, keeps only places
-with official websites, skips clinics already in Supabase, scrapes/extracts the
+with official websites, skips clinics already in the database, scrapes/extracts the
 site content, enriches the result, and saves new clinic records.
 
 Filters applied:
@@ -144,14 +144,14 @@ def _is_valid_website(url: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-def _get_supabase_client():
+def _get_db_client():
     from pg_client import create_client
     return create_client()
 
 
 def _load_existing_clinic_keys() -> tuple[set[str], set[str]]:
-    supabase = _get_supabase_client()
-    rows = supabase.table("clinics").select("name, metadata").execute().data or []
+    db = _get_db_client()
+    rows = db.table("clinics").select("name, metadata").execute().data or []
     names: set[str] = set()
     websites: set[str] = set()
 
