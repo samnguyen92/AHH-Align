@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 
 from ai_agent import ask_openclaw_agent
 from agent_prompt import OPENCLAW_AGENT_SYSTEM_PROMPT
-from intent_agent import run_intent_agent
+import agent_tools
+from tool_agent import run_agent
 from tg_format import markdown_to_html
 from jobs import (
     JobFailed,
@@ -1122,7 +1123,11 @@ class TelegramBot:
     def run_pending_action(self, chat_id: int, action: dict) -> None:
         action_type = action["type"]
 
-        if action_type == "update_clinic":
+        if action_type == "check_anomalies":
+            self.run_job(chat_id, action.get("name") or "check_anomalies",
+                         lambda: check_anomalies_job(lang=action.get("lang") or self.chat_lang.get(chat_id, "en")),
+                         action_type=action_type)
+        elif action_type == "update_clinic":
             self.run_clinic_edit(chat_id, action)
         elif action_type == "undo_clinic_edit":
             self.run_clinic_undo(chat_id, action)
@@ -1768,6 +1773,13 @@ class TelegramBot:
         buttons = [[("✅ Duyệt" if vi else "✅ Approve", f"ok:{pending['id']}"), ("❌ Huỷ" if vi else "❌ Cancel", f"no:{pending['id']}")]]
         self.send_message(chat_id, message, buttons=buttons)
 
+    def send_typing(self, chat_id: int) -> None:
+        """Show "typing…" while the AI thinks (best effort)."""
+        try:
+            self.request("sendChatAction", {"chat_id": chat_id, "action": "typing"})
+        except Exception:
+            pass
+
     def handle_callback(self, callback: dict) -> None:
         """An Approve / Cancel button was pressed."""
         callback_id = callback.get("id")
@@ -1876,7 +1888,7 @@ class TelegramBot:
         history = self.conversation_for_ai(chat_id)  # before this message, so it is not counted twice
         self.remember_turn(chat_id, "user", text)
 
-        intent_res = run_intent_agent(
+        intent_res = run_agent(
             text,
             memory=current_memory,
             pending_action=current_pending,
@@ -1949,7 +1961,21 @@ class TelegramBot:
             self.plan_clinic_update(chat_id, intent_res, user_id)
             return
 
-        # 3. Requires approval (a new action detected by the IntentAgent); it replaces any earlier pending one
+        # The tool definition, not the model, decides whether an action needs a human yes (a model can be wrong or tricked).
+        tool = agent_tools.BY_NAME.get(intent_res.action)
+        if tool and not intent_res.is_direct_chat:
+            intent_res.requires_approval = tool.approval
+            if tool.approval and not intent_res.confirmation_message:
+                intent_res.confirmation_message = agent_tools.confirmation_card(tool.name, params, intent_res.lang)
+
+        # 2e. Read-only tools run at once, no approval needed
+        if tool and not tool.approval and not intent_res.is_direct_chat:
+            with self._pending_lock:
+                self.pending_actions.pop(chat_id, None)
+            self.run_pending_action(chat_id, intent_res.to_pending_dict())
+            return
+
+        # 3. Requires approval (a new action detected by the agent); it replaces any earlier pending one
         if intent_res.requires_approval and not intent_res.is_direct_chat:
             message = intent_res.confirmation_message or (
                 f"Bạn muốn {self.describe_action(params.get('name') or intent_res.action, 'vi')}, đúng không?\n\nTrả lời `approve` để bắt đầu."
@@ -2006,6 +2032,7 @@ class TelegramBot:
                     if text.startswith("/"):
                         self.handle_command(chat_id, text, user_id=user_id)
                     else:
+                        self.send_typing(chat_id)
                         self.handle_chat(chat_id, text, user_id=user_id)
             except KeyboardInterrupt:
                 print("[*] Stopping OpenClaw Telegram bot.")

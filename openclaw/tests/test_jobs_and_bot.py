@@ -220,7 +220,7 @@ def test_natural_language_list_drafts_runs_immediately(bot, monkeypatch):
     monkeypatch.setattr(telegram_bot, "list_draft_clinics_job", lambda limit=20: "drafts from chat")
     monkeypatch.setattr(
         telegram_bot,
-        "run_intent_agent",
+        "run_agent",
         lambda *a, **k: intent_agent.IntentResult(action="list_drafts", requires_approval=False, parameters={"limit": 3}),
     )
     bot.handle_chat(1, "clinic nào đang chờ duyệt?")
@@ -355,7 +355,7 @@ def test_an_expired_user_request_is_not_executed(admin_bot, monkeypatch):
     admin_bot.handle_command(111, "/user_disable a@example.com", user_id=111)
     admin_bot.pending_actions[111]["expires_at"] = time.time() - 1
     monkeypatch.setattr(
-        telegram_bot, "run_intent_agent",
+        telegram_bot, "run_agent",
         lambda *a, **k: intent_agent.IntentResult(action="user_disable", is_approval=True, requires_approval=False),
     )
     admin_bot.handle_chat(111, "approve")
@@ -442,7 +442,7 @@ def test_approving_merges_the_pull_request(web_bot, monkeypatch):
 
     web_bot.handle_command(111, "/web_edit bigger hero", user_id=111)
     assert _wait_for(web_bot, lambda s: any("Merge Pull Request" in m for m in s))
-    monkeypatch.setattr(telegram_bot, "run_intent_agent",
+    monkeypatch.setattr(telegram_bot, "run_agent",
                         lambda *a, **k: intent_agent.IntentResult(action="web_pr_merge", is_approval=True, requires_approval=False))
     web_bot.handle_chat(111, "approve")
     assert _wait_for(web_bot, lambda s: any("merged it" in m for m in s))
@@ -532,7 +532,7 @@ def test_an_expired_or_foreign_merge_approval_is_not_executed(web_bot, monkeypat
     web_bot.handle_command(111, "/web_edit bigger hero", user_id=111)
     assert _wait_for(web_bot, lambda s: any("Merge Pull Request" in m for m in s))
     web_bot.pending_actions[111]["expires_at"] = time.time() - 1
-    monkeypatch.setattr(telegram_bot, "run_intent_agent",
+    monkeypatch.setattr(telegram_bot, "run_agent",
                         lambda *a, **k: intent_agent.IntentResult(action="web_pr_merge", is_approval=True, requires_approval=False))
     web_bot.handle_chat(111, "approve")
     assert "expired" in web_bot.sent[-1] and web_bot.merged == []
