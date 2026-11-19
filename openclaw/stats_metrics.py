@@ -513,10 +513,22 @@ def _audit_page(base: str, path: str) -> Dict[str, Any]:
 
     url = f"{base}{path}"
     started = time.time()
-    try:
-        resp = _http_get(url)
-    except Exception as exc:
-        return {"path": path, "status": 0, "error": str(exc)[:80], "issues": ["unreachable"]}
+    resp = None
+    error = ""
+    # A page that is not cached yet can be slow or fail once while it renders: look again (longer) before
+    # calling it broken. A real 404 is not retried.
+    for attempt, timeout in enumerate((15, 40)):
+        try:
+            resp = _http_get(url, timeout=timeout)
+            error = ""
+        except Exception as exc:
+            resp, error = None, str(exc)[:80]
+        if resp is not None and resp.status_code < 500:
+            break
+        if attempt == 0:
+            time.sleep(2)
+    if resp is None:
+        return {"path": path, "status": 0, "error": error, "issues": ["unreachable"]}
     ms = int((time.time() - started) * 1000)
     issues: List[str] = []
     if resp.status_code != 200:
@@ -666,6 +678,10 @@ def metric_seo_internal(sample: int = 40) -> Dict[str, Any]:
             "pages_checked": len(pages),
             "pages_ok": len(ok_pages),
             "pages_broken": [p["path"] for p in pages if p["status"] != 200],
+            # what actually went wrong: the HTTP status, or "timeout"/the error when the page never answered
+            "pages_broken_detail": [
+                {"path": p["path"], "status": p["status"], "error": p.get("error", "")} for p in pages if p["status"] != 200
+            ],
             "pages_clean": clean,
             "issue_counts": dict(issue_counts),
             "duplicate_titles": dup_titles,

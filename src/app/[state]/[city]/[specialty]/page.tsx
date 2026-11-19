@@ -9,7 +9,7 @@ import {
   stateSlugToCode,
   unslugifySegment,
 } from '@/lib/local-seo';
-import { getTopSpecialtyCombos } from '@/services/clinic-service';
+import { getTopSpecialtyCombos, resolveSpecialtyCombo } from '@/services/clinic-service';
 
 export const revalidate = 86400;
 
@@ -28,9 +28,10 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: SpecialtyPageProps): Promise<Metadata> {
   const { state, city, specialty } = await params;
-  const cityName = unslugifySegment(city);
-  const specialtyName = unslugifySegment(specialty);
-  const stateCode = stateSlugToCode(state);
+  const known = await resolveSpecialtyCombo(state, city, specialty);
+  const cityName = known?.city ?? unslugifySegment(city);
+  const specialtyName = known?.specialty ?? unslugifySegment(specialty);
+  const stateCode = known?.state ?? stateSlugToCode(state);
   const path = specialtyRoute(stateCode, cityName, specialtyName);
 
   return {
@@ -49,9 +50,10 @@ export async function generateMetadata({ params }: SpecialtyPageProps): Promise<
 
 export default async function SpecialtyLandingPage({ params }: SpecialtyPageProps) {
   const { state, city, specialty } = await params;
-  const cityName = unslugifySegment(city);
-  const specialtyName = unslugifySegment(specialty);
-  const stateCode = stateSlugToCode(state);
+  const known = await resolveSpecialtyCombo(state, city, specialty);
+  const cityName = known?.city ?? unslugifySegment(city);
+  const specialtyName = known?.specialty ?? unslugifySegment(specialty);
+  const stateCode = known?.state ?? stateSlugToCode(state);
   const data = await getDirectoryData({ city: cityName, state: stateCode, specialty: specialtyName });
 
   if (data.total === 0) {

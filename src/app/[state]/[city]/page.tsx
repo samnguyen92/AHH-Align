@@ -5,7 +5,7 @@ import { getDirectoryData } from '@/lib/site-data';
 import { JsonLd } from '@/lib/json-ld';
 import { absoluteUrl, SITE_NAME } from '@/lib/site';
 import { cityRoute, stateSlugToCode, unslugifySegment } from '@/lib/local-seo';
-import { getTopCityCombos, getTopSpecialtyCombos } from '@/services/clinic-service';
+import { getTopCityCombos, getTopSpecialtyCombos, resolveCityCombo } from '@/services/clinic-service';
 
 export const revalidate = 86400;
 
@@ -23,8 +23,9 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: CityPageProps): Promise<Metadata> {
   const { state, city } = await params;
-  const cityName = unslugifySegment(city);
-  const stateCode = stateSlugToCode(state);
+  const known = await resolveCityCombo(state, city);
+  const cityName = known?.city ?? unslugifySegment(city);
+  const stateCode = known?.state ?? stateSlugToCode(state);
   const path = cityRoute(stateCode, cityName);
 
   return {
@@ -43,8 +44,9 @@ export async function generateMetadata({ params }: CityPageProps): Promise<Metad
 
 export default async function CityLandingPage({ params }: CityPageProps) {
   const { state, city } = await params;
-  const cityName = unslugifySegment(city);
-  const stateCode = stateSlugToCode(state);
+  const known = await resolveCityCombo(state, city);
+  const cityName = known?.city ?? unslugifySegment(city);
+  const stateCode = known?.state ?? stateSlugToCode(state);
   const data = await getDirectoryData({ city: cityName, state: stateCode });
 
   if (data.total === 0) {

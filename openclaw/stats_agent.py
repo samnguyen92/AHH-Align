@@ -969,7 +969,14 @@ def check_anomalies(lang: str = "en") -> Dict[str, Any]:
         if seo_res.get("ok"):
             bad_routes = seo_res.get("pages_broken") or []
             if bad_routes:
-                samples = ", ".join([f"`{r}`" for r in bad_routes[:3]])
+                detail = {d["path"]: d for d in (seo_res.get("pages_broken_detail") or [])}
+
+                def _why(route: str) -> str:
+                    info = detail.get(route) or {}
+                    status = info.get("status")
+                    return f"{route} ({status if status else 'no response: ' + (info.get('error') or 'timeout')[:40]})"
+
+                samples = ", ".join([f"`{_why(r)}`" for r in bad_routes[:3]])
                 anomalies.append({
                     "level": "CRITICAL",
                     "scope": "seo",
