@@ -59,7 +59,8 @@ def bot(tmp_path, monkeypatch):
     monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "111,222")
     b = telegram_bot.TelegramBot()
     b.sent = []
-    b.send_message = lambda chat_id, text: b.sent.append(text)
+    b.buttons = []
+    b.send_message = lambda chat_id, text, buttons=None: (b.sent.append(text), b.buttons.append(buttons))
     b.send_long_message = lambda chat_id, text, max_chunks=None: b.sent.append(text)
     return b
 

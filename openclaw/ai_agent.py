@@ -32,7 +32,16 @@ def build_context() -> str:
     )
 
 
-def ask_openclaw_agent(user_message: str) -> str:
+CHAT_STYLE = (
+    "Answer in the language of the user's latest message (Vietnamese if they write Vietnamese). "
+    "Be natural, short and concrete; answer the actual question using the conversation so far. "
+    "If you need something to act (which clinic? which field?), ask ONE short question. "
+    "If the bot cannot do what was asked, say so plainly and name the closest command. "
+    "Never start with a generic self-introduction."
+)
+
+
+def ask_openclaw_agent(user_message: str, history=None) -> str:
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         return (
@@ -41,16 +50,30 @@ def ask_openclaw_agent(user_message: str) -> str:
         )
 
     model = os.environ.get("OPENCLAW_AGENT_MODEL", DEFAULT_AGENT_MODEL)
-    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
+    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key, timeout=60)
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": OPENCLAW_AGENT_SYSTEM_PROMPT},
-            {"role": "system", "content": build_context()},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=0.2,
-    )
+    turns = [
+        {"role": "assistant" if item.get("role") == "bot" else "user", "content": str(item.get("text", ""))[:600]}
+        for item in (history or [])[-8:]
+        if item.get("text")
+    ]
+    if turns and turns[-1]["role"] == "user" and turns[-1]["content"].strip() == user_message.strip():
+        turns = turns[:-1]  # the latest message is added below
 
-    return response.choices[0].message.content.strip()
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": OPENCLAW_AGENT_SYSTEM_PROMPT},
+                {"role": "system", "content": CHAT_STYLE},
+                {"role": "system", "content": build_context()},
+                *turns,
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.3,
+            max_tokens=900,
+        )
+        return (response.choices[0].message.content or "").strip() or "Mình chưa có câu trả lời, bạn nói rõ hơn giúp mình nhé."
+    except Exception as exc:
+        print(f"[!] Chat agent failed: {exc!r}")
+        return "Mình đang không kết nối được với bộ não AI. Bạn thử lại sau ít phút nhé."
