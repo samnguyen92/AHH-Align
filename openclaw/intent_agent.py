@@ -261,6 +261,29 @@ def _clean_json_output(raw: str) -> str:
     return cleaned.strip()
 
 
+def quick_inspect_intent(clean_text: str) -> Optional[IntentResult]:
+    """'kiểm tra clinic X' / 'check clinic X': deterministic, needs no model."""
+    inspect_match = re.match(
+        r"^(?:không phải[,.\s]+)?(?:tôi muốn\s+|vui lòng\s+|hãy\s+)?(?:kiểm tra|kiem tra|check|inspect|xem thông tin|xem)\s+"
+        r"(?:clinics?|phòng khám|phong kham)\s+(.+?)(?:\s+trên\s+(?:trang\s+)?web(?:site)?(?:\s+của\s+mình|\s+của\s+tôi)?)?$",
+        clean_text.strip("?.! "),
+        flags=re.IGNORECASE,
+    )
+    if not inspect_match:
+        return None
+    target_clinic = inspect_match.group(1).strip(" \"'“”")
+    if not target_clinic or target_clinic.lower() in {"claims", "claim", "newsletter", "newsletter list", "all", "toàn bộ"}:
+        return None
+    return IntentResult(
+        action="inspect_clinic",
+        lang=detect_quick_language(clean_text),
+        confidence=1.0,
+        parameters={"target": target_clinic, "name": f"inspect_clinic: {target_clinic[:36]}"},
+        requires_approval=False,
+        reason="User asked to inspect/check a specific clinic on the website.",
+    )
+
+
 def run_intent_agent(
     message: str,
     memory: Optional[Dict[str, Any]] = None,
@@ -300,24 +323,9 @@ def run_intent_agent(
             )
 
     # 1b. Deterministic fast-path for inspecting/checking an existing clinic on our website
-    inspect_match = re.match(
-        r"^(?:không phải[,.\s]+)?(?:tôi muốn\s+|vui lòng\s+|hãy\s+)?(?:kiểm tra|kiem tra|check|inspect|xem thông tin|xem)\s+"
-        r"(?:clinics?|phòng khám|phong kham)\s+(.+?)(?:\s+trên\s+(?:trang\s+)?web(?:site)?(?:\s+của\s+mình|\s+của\s+tôi)?)?$",
-        clean_text.strip("?.! "),
-        flags=re.IGNORECASE,
-    )
-    if inspect_match:
-        target_clinic = inspect_match.group(1).strip(" \"'“”")
-        if target_clinic and target_clinic.lower() not in {"claims", "claim", "newsletter", "newsletter list", "all", "toàn bộ"}:
-            lang = detect_quick_language(clean_text)
-            return IntentResult(
-                action="inspect_clinic",
-                lang=lang,
-                confidence=1.0,
-                parameters={"target": target_clinic, "name": f"inspect_clinic: {target_clinic[:36]}"},
-                requires_approval=False,
-                reason="User asked to inspect/check a specific clinic on the website.",
-            )
+    quick = quick_inspect_intent(clean_text)
+    if quick:
+        return quick
 
     # 2. Call the LLM Intent Agent
     api_key = os.environ.get("OPENROUTER_API_KEY")

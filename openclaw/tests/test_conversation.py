@@ -166,7 +166,7 @@ def _intent(**kw):
 
 def test_a_chat_without_a_model_reply_goes_to_the_chat_agent_with_the_history(bot, monkeypatch):
     seen = {}
-    monkeypatch.setattr(telegram_bot, "run_intent_agent", _intent(action="chat", is_direct_chat=True, requires_approval=False, direct_reply=None))
+    monkeypatch.setattr(telegram_bot, "run_agent", _intent(action="chat", is_direct_chat=True, requires_approval=False, direct_reply=None))
     monkeypatch.setattr(telegram_bot, "ask_openclaw_agent", lambda text, history=None: seen.update(text=text, history=history) or "câu trả lời thật")
     bot.handle_chat(1, "kiểm tra anchor dental")
     bot.handle_chat(1, "nó có tiếng việt chưa?")
@@ -177,14 +177,14 @@ def test_a_chat_without_a_model_reply_goes_to_the_chat_agent_with_the_history(bo
 
 def test_asking_a_question_keeps_the_pending_action(bot, monkeypatch):
     bot.pending_actions[1] = {"type": "rescan_clinic", "name": "x", "lang": "vi", "id": "abc", "expires_at": time.time() + 60}
-    monkeypatch.setattr(telegram_bot, "run_intent_agent", _intent(action="chat", is_direct_chat=True, requires_approval=False, direct_reply="Quét lại mất ~2 phút."))
+    monkeypatch.setattr(telegram_bot, "run_agent", _intent(action="chat", is_direct_chat=True, requires_approval=False, direct_reply="Quét lại mất ~2 phút."))
     bot.handle_chat(1, "quét lại mất bao lâu?")
     assert 1 in bot.pending_actions and bot.sent[-1].startswith("Quét lại")
 
 
 def test_a_new_request_replaces_the_pending_one_and_shows_buttons(bot, monkeypatch):
     bot.pending_actions[1] = {"type": "rescan_clinic", "name": "old", "lang": "vi", "id": "old1"}
-    monkeypatch.setattr(telegram_bot, "run_intent_agent", _intent(
+    monkeypatch.setattr(telegram_bot, "run_agent", _intent(
         action="web_edit", lang="vi", parameters={"instruction": "đổi màu nút", "name": "web_edit: đổi màu nút"},
         requires_approval=True, confirmation_message="Bạn muốn đổi màu nút, đúng không?"))
     bot.handle_chat(1, "đổi màu nút")
@@ -195,7 +195,7 @@ def test_a_new_request_replaces_the_pending_one_and_shows_buttons(bot, monkeypat
 
 
 def test_approval_that_the_model_has_no_message_for_still_gets_a_confirmation(bot, monkeypatch):
-    monkeypatch.setattr(telegram_bot, "run_intent_agent", _intent(
+    monkeypatch.setattr(telegram_bot, "run_agent", _intent(
         action="web_edit", lang="vi", parameters={"instruction": "x", "name": "web_edit: x"}, requires_approval=True, confirmation_message=""))
     bot.handle_chat(1, "sửa gì đó")
     assert "đúng không" in bot.sent[-1] and bot.buttons[-1]
@@ -377,14 +377,14 @@ def test_no_change_ambiguous_missing_and_empty_languages_are_explained(clinic):
 @needs_db
 def test_end_to_end_in_the_bot_exactly_the_conversation_from_the_screenshot(bot, clinic, monkeypatch):
     """'thêm ngôn ngữ support tiếng việt vào clinics này' -> preview with buttons -> approve -> saved on the site data."""
-    monkeypatch.setattr(telegram_bot, "run_intent_agent", _intent(
+    monkeypatch.setattr(telegram_bot, "run_agent", _intent(
         action="update_clinic", lang="vi", requires_approval=True,
         parameters={"target": "pytest-edit-dental", "changes": {"languages": {"add": ["Vietnamese"]}}}))
     bot.handle_chat(1, "thêm ngôn ngữ support tiếng việt vào clinics này", user_id=111)
     preview = bot.sent[-1]
     assert "English → English, Vietnamese" in preview and "hoàn tác" in preview
     assert bot.buttons[-1] and _languages()["languages"] == ["English"]  # nothing written before approval
-    monkeypatch.setattr(telegram_bot, "run_intent_agent", intent_agent.run_intent_agent)  # the real quick-approval path
+    monkeypatch.setattr(telegram_bot, "run_agent", intent_agent.run_intent_agent)  # the real quick-approval path
 
     bot.handle_callback({"id": "c", "from": {"id": 111}, "message": {"chat": {"id": 1}, "message_id": 9},
                          "data": f"ok:{bot.pending_actions[1]['id']}"})
