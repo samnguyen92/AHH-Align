@@ -316,7 +316,7 @@ export function HomePage({ data }: { data: HomeData }) {
             {/* phones: everything stacked in the plain wall above the people, on a soft white wash */}
             <div className="pointer-events-none absolute inset-x-0 top-0 z-[5] h-3/5 bg-gradient-to-b from-white/80 via-white/45 to-transparent md:hidden" />
             <div className="absolute inset-x-4 top-5 z-10 md:hidden">
-              <span className="block text-xs font-semibold opacity-75">{counts.total} {t.home.heroBadge}</span>
+              <span className="block text-xs font-semibold opacity-75">204 {t.home.heroBadge}</span>
               <h1 className="mt-2 text-[2.4rem] font-bold leading-[0.95] tracking-tight">
                 {t.home.heroTitle}
               </h1>
