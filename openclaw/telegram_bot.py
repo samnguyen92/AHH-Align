@@ -44,6 +44,7 @@ from jobs import (
     enrich_clinics_google_job,
     repair_article_images_job,
     quality_report_job,
+    review_clinic_photos_job,
     repair_clinic_images_job,
     repair_article_slugs_job,
     regenerate_article_images_job,
@@ -93,7 +94,7 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 MAX_MESSAGE_LENGTH = 3900
 # Slash commands that manage user accounts. They are explicit commands on purpose: a language model must never
 # decide WHICH user to change.
-CLINIC_COMMANDS = {"/clinic_undo"}
+CLINIC_COMMANDS = {"/clinic_undo", "/review_photos"}
 CLINIC_TARGET_ACTIONS = {"inspect_clinic", "rescan_clinic", "update_clinic", "undo_clinic_edit", "approve_clinic", "reject_clinic", "delete_clinic"}
 ACTION_LABELS_VI = {
     "inspect_clinic": "kiểm tra clinic", "rescan_clinic": "quét lại clinic", "update_clinic": "sửa thông tin clinic",
@@ -577,6 +578,7 @@ class TelegramBot:
             "/enrich_clinics_google - add Google Places photos, rating, reviews, and Maps links to existing clinics\n"
             "/repair_clinic_images - drop dead photo links and fetch real photos again (never AI images)\n"
             "/quality - data quality scorecard: photos, languages, missing content\n"
+            "/review_photos <slug|all> [limit] - vision model checks existing photos (asks first, uses AI credit)\n"
             "/repair_article_images - generate missing article images\n"
             "/repair_article_slugs - convert non-ASCII article slugs to URL-safe ASCII\n"
             "/delete_article <id|slug|title> - delete one article after confirmation\n"
@@ -1184,6 +1186,12 @@ class TelegramBot:
                 ),
                 action_type=action_type,
             )
+        elif action_type == "review_clinic_photos":
+            target_arg = str(action.get("target") or "all")
+            limit_arg = int(action.get("limit") or 20)
+            self.run_job(chat_id, action.get("name") or "review_clinic_photos",
+                         lambda: review_clinic_photos_job(target_arg, limit_arg, lang=action.get("lang") or self.chat_lang.get(chat_id, "vi")),
+                         action_type=action_type)
         elif action_type == "check_data_quality":
             self.run_job(chat_id, action.get("name") or "check_data_quality",
                          lambda: quality_report_job(lang=action.get("lang") or self.chat_lang.get(chat_id, "vi")),
@@ -1910,6 +1918,9 @@ class TelegramBot:
         return True
 
     def handle_clinic_command(self, chat_id: int, command: str, text: str, user_id: Optional[int]) -> None:
+        if command == "/review_photos":
+            self.handle_review_photos_command(chat_id, text, user_id)
+            return
         parts = text.split(maxsplit=1)
         target = parts[1].strip() if len(parts) > 1 else str((self.chat_focus.get(chat_id) or {}).get("clinic") or "")
         lang = self.chat_lang.get(chat_id, "en")
@@ -1922,6 +1933,27 @@ class TelegramBot:
             if lang == "vi" else f"You want to undo the latest change to **{target}**, correct?"
         )
         self.offer_action(chat_id, {"type": "undo_clinic_edit", "name": f"undo_clinic_edit: {target}", "target": target, "lang": lang}, msg, user_id)
+
+    def handle_review_photos_command(self, chat_id: int, text: str, user_id: Optional[int]) -> None:
+        """/review_photos <slug|all> [limit]: costs AI usage, so it shows what it will do and waits for Approve."""
+        lang = self.chat_lang.get(chat_id, "en")
+        args = text.split()[1:]
+        target = args[0] if args else str((self.chat_focus.get(chat_id) or {}).get("clinic") or "")
+        limit = int(args[1]) if len(args) > 1 and args[1].isdigit() else 20
+        if not target:
+            self.send_message(chat_id, "Dùng: /review_photos <slug hoặc all> [số clinic tối đa]" if lang == "vi" else "Usage: /review_photos <clinic slug or all> [max clinics]")
+            return
+        limit = max(1, min(limit, 100))
+        scope = f"tối đa {limit} clinic chưa được chấm" if target.lower() == "all" else f"clinic {target}"
+        scope_en = f"up to {limit} clinics not reviewed yet" if target.lower() == "all" else f"clinic {target}"
+        msg = (
+            f"Bạn muốn chấm ảnh của {scope} bằng model nhìn ảnh, đúng không? Việc này tốn một ít chi phí AI "
+            f"(mỗi clinic một lần gọi, ảnh đã chấm trước đó dùng lại từ cache)."
+            if lang == "vi" else
+            f"You want to review the photos of {scope_en} with a vision model, correct? It uses a little AI credit "
+            f"(one call per clinic; photos judged before come from the cache)."
+        )
+        self.offer_action(chat_id, {"type": "review_clinic_photos", "name": f"review_clinic_photos: {target}", "target": target, "limit": limit, "lang": lang}, msg, user_id)
 
     def handle_chat(self, chat_id: int, text: str, user_id: Optional[int] = None) -> None:
         with self._pending_lock:

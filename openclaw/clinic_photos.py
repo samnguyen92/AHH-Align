@@ -19,6 +19,8 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
 
+from photo_judge import judge_photos, order_and_filter
+
 try:  # Pillow is in requirements.txt; keep a soft fallback so a missing wheel does not break enrichment
     from PIL import Image, ImageStat
 except Exception:  # pragma: no cover
@@ -121,8 +123,14 @@ def build_gallery(
     existing_google_urls: Optional[list[str]] = None,
     google_fetcher: Optional[Callable[[], list[str]]] = None,
     log: Callable[[str], None] = print,
+    judge: Optional[Callable[[dict, list], Optional[dict]]] = None,
+    clinic: Optional[dict] = None,
 ) -> dict:
-    """Returns {"images": [...], "sources": {url: "website"|"google"}, "images_source": "..."}."""
+    """Returns {"images": [...], "sources": {url: "website"|"google"}, "images_source": "...", "review": {...}|None}.
+
+    judge(clinic, [(public_url, bytes)]) is the vision review (photo_judge.judge_photos): photos it rejects are removed
+    (and their files deleted) and the best photo of the place is moved to the front.
+    """
     web_dir = root / "public" / "uploads" / "generated-clinics" / "website"
     google_dir = root / "public" / "uploads" / "generated-clinics" / "google-places"
     web_dir.mkdir(parents=True, exist_ok=True)
@@ -151,6 +159,7 @@ def build_gallery(
     # 2) Google: reuse files we already downloaded, scrape Maps only if there are none
     google_urls = [u for u in (existing_google_urls or []) if "/google-places/" in u]
     google_items: list[tuple[str, bytes]] = []
+    fresh_google: set[str] = set()  # files we just wrote: removed again when the gates reject them
     for public_url in google_urls:
         path = root / "public" / public_url.lstrip("/")
         if path.exists():
@@ -161,19 +170,45 @@ def build_gallery(
             if buf:
                 fname = f"{slug}-google-{n}.{detect_extension(buf)}"
                 (google_dir / fname).write_bytes(buf)
-                google_items.append((f"/uploads/generated-clinics/google-places/{fname}", buf))
+                fresh_url = f"/uploads/generated-clinics/google-places/{fname}"
+                fresh_google.add(fresh_url)
+                google_items.append((fresh_url, buf))
     for public_url, buf in google_items:
-        if len(images) >= MAX_TOTAL:
-            break
-        if gallery.accept(buf):
-            images.append(public_url)
-            sources[public_url] = "google"
+        if len(images) >= MAX_TOTAL or not gallery.accept(buf):
+            if public_url in fresh_google:
+                (root / "public" / public_url.lstrip("/")).unlink(missing_ok=True)
+            continue
+        images.append(public_url)
+        sources[public_url] = "google"
     log(f"   [+] Total photos after Google fill: {len(images)}")
+
+    # 3) vision review: is it really a photo of this clinic's place?
+    review = None
+    if judge and images:
+        try:
+            photos = [(u, (root / "public" / u.lstrip("/")).read_bytes()) for u in images if (root / "public" / u.lstrip("/")).is_file()]
+            outcome = judge(clinic or {}, photos)
+        except Exception as exc:  # a failing reviewer must never lose the photos the gates accepted
+            log(f"   [!] Photo review failed ({exc!r}); keeping what the gates accepted.")
+            outcome = None
+        if outcome and outcome.get("verdicts"):
+            kept, rejected = order_and_filter(images, outcome["verdicts"])
+            for item in rejected:
+                (root / "public" / item["key"].lstrip("/")).unlink(missing_ok=True)
+                sources.pop(item["key"], None)
+            images = kept
+            review = {
+                "model": outcome.get("model"), "judged": outcome.get("judged", 0), "cached": outcome.get("cached", 0),
+                "tokens_in": outcome.get("tokens_in", 0), "tokens_out": outcome.get("tokens_out", 0),
+                "rejected": [{"url": r["key"], "category": r["category"], "reason": r["reason"]} for r in rejected],
+                "at": __import__("time").strftime("%Y-%m-%dT%H:%M:%S"),
+            }
+            log(f"   [+] Photo review kept {len(images)} and rejected {len(rejected)}: " + (", ".join(sorted({r['category'] for r in rejected})) or "none"))
 
     kinds = {sources[u] for u in images}
     label = "none" if not kinds else ("mixed" if len(kinds) > 1 else next(iter(kinds)))
     primary = sources[images[0]] if images else "none"
-    return {"images": images, "sources": sources, "images_source": label, "primary_image_source": primary}
+    return {"images": images, "sources": sources, "images_source": label, "primary_image_source": primary, "review": review}
 
 
 # --------------------------------------------------------------------------- integrity + shared entry point
@@ -215,6 +250,7 @@ def attach_real_photos(
     google_fetcher: Optional[Callable[[], list]] = None,
     root: Optional[Path] = None,
     log: Callable[[str], None] = print,
+    judge: Optional[Callable] = judge_photos,
 ) -> dict:
     """Give a new clinic its photos: the official website first, Google only to fill the gaps, otherwise NONE.
 
@@ -238,7 +274,10 @@ def attach_real_photos(
 
     gallery = build_gallery(
         safe_storage_name(data.get("name") or "clinic"), pages, root, existing_google_urls=[], google_fetcher=google_fetcher, log=log,
+        judge=judge, clinic=data,
     )
+    if gallery.get("review"):
+        data["photo_review"] = gallery["review"]
     data["images"] = gallery["images"]
     data["image_sources"] = gallery["sources"]
     data["images_source"] = gallery["images_source"]
@@ -261,6 +300,8 @@ def repair_gallery(
     root: Optional[Path] = None,
     fetcher: Optional[Callable[[], list]] = None,
     log: Callable[[str], None] = print,
+    clinic: Optional[dict] = None,
+    judge: Optional[Callable] = judge_photos,
 ) -> Optional[dict]:
     """Fix a clinic whose photos point at files that no longer exist (what the site shows as "404 Not Found").
 
@@ -280,13 +321,16 @@ def repair_gallery(
     if broken:
         log(f"   [!] {len(broken)} photo file(s) are missing and were dropped: {', '.join(broken[:3])}{'…' if len(broken) > 3 else ''}")
     if needs_refill:
-        gallery = build_gallery(slug, [], root, existing_google_urls=[], google_fetcher=fetcher, log=log)
+        gallery = build_gallery(slug, [], root, existing_google_urls=[], google_fetcher=fetcher, log=log, judge=judge, clinic=clinic)
         usable = gallery["images"]
         sources = gallery["sources"]
+        review = gallery.get("review")
+    else:
+        review = None
     label, primary = _source_label(sources, usable)
     return {
         "images": usable, "image_sources": sources, "images_source": label, "primary_image_source": primary,
-        "removed": broken,
+        "removed": broken, "review": review,
     }
 
 

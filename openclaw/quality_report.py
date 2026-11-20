@@ -49,6 +49,8 @@ def analyze_clinic(row: dict, root: Optional[Path] = None, file_exists: Optional
         problems.append("no_hours")
     if not (meta.get("services") or meta.get("services_offered")):
         problems.append("no_services")
+    if servable and not meta.get("photo_review"):
+        problems.append("photos_not_reviewed")
     i18n = meta.get("i18n") if isinstance(meta.get("i18n"), dict) else {}
     if any(code not in i18n for code in TRANSLATIONS):
         problems.append("missing_translation")
@@ -60,7 +62,15 @@ def build_report(rows: List[dict], root: Optional[Path] = None, file_exists: Opt
     counts: Counter = Counter()
     per_clinic = []
     sources: Counter = Counter()
+    review = {"clinics": 0, "judged": 0, "rejected": 0, "tokens_in": 0, "tokens_out": 0}
     for row in rows:
+        done = (row.get("metadata") or {}).get("photo_review")
+        if isinstance(done, dict):
+            review["clinics"] += 1
+            review["judged"] += int(done.get("judged") or 0)
+            review["rejected"] += len(done.get("rejected") or [])
+            review["tokens_in"] += int(done.get("tokens_in") or 0)
+            review["tokens_out"] += int(done.get("tokens_out") or 0)
         problems = analyze_clinic(row, root, file_exists)
         counts.update(problems)
         sources[(row.get("metadata") or {}).get("images_source") or "unknown"] += 1
@@ -73,6 +83,7 @@ def build_report(rows: List[dict], root: Optional[Path] = None, file_exists: Opt
         "by_status": dict(Counter(r.get("status") or "unknown" for r in rows)),
         "problems": dict(counts),
         "photo_sources": dict(sources),
+        "photo_review": review,
         "worst": [{"slug": slug, "status": status, "problems": problems} for _n, slug, status, problems in per_clinic[:worst]],
     }
 
@@ -80,6 +91,7 @@ def build_report(rows: List[dict], root: Optional[Path] = None, file_exists: Opt
 LABELS = {
     "broken_photo_file": ("Ảnh có trong DB nhưng file không tồn tại (web báo 404)", "Photos in the database whose file is missing (404 on the site)"),
     "no_real_photo": ("Không có ảnh thật", "No real photo"),
+    "photos_not_reviewed": ("Ảnh chưa được model nhìn ảnh kiểm tra (/review_photos)", "Photos not yet checked by the vision review (/review_photos)"),
     "hotlinked_photo": ("Ảnh còn là link ngoài, chưa lưu về máy chủ", "Photos still hot-linked, not stored on our server"),
     "languages_unverified": ("Ngôn ngữ chưa xác minh trên website", "Languages not verified on the website"),
     "scout_language_flag": ("Scout gắn cờ: website không nhắc ngôn ngữ yêu cầu", "Scout flag: the website does not mention the required language"),
@@ -102,6 +114,15 @@ def format_report(report: Dict[str, Any], lang: str = "vi") -> str:
         lines.append(f"{mark} {label_vi if vi else label_en}: {count} ({round(count * 100 / total)}%)")
     sources = ", ".join(f"{k}: {v}" for k, v in sorted(report["photo_sources"].items()))
     lines += ["", f"{'Nguồn ảnh' if vi else 'Photo sources'}: {sources}"]
+    review = report.get("photo_review") or {}
+    if review.get("clinics"):
+        lines.append(
+            f"{'Chấm ảnh bằng AI' if vi else 'AI photo review'}: {review['clinics']} clinic, {review['judged']} ảnh gửi đi, loại {review['rejected']}; "
+            f"token {review['tokens_in']} vào / {review['tokens_out']} ra"
+            if vi else
+            f"AI photo review: {review['clinics']} clinic(s), {review['judged']} photos sent, {review['rejected']} rejected; "
+            f"tokens {review['tokens_in']} in / {review['tokens_out']} out"
+        )
     if report["worst"]:
         lines += ["", f"**{'Cần xử lý trước' if vi else 'Fix first'}**:"]
         for item in report["worst"]:
