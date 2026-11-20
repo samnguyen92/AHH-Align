@@ -44,6 +44,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from audit_languages import fetch_clinic_site_html  # noqa: E402
 from clinic_photos import build_gallery, prune_dead_images  # noqa: E402
 from photo_judge import judge_photos  # noqa: E402
+from grounded_content import build_grounded_profile  # noqa: E402
 from languages import (  # noqa: E402
     ENTRIES,
     detect_languages,
@@ -87,6 +88,11 @@ DB_URL = (
 )
 
 
+def _db_url() -> str:
+    """Read at call time: a value fixed at import silently pointed later work at the wrong database."""
+    return os.environ.get("DATABASE_URL") or ENV.get("DATABASE_URL") or DB_URL
+
+
 # ---------------------------------------------------------------------------
 # Database adapter (uses psycopg2 when available, or node + pg on local macOS)
 # ---------------------------------------------------------------------------
@@ -96,7 +102,7 @@ def db_query(sql: str, params: list[Any] | None = None) -> list[dict]:
         import psycopg2
         from psycopg2.extras import RealDictCursor
 
-        conn = psycopg2.connect(DB_URL)
+        conn = psycopg2.connect(_db_url())
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 pg_params: list[Any] = []
@@ -116,7 +122,7 @@ def db_query(sql: str, params: list[Any] | None = None) -> list[dict]:
     except ImportError:
         js = f"""
         import pg from 'pg';
-        const pool = new pg.Pool({{ connectionString: {json.dumps(DB_URL)} }});
+        const pool = new pg.Pool({{ connectionString: {json.dumps(_db_url())} }});
         const res = await pool.query({json.dumps(sql)}, {json.dumps(params)});
         console.log(JSON.stringify(res.rows || []));
         await pool.end();
@@ -143,17 +149,18 @@ def expand_with_families(langs: list[str]) -> list[str]:
 
 
 def sanitize_language_mentions(text: Optional[str], allowed_languages: list[str]) -> Optional[str]:
-    """Ensure generated English text never claims an Asian language outside ``allowed_languages``."""
+    """Remove sentences that name an Asian language outside ``allowed_languages``.
+
+    The old version swapped the stray language for the clinic's main verified one ("Korean" became "Vietnamese"):
+    that rewrote what the text claims. A sentence we cannot stand behind is removed instead.
+    """
     if not text:
         return text
-    allowed_lower = {l.lower() for l in expand_with_families(allowed_languages)}
-    cleaned = text
-    for lang_name in ALL_KNOWN_LANGUAGES:
-        if lang_name.lower() not in allowed_lower:
-            # Replace stray unverified language name with the clinic's primary verified Asian language
-            primary_asian = next((l for l in allowed_languages if l not in ("English", "Spanish")), "multilingual")
-            cleaned = re.sub(rf"\b{re.escape(lang_name)}\b", primary_asian, cleaned, flags=re.IGNORECASE)
-    return cleaned
+    from grounded_content import _allowed_language_names, drop_sentences
+
+    allowed = _allowed_language_names(expand_with_families(allowed_languages))
+    patterns = [(name.lower(), re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE)) for name in ALL_KNOWN_LANGUAGES]
+    return drop_sentences(text, lambda sentence: any(name not in allowed and pattern.search(sentence) for name, pattern in patterns))
 
 
 def draft_unverified_hospitals() -> int:
@@ -267,141 +274,6 @@ def call_openrouter_json(prompt: str) -> Optional[dict]:
     return None
 
 
-def extract_full_clinic_profile(
-    clinic: dict,
-    verified_languages: list[str],
-    language_evidence: dict[str, str],
-    crawled_pages: list[dict],
-) -> Optional[dict]:
-    meta = clinic.get("metadata") or {}
-    reviews = (meta.get("reviews") or [])[:6]
-    review_snippets = "\n".join(f"- ({r.get('rating')}★ by {r.get('author')}): {r.get('text', '')[:300]}" for r in reviews if r.get("text"))
-
-    compiled_pages = []
-    for p in crawled_pages:
-        compiled_pages.append(
-            f"=== PAGE: {p.get('url')} (Type: {p.get('type')}, Title: {p.get('title')}) ===\n{(p.get('content') or '')[:4000]}"
-        )
-    site_text = "\n\n".join(compiled_pages)[:22000]
-    ev_lines = "\n".join(f"- {k}: \"{v}\"" for k, v in language_evidence.items()) or "Verified community clinic language support"
-
-    prompt = f"""You are the Lead Medical Directory Editor for Asian Health Hub.
-Extract and synthesize a COMPLETE, source-grounded clinic profile AND its translations (Vietnamese, Korean, Simplified Chinese) for the clinic below.
-
-=== CLINIC IDENTITY ===
-Name: {clinic.get('name')}
-Current Specialty: {clinic.get('specialty') or 'Healthcare'}
-Address: {clinic.get('address')}, {clinic.get('city')}, {clinic.get('state')} {clinic.get('zip_code') or ''}
-Phone: {clinic.get('phone') or ''}
-Website: {meta.get('website') or meta.get('google_website_url') or ''}
-VERIFIED LANGUAGES SPOKEN (STRICT): {', '.join(verified_languages)}
-VERBATIM LANGUAGE EVIDENCE ON WEBSITE:
-{ev_lines}
-
-=== PATIENT REVIEWS ===
-{review_snippets or 'No review snippets available.'}
-
-=== CRAWLED WEBSITE CONTENT ===
-{site_text or 'Website text unavailable; rely on existing clinic facts and patient reviews without inventing prices.'}
-
-=== STRICT EXTRACTION & EDITORIAL RULES ===
-1. LANGUAGES & "LANGUAGE SUPPORT" BOX (`language_note` & `cultural_context`):
-   - You MUST ONLY mention languages from this exact verified list: {', '.join(verified_languages)}. NEVER mention any other Asian language!
-   - `language_note` is displayed in the prominent "Language support" callout box directly underneath the "About" section. Write 2–3 clear, specific sentences explaining:
-     (a) Which languages the doctors, hygienists/nurses, and front-desk staff speak ({', '.join(verified_languages)}),
-     (b) How bilingual staff help patients during appointment scheduling, intake forms, consultations, and explaining insurance/billing,
-     (c) Why older adults and immigrant families can visit comfortably without needing a family member to interpret.
-2. ABOUT & DESCRIPTIONS:
-   - `short_description`: 1–2 crisp sentences summarizing specialty, location, and bilingual care in {', '.join(verified_languages)}.
-   - `description`: 2 rich paragraphs covering clinical services, approach to care, technology/comfort, and language accessibility.
-   - `about_highlight`: 2 paragraphs suitable for the main About section on the profile page.
-3. WHAT TO KNOW / DIFFERENTIATORS / BEFORE YOU BOOK:
-   - `what_to_know`: 2–3 items `[{{ "title": "...", "detail": "..." }}]`
-   - `differentiators`: 2–3 items `[{{ "title": "...", "detail": "..." }}]`
-   - `before_you_book`: 2–3 practical tips `[{{ "title": "...", "detail": "..." }}]`
-4. SERVICES & CONDITIONS:
-   - `services_offered`: 4–8 services `[{{ "name": "...", "category": "...", "description": "...", "is_featured": true/false }}]`
-   - `conditions_treated`: array of 4–8 conditions treated.
-5. PRICING (STRICT):
-   - Extract `pricing` `[{{ "name": "...", "price": "$...", "price_range": null, "notes": "...", "category": "..." }}]` and `pricing_summary` `{{ "starting_price": "$...", "starting_unit": "...", "payment_methods": "...", "accepts_hsa_fsa": true/false }}` ONLY if explicit dollar prices appear in the crawled website text.
-   - If NO explicit prices appear on the website, return `"pricing": []` and `"pricing_summary": null`.
-6. INSURANCE, TEAM, CREDENTIALS, LOCATION, REVIEWS, FAQS:
-   - `insurance`: `{{ "accepted_networks": [...], "accepts_medicare": true/false/null, "accepts_medicaid": true/false/null, "accepts_private_insurance": true/false, "notes": "..." }}`
-   - `team_members`: extract real doctors/providers named in the text or reviews `[{{ "name": "...", "role": "...", "credentials": "...", "languages_spoken": [...], "bio": "..." }}]`. Do not invent fake names.
-   - `location_notes`: `{{ "parking": "...", "transit": "..." }}` when mentioned or null.
-   - `review_summary`: 2 sentences summarizing what patients praise most.
-   - `faqs`: 3–5 FAQs `[{{ "question": "...", "answer": "..." }}]`. Use real FAQs from the site if present; otherwise write 3–4 safe, accurate FAQs about language support, booking, first visit, and insurance (never invent prices).
-7. MULTILINGUAL TRANSLATIONS (`i18n`):
-   - Provide natural, medically accurate translations of `short_description`, `description`, `language_note`, `review_summary`, `what_to_know`, `differentiators`, `before_you_book`, `services_offered`, and `faqs` in:
-     - `"vi"` (Tiếng Việt)
-     - `"ko"` (한국어)
-     - `"zh"` (简体中文)
-
-Return ONLY valid JSON matching this exact structure:
-{{
-  "specialty": "...",
-  "short_description": "...",
-  "description": "...",
-  "about_highlight": "...",
-  "language_note": "...",
-  "cultural_context": "...",
-  "what_to_know": [{{ "title": "...", "detail": "..." }}],
-  "differentiators": [{{ "title": "...", "detail": "..." }}],
-  "before_you_book": [{{ "title": "...", "detail": "..." }}],
-  "services_offered": [{{ "name": "...", "category": "...", "description": "...", "is_featured": true }}],
-  "conditions_treated": ["..."],
-  "pricing": [],
-  "pricing_summary": null,
-  "insurance": {{
-    "accepted_networks": [],
-    "accepts_medicare": null,
-    "accepts_medicaid": null,
-    "accepts_private_insurance": true,
-    "notes": "..."
-  }},
-  "team_members": [],
-  "location_notes": {{ "parking": null, "transit": null }},
-  "review_summary": "...",
-  "faqs": [{{ "question": "...", "answer": "..." }}],
-  "i18n": {{
-    "vi": {{
-      "short_description": "...",
-      "description": "...",
-      "language_note": "...",
-      "review_summary": "...",
-      "what_to_know": [{{ "title": "...", "detail": "..." }}],
-      "differentiators": [{{ "title": "...", "detail": "..." }}],
-      "before_you_book": [{{ "title": "...", "detail": "..." }}],
-      "services_offered": [{{ "name": "...", "category": "...", "description": "..." }}],
-      "faqs": [{{ "question": "...", "answer": "..." }}]
-    }},
-    "ko": {{
-      "short_description": "...",
-      "description": "...",
-      "language_note": "...",
-      "review_summary": "...",
-      "what_to_know": [{{ "title": "...", "detail": "..." }}],
-      "differentiators": [{{ "title": "...", "detail": "..." }}],
-      "before_you_book": [{{ "title": "...", "detail": "..." }}],
-      "services_offered": [{{ "name": "...", "category": "...", "description": "..." }}],
-      "faqs": [{{ "question": "...", "answer": "..." }}]
-    }},
-    "zh": {{
-      "short_description": "...",
-      "description": "...",
-      "language_note": "...",
-      "review_summary": "...",
-      "what_to_know": [{{ "title": "...", "detail": "..." }}],
-      "differentiators": [{{ "title": "...", "detail": "..." }}],
-      "before_you_book": [{{ "title": "...", "detail": "..." }}],
-      "services_offered": [{{ "name": "...", "category": "...", "description": "..." }}],
-      "faqs": [{{ "question": "...", "answer": "..." }}]
-    }}
-  }}
-}}"""
-    return call_openrouter_json(prompt)
-
-
 def rescan_one_clinic(clinic: dict) -> dict:
     slug = clinic["slug"]
     meta = dict(clinic.get("metadata") or {})
@@ -468,7 +340,11 @@ def rescan_one_clinic(clinic: dict) -> dict:
     meta["gallery_images"] = []
 
     # 4. Full-field extraction + Language support + i18n via openai/gpt-6-luna
-    extracted = extract_full_clinic_profile(clinic, verified_langs, detected_site_langs, pages)
+    # Content only from what the website says (every fact quoted and checked against the source). When there is no
+    # website text to ground on, the clinic keeps what it has instead of getting invented text.
+    extracted = build_grounded_profile(clinic, verified_langs, detected_site_langs, pages)
+    if extracted is None:
+        print("   [!] No website text to ground the content on: existing content kept.")
     new_description = clinic.get("description")
     new_specialty = clinic.get("specialty")
 
@@ -476,18 +352,19 @@ def rescan_one_clinic(clinic: dict) -> dict:
         if extracted.get("specialty"):
             new_specialty = normalize_specialty(extracted["specialty"], clinic.get("name") or "") or new_specialty
 
-        for text_key in ("short_description", "about_highlight", "language_note", "cultural_context", "review_summary"):
-            val = sanitize_language_mentions(extracted.get(text_key), verified_langs)
-            if val:
-                meta[text_key] = val
+        # Replace, don't just add: text and lists written by the old prompt that the website does not support must go.
+        for text_key in ("short_description", "about_highlight", "language_note", "cultural_context"):
+            if extracted.get(text_key):
+                meta[text_key] = extracted[text_key]
+            else:
+                meta.pop(text_key, None)
 
-        desc_val = sanitize_language_mentions(extracted.get("description"), verified_langs)
-        if desc_val:
-            new_description = desc_val
+        if extracted.get("description"):
+            new_description = extracted["description"]
 
         for list_key in ("what_to_know", "differentiators", "before_you_book", "services_offered", "conditions_treated", "faqs"):
-            if extracted.get(list_key):
-                meta[list_key] = extracted[list_key]
+            meta[list_key] = extracted.get(list_key) or []
+        meta["content_grounding"] = {**(extracted.get("_grounding") or {}), "at": __import__("time").strftime("%Y-%m-%dT%H:%M:%S")}
 
         # Pricing: only keep when non-empty
         if extracted.get("pricing"):

@@ -709,6 +709,16 @@ def connect_ga4_job(arg: str = "") -> str:
         return f"❌ Error: {exc}"
 
 
+def clean_clinic_content_job(target: str = "all", limit: int = 20, actor: str = "telegram:unknown", lang: str = "vi") -> str:
+    """Remove the generic template sentences from clinic texts (each change is audited and undoable)."""
+    from content_cleanup import clean_clinics, format_summary
+    from pg_client import create_client
+
+    lines: list[str] = []
+    summary = clean_clinics(create_client(), target=target, limit=limit, actor=actor, lang=lang, log=lines.append)
+    return "\n".join(lines[-12:] + ["", format_summary(summary, lang)])
+
+
 def review_clinic_photos_job(target: str = "all", limit: int = 20, lang: str = "vi") -> str:
     """Vision review of the photos clinics already have (costs a little AI usage; asks for approval first)."""
     from pg_client import create_client
