@@ -43,6 +43,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from audit_languages import fetch_clinic_site_html  # noqa: E402
 from clinic_photos import build_gallery, prune_dead_images  # noqa: E402
+from photo_judge import judge_photos  # noqa: E402
 from languages import (  # noqa: E402
     ENTRIES,
     detect_languages,
@@ -448,7 +449,11 @@ def rescan_one_clinic(clinic: dict) -> dict:
         ROOT_DIR,
         existing_google_urls=meta.get("images") or [],
         google_fetcher=fetcher,
+        judge=judge_photos,
+        clinic=clinic,
     )
+    if gallery.get("review"):
+        meta["photo_review"] = gallery["review"]
     if gallery["images"]:
         meta["images"] = gallery["images"]
         meta["image_sources"] = gallery["sources"]

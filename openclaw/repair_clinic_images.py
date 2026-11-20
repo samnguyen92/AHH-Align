@@ -16,7 +16,7 @@ load_dotenv("../.env.local")
 
 def repair_all(limit: int = 0, log=print, fetch_google: bool = True) -> dict:
     db = create_client()
-    clinics = db.table("clinics").select("id, name, slug, metadata").execute().data or []
+    clinics = db.table("clinics").select("id, name, slug, specialty, city, state, metadata").execute().data or []
     root = project_root()
     summary = {"checked": 0, "repaired": 0, "photos_dropped": 0, "refilled": 0, "still_without_photo": 0}
 
@@ -31,7 +31,7 @@ def repair_all(limit: int = 0, log=print, fetch_google: bool = True) -> dict:
 
             fetcher = photo_fetcher_for_place(meta["google_place_id"])
         try:
-            fix = repair_gallery(clinic.get("slug") or "clinic", meta, root, fetcher, log=log)
+            fix = repair_gallery(clinic.get("slug") or "clinic", meta, root, fetcher, log=log, clinic={**clinic, "city": meta.get("city")})
         except Exception as exc:
             log(f"[!] {clinic.get('name')}: could not repair photos ({exc})")
             continue
@@ -39,6 +39,8 @@ def repair_all(limit: int = 0, log=print, fetch_google: bool = True) -> dict:
             continue
         log(f"[*] {clinic.get('name')}: {len(fix['removed'])} dead photo(s) dropped, {len(fix['images'])} usable now ({fix['images_source']})")
         meta.update({k: fix[k] for k in ("images", "image_sources", "images_source", "primary_image_source")})
+        if fix.get("review"):
+            meta["photo_review"] = fix["review"]
         db.table("clinics").update({"metadata": meta}).eq("id", clinic["id"]).execute()
         summary["repaired"] += 1
         summary["photos_dropped"] += len(fix["removed"])

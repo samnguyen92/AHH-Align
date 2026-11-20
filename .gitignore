@@ -69,3 +69,5 @@ next-env.d.ts
 
 # logs
 *.log
+
+openclaw/.cache/

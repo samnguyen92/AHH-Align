@@ -709,6 +709,16 @@ def connect_ga4_job(arg: str = "") -> str:
         return f"❌ Error: {exc}"
 
 
+def review_clinic_photos_job(target: str = "all", limit: int = 20, lang: str = "vi") -> str:
+    """Vision review of the photos clinics already have (costs a little AI usage; asks for approval first)."""
+    from pg_client import create_client
+    from photo_review import format_summary, review_clinics
+
+    lines: list[str] = []
+    summary = review_clinics(create_client(), target=target, limit=limit, log=lines.append)
+    return "\n".join(lines[-15:] + ["", format_summary(summary, lang)])
+
+
 def quality_report_job(lang: str = "vi") -> str:
     """The directory scorecard (read-only): photos, languages, content gaps."""
     from pg_client import create_client
