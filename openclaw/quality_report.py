@@ -10,12 +10,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from clinic_photos import is_remote, local_file_exists, project_root
+from grounded_content import has_boilerplate
 from normalize import has_real_photos
 
-BOILERPLATE_MARKERS = (
-    "without relying on a family member",
-    "may be able to communicate directly with the clinic",
-)
 TRANSLATIONS = ("vi", "ko", "zh")
 
 
@@ -41,8 +38,9 @@ def analyze_clinic(row: dict, root: Optional[Path] = None, file_exists: Optional
         problems.append("languages_unverified")
     if (meta.get("language_verified_on_website") is False):
         problems.append("scout_language_flag")
-    if any(marker in str(meta.get("language_note") or "").lower() for marker in BOILERPLATE_MARKERS):
-        problems.append("boilerplate_language_note")
+    texts = [row.get("description"), *(meta.get(k) for k in ("about_highlight", "short_description", "language_note", "cultural_context"))]
+    if any(has_boilerplate(t) for t in texts):
+        problems.append("generic_content")
     if len(str(row.get("description") or "")) < 150:
         problems.append("short_description")
     if not meta.get("working_hours"):
@@ -95,7 +93,7 @@ LABELS = {
     "hotlinked_photo": ("Ảnh còn là link ngoài, chưa lưu về máy chủ", "Photos still hot-linked, not stored on our server"),
     "languages_unverified": ("Ngôn ngữ chưa xác minh trên website", "Languages not verified on the website"),
     "scout_language_flag": ("Scout gắn cờ: website không nhắc ngôn ngữ yêu cầu", "Scout flag: the website does not mention the required language"),
-    "boilerplate_language_note": ("Ô Language Support dùng câu mẫu chung chung", "Language Support box uses the generic template sentence"),
+    "generic_content": ("Có câu mẫu chung chung chưa được kiểm chứng (/clean_content)", "Generic unverified template sentences (/clean_content)"),
     "short_description": ("Mô tả quá ngắn (dưới 150 ký tự)", "Description too short (under 150 characters)"),
     "no_hours": ("Thiếu giờ làm việc", "No opening hours"),
     "no_services": ("Thiếu dịch vụ", "No services"),

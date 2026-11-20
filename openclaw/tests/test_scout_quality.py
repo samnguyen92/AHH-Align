@@ -223,7 +223,7 @@ def test_the_scorecard_finds_the_problems_of_each_clinic():
     ]
     problems = {r["slug"]: quality_report.analyze_clinic(r, file_exists=exists) for r in rows}
     assert {"broken_photo_file", "no_real_photo"} <= set(problems["dead"]) and "languages_unverified" not in problems["dead"]
-    assert {"hotlinked_photo", "scout_language_flag", "boilerplate_language_note", "short_description", "no_hours", "missing_translation"} <= set(problems["flagged"])
+    assert {"hotlinked_photo", "scout_language_flag", "generic_content", "short_description", "no_hours", "missing_translation"} <= set(problems["flagged"])
     report = quality_report.build_report(rows, file_exists=exists)
     assert report["total"] == 2 and report["by_status"] == {"published": 1, "draft": 1}
     assert report["worst"][0]["slug"] == "dead"  # a visitor-facing error comes first

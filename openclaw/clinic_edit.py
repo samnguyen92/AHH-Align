@@ -198,12 +198,17 @@ def plan_clinic_edit(target: str, changes: Dict[str, Any], lang: str = "en") -> 
             f"Nothing to change: {row['name']} already has these values.",
             f"Không có gì để đổi: {row['name']} đã đúng như vậy rồi (cả ngôn ngữ lẫn đoạn văn bản trên trang).",
         )
+    from grounded_content import CONTENT_FIELDS, available as ai_available
+
     i18n_note = bool(metadata.get("i18n")) and any(k in new_values for k in SYNCED_TEXT_FIELDS + ("languages",))
+    auto_translate = ai_available() and bool(set(new_values) & CONTENT_FIELDS)
     return EditPlan(
         clinic_id=str(row["id"]), slug=row.get("slug") or "", name=row.get("name") or "",
         changes=new_values, before=before, lines=lines + ([
-            "Bản dịch VI/KO/ZH của các đoạn này chưa được cập nhật (chạy /rescan_clinic để tạo lại)." if vi
-            else "The VI/KO/ZH translations of these texts are NOT updated (run /rescan_clinic to regenerate them)."
+            ("Bản dịch VI/KO/ZH của các đoạn này sẽ được cập nhật tự động." if vi else "The VI/KO/ZH translations of these texts will be updated automatically.")
+            if auto_translate else
+            ("Bản dịch VI/KO/ZH của các đoạn này chưa được cập nhật (chạy /rescan_clinic để tạo lại)." if vi
+             else "The VI/KO/ZH translations of these texts are NOT updated (run /rescan_clinic to regenerate them).")
         ] if i18n_note else []),
         candidates=[r.get("slug", "") for r in rows if r is not row],
     )
@@ -247,6 +252,38 @@ def _write_values(plan_changes: Dict[str, Any], owner_confirmed: bool) -> tuple:
     return ", ".join(sets), params
 
 
+def refresh_clinic_translations(clinic_id: str, changed_fields: set, lang: str = "en") -> str:
+    """After an edit: translate ONLY the changed texts into VI/KO/ZH (faithfully, verified). Returns a short note."""
+    import grounded_content as gc
+
+    changed = set(changed_fields) & gc.CONTENT_FIELDS
+    if not changed:
+        return ""
+    vi = lang == "vi"
+    if not gc.available():
+        return ("ℹ️ Bản dịch VI/KO/ZH chưa được cập nhật (chưa có OPENROUTER_API_KEY). Chạy /rescan_clinic để tạo lại." if vi
+                else "ℹ️ VI/KO/ZH translations were not updated (no OPENROUTER_API_KEY). Run /rescan_clinic to regenerate them.")
+    try:
+        from psycopg2.extras import Json
+
+        db = _db()
+        rows = db.query("SELECT description, metadata FROM public.clinics WHERE id = %s", (clinic_id,))
+        if not rows:
+            return ""
+        meta = rows[0].get("metadata") or {}
+        english = {"description": rows[0].get("description"), **{k: meta.get(k) for k in gc.CONTENT_FIELDS if k != "description"}}
+        i18n, status = gc.refresh_translations(english, meta.get("i18n"), changed, gc._default_llm)
+        db.query("UPDATE public.clinics SET metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb WHERE id = %s", (Json({"i18n": i18n}), clinic_id))
+        failed = [code for code, state in status.items() if state == "failed"]
+        if failed:
+            return (f"⚠️ Không dịch được sang: {', '.join(failed)} (chạy /rescan_clinic để thử lại)." if vi
+                    else f"⚠️ Could not translate into: {', '.join(failed)} (run /rescan_clinic to retry).")
+        return "🌐 Bản dịch VI/KO/ZH đã được cập nhật." if vi else "🌐 VI/KO/ZH translations were updated."
+    except Exception as exc:
+        print(f"[!] Translation refresh failed: {exc!r}")
+        return "⚠️ Không cập nhật được bản dịch." if vi else "⚠️ Could not update the translations."
+
+
 def apply_clinic_edit(plan: EditPlan, actor: str, lang: str = "en") -> str:
     from psycopg2.extras import Json
 
@@ -280,8 +317,10 @@ def apply_clinic_edit(plan: EditPlan, actor: str, lang: str = "en") -> str:
     from revalidate import revalidate_clinic
 
     live = revalidate_clinic(plan.slug)
+    translated = refresh_clinic_translations(plan.clinic_id, set(plan.changes), lang)
     return "\n".join([
         f"✅ {'Đã cập nhật' if vi else 'Updated'} {plan.name}", *[f"• {line}" for line in plan.lines], live,
+        *([translated] if translated else []),
         f"↩️ {'Hoàn tác trong' if vi else 'Undo within'} {UNDO_WINDOW_DAYS} {'ngày' if vi else 'days'}: /clinic_undo {plan.slug}",
     ])
 
@@ -337,4 +376,5 @@ def undo_clinic_edit(target: str, actor: str, lang: str = "en") -> str:
     from revalidate import revalidate_clinic
 
     restored = f"Đã khôi phục {clinic['name']} về trước lần sửa gần nhất." if vi else f"Restored {clinic['name']} to before the last edit."
-    return f"↩️ {restored}\n{revalidate_clinic(clinic.get('slug') or '')}"
+    translated = refresh_clinic_translations(str(clinic["id"]), set(details["before"]), lang)
+    return "\n".join(filter(None, [f"↩️ {restored}", revalidate_clinic(clinic.get('slug') or ''), translated]))
