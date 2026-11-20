@@ -26,7 +26,7 @@ load_dotenv("../.env.local")
 from db import generate_slug, insert_clinic
 from extractor import extract_clinic_data
 from google_places import enrich_clinic_with_google_places
-from image_generator import generate_clinic_image
+from clinic_photos import attach_real_photos
 from scraper import scrape_content_from_url
 from searcher import search_hospital_url
 from third_party_profiles import enrich_clinic_with_third_party_profiles
@@ -132,9 +132,8 @@ def _process_target(target: dict) -> bool:
     data["source_url"] = url
 
     # Attach scraped images (Google Places enrichment may replace these)
-    source_images = content.get("images", [])
-    if source_images:
-        data["images"] = source_images
+    website_images = content.get("images", [])
+    data.pop("images", None)  # rebuilt below from real, filtered sources only
 
     # Propagate scraper-detected links and metadata
     for link_key in ["website", "appointment_url"]:
@@ -146,17 +145,13 @@ def _process_target(target: dict) -> bool:
             data[scrape_key] = content[scrape_key]
 
     # ── 4. Enrich with Google Places ───────────────────────────────────────────
-    data = enrich_clinic_with_google_places(data)
+    data = enrich_clinic_with_google_places(data, upload_photos=False)
 
     # ── 4b. Optional third-party profiles (Zocdoc, Healthgrades, etc.) ─────────
     data = enrich_clinic_with_third_party_profiles(data)
 
-    # Prefer Google Places photos when available; otherwise use website images
-    # or generate a fallback image with AI.
-    if not data.get("images"):
-        generated_image = generate_clinic_image(data)
-        if generated_image:
-            data["images"] = [generated_image]
+    # Real photos only: the official website first, Google to fill gaps, otherwise none (no AI-generated images).
+    attach_real_photos(data, website_images=website_images)
 
     # ── 5. Save to the database ────────────────────────────────────────────────────
     success = insert_clinic(data)

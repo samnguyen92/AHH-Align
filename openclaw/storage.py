@@ -100,6 +100,9 @@ def upload_image_bytes(
 ) -> Optional[str]:
     """
     Save image to local Docker Volume (public/uploads/) and return '/uploads/...'.
+
+    Returns None when the file could not be written. It must NEVER return a URL for a file that does not exist:
+    that is how a clinic ended up with 5 photos in the database and 5 "404 Not Found" on the website.
     """
     normalized_path = storage_path.lstrip("/")
 
@@ -109,12 +112,14 @@ def upload_image_bytes(
         os.makedirs(os.path.dirname(dest_file), exist_ok=True)
         with open(dest_file, "wb") as f:
             f.write(image_bytes)
+        if not os.path.isfile(dest_file) or os.path.getsize(dest_file) != len(image_bytes):
+            raise OSError("the file is missing or truncated after writing")
         local_url = f"/uploads/{normalized_path}"
         print(f"[+] Saved image to local storage: {local_url}")
         return local_url
     except Exception as exc:
-        print(f"[!] Local image save error: {exc}")
-        return f"/uploads/{normalized_path}"
+        print(f"[!] Local image save error (nothing was saved): {exc}")
+        return None
 
 
 def upload_image_value(image_value: Optional[str], folder: str, filename_base: str) -> Optional[str]:

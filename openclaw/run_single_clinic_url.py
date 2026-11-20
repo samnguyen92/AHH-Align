@@ -24,7 +24,7 @@ from db import insert_clinic
 from extractor import extract_clinic_data
 from google_places import enrich_clinic_with_google_places
 from enrich_web import enrich_missing_with_brave
-from image_generator import generate_clinic_image
+from clinic_photos import attach_real_photos
 from normalize import compute_quality, merge_deterministic_contacts
 from scraper import scrape_content_from_url
 
@@ -102,23 +102,20 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
 
     _log("[3/5] Attaching source metadata and website images...", progress_callback)
     data["source_url"] = url
-    if content.get("images"):
-        data["images"] = content["images"]
+    website_images = content.get("images") or []
+    data.pop("images", None)  # rebuilt below from real, filtered sources only
     for link_key in ["website", "appointment_url"]:
         if not data.get(link_key) and content.get(link_key):
             data[link_key] = content[link_key]
     for scrape_key in ["json_ld_schemas", "important_links", "iframe_sources"]:
         if content.get(scrape_key):
             data[scrape_key] = content[scrape_key]
-    _log(f"[3/5] Attached {len(data.get('images') or [])} image(s) from source metadata.", progress_callback)
+    _log(f"[3/5] {len(website_images)} website image candidate(s) found.", progress_callback)
 
     _log("[4/5] Enriching with Google Places and clinic imagery...", progress_callback)
-    data = enrich_clinic_with_google_places(data)
+    data = enrich_clinic_with_google_places(data, upload_photos=False)
     data = enrich_missing_with_brave(data)
-    if not data.get("images"):
-        generated_image = generate_clinic_image(data)
-        if generated_image:
-            data["images"] = [generated_image]
+    attach_real_photos(data, website_images=website_images, log=lambda m: _log(m, progress_callback))
     _log(f"[4/5] Image count after enrichment: {len(data.get('images') or [])}.", progress_callback)
 
     _log("[5/5] Saving clinic to the database...", progress_callback)

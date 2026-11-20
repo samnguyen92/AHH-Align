@@ -77,7 +77,7 @@ class MiscTests(unittest.TestCase):
     def test_quality(self):
         full = compute_quality({"name": "A", "specialty": "Dental", "address": "x", "city": "c", "state": "TX", "phone": "p"})
         self.assertGreater(full["score"], 0)
-        self.assertIn("images", full["missing"])
+        self.assertIn("real photos", full["missing"])
 
 
 if __name__ == "__main__":

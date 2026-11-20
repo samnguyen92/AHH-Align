@@ -199,9 +199,12 @@ def _clinic_review_line(index: int, row: dict) -> str:
     quality = meta.get("quality_score")
     quality_text = f"{quality}/100" if quality is not None else "n/a"
     place = ", ".join(p for p in (row.get("city"), row.get("state")) if p) or "no location"
+    photos = [u for u in (meta.get("images") or []) if isinstance(u, str)]
+    photo_text = f"{len(photos)} photo(s) from {meta.get('images_source') or 'unknown source'}" if photos else "NO photo"
     return (
         f"[{index}] {row.get('name')} — {place} — {row.get('specialty') or 'no specialty'}\n"
         f"    languages: {langs} ({lang_flag}) | quality: {quality_text}\n"
+        f"    photos: {photo_text}\n"
         f"    slug: {row.get('slug')} | id: {row.get('id')}"
     )
 

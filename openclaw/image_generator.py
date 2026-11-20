@@ -14,15 +14,6 @@ IMAGE_FALLBACK_MODEL = os.environ.get("OPENCLAW_IMAGE_FALLBACK_MODEL", "google/g
 # The look of every generated image is defined in image_style.py (Mosaic redesign style + reference photos).
 
 
-def build_clinic_prompt(clinic_data: dict) -> str:
-    name = clinic_data.get("name") or "a community clinic"
-    specialty = (clinic_data.get("specialty") or "healthcare").strip()
-    city = clinic_data.get("city") or "a US city"
-    state = clinic_data.get("state") or ""
-    subject = f"{name}, a small independent {specialty} clinic in {city}{', ' + state if state else ''}"
-    return mosaic_prompt("clinic_interior", subject)
-
-
 def build_article_prompt(topic: str) -> str:
     return mosaic_prompt(
         "article",
@@ -101,18 +92,3 @@ def save_generated_image(image_value: Optional[str], slug: str) -> Optional[str]
         return f"/generated-clinics/{filename}"
 
     return None
-
-
-def generate_clinic_image(clinic_data: dict) -> Optional[str]:
-    """Generate a realistic clinic photo (used only when no real photo from the website/Google Places exists)."""
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        print("[!] OPENROUTER_API_KEY is not set; skipping image generation.")
-        return None
-
-    name = clinic_data.get("name") or "Asian Health Hub clinic"
-    slug = slugify(name)
-    client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key, timeout=120.0)
-    print(f"[*] Generating clinic image: {name}")
-    image_value = generate_image_value(client, build_clinic_prompt(clinic_data), kind="clinic_interior")
-    return save_generated_image(image_value, slug) if image_value else None

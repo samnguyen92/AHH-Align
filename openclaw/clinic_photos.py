@@ -174,3 +174,126 @@ def build_gallery(
     label = "none" if not kinds else ("mixed" if len(kinds) > 1 else next(iter(kinds)))
     primary = sources[images[0]] if images else "none"
     return {"images": images, "sources": sources, "images_source": label, "primary_image_source": primary}
+
+
+# --------------------------------------------------------------------------- integrity + shared entry point
+
+def project_root() -> Path:
+    """The folder that holds public/uploads: /app in the Docker containers, the repository root otherwise."""
+    return Path("/app") if Path("/app/public").exists() else Path(__file__).resolve().parent.parent
+
+
+def is_remote(url: str) -> bool:
+    return isinstance(url, str) and url.startswith(("http://", "https://"))
+
+
+def local_file_exists(url: str, root: Optional[Path] = None) -> bool:
+    """Does the file behind a site-relative image address (/uploads/..., /brand/...) really exist and have content?"""
+    if not isinstance(url, str) or not url.startswith("/") or url.startswith("//"):
+        return False
+    path = (root or project_root()) / "public" / url.lstrip("/")
+    try:
+        return path.is_file() and path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def split_images(urls: list, root: Optional[Path] = None) -> tuple:
+    """(usable, broken): site-relative files that are gone are broken; remote addresses cannot be checked here."""
+    usable, broken = [], []
+    for url in urls or []:
+        if isinstance(url, str) and (is_remote(url) or local_file_exists(url, root)):
+            usable.append(url)
+        else:
+            broken.append(url)
+    return usable, broken
+
+
+def attach_real_photos(
+    data: dict,
+    website_images: Optional[list] = None,
+    google_fetcher: Optional[Callable[[], list]] = None,
+    root: Optional[Path] = None,
+    log: Callable[[str], None] = print,
+) -> dict:
+    """Give a new clinic its photos: the official website first, Google only to fill the gaps, otherwise NONE.
+
+    Every photo is downloaded and kept on our server (never hot-linked), must pass the quality gates (size, shape,
+    not flat, not a duplicate) and its source is recorded. A clinic with no real photo shows a neutral placeholder on
+    the site; we never invent one (no AI-generated clinic photos).
+    """
+    from storage import safe_storage_name
+
+    root = root or project_root()
+    website = data.get("website") or data.get("source_url") or ""
+    pages = [{"url": website, "images": [{"url": u, "where": "body"} for u in (website_images or []) if is_remote(u)]}] if website_images else []
+    if google_fetcher is None and data.get("_google_photo_names"):
+        names = list(data["_google_photo_names"])
+
+        def google_fetcher() -> list:  # noqa: F811
+            from google_places import get_google_places_key, photo_uris
+
+            key = get_google_places_key()
+            return photo_uris(names, key) if key else []
+
+    gallery = build_gallery(
+        safe_storage_name(data.get("name") or "clinic"), pages, root, existing_google_urls=[], google_fetcher=google_fetcher, log=log,
+    )
+    data["images"] = gallery["images"]
+    data["image_sources"] = gallery["sources"]
+    data["images_source"] = gallery["images_source"]
+    data["primary_image_source"] = gallery["primary_image_source"]
+    data.pop("_google_photo_names", None)
+    return data
+
+
+def _source_label(sources: dict, images: list) -> tuple:
+    kinds = {sources.get(u) for u in images if sources.get(u)}
+    if not images:
+        return "none", "none"
+    label = "mixed" if len(kinds) > 1 else (next(iter(kinds)) if kinds else "unknown")
+    return label, (sources.get(images[0]) or "unknown")
+
+
+def repair_gallery(
+    slug: str,
+    meta: dict,
+    root: Optional[Path] = None,
+    fetcher: Optional[Callable[[], list]] = None,
+    log: Callable[[str], None] = print,
+) -> Optional[dict]:
+    """Fix a clinic whose photos point at files that no longer exist (what the site shows as "404 Not Found").
+
+    - broken site-relative addresses are dropped (never kept "just in case");
+    - when no usable photo is left and a Google place is known, its photos are fetched again through
+      build_gallery (quality gates, kept on our server);
+    - returns the new image fields to store, or None when nothing needs changing.
+    """
+    root = root or project_root()
+    images = [u for u in (meta.get("images") or []) if isinstance(u, str)]
+    usable, broken = split_images(images, root)
+    needs_refill = not usable and fetcher is not None
+    if not broken and not needs_refill:
+        return None
+
+    sources = {u: v for u, v in (meta.get("image_sources") or {}).items() if u in usable}
+    if broken:
+        log(f"   [!] {len(broken)} photo file(s) are missing and were dropped: {', '.join(broken[:3])}{'…' if len(broken) > 3 else ''}")
+    if needs_refill:
+        gallery = build_gallery(slug, [], root, existing_google_urls=[], google_fetcher=fetcher, log=log)
+        usable = gallery["images"]
+        sources = gallery["sources"]
+    label, primary = _source_label(sources, usable)
+    return {
+        "images": usable, "image_sources": sources, "images_source": label, "primary_image_source": primary,
+        "removed": broken,
+    }
+
+
+def prune_dead_images(meta: dict, root: Optional[Path] = None) -> list:
+    """Keep only photo addresses that can really be served. Updates `meta` in place, returns what was dropped."""
+    kept, dropped = split_images(meta.get("images") or [], root)
+    meta["images"] = kept
+    meta["image_sources"] = {u: v for u, v in (meta.get("image_sources") or {}).items() if u in kept}
+    meta["images_source"], meta["primary_image_source"] = _source_label(meta["image_sources"], kept)
+    return dropped

@@ -52,6 +52,8 @@ ACTION_TOOLS: List[Tool] = [
          _obj({"arg": S, "scopes": {"type": "array", "items": S}, "period": _PERIOD}), approval=False),
     Tool("check_analytics", "Quick traffic and search summary.", _obj({"timeframe": S, "filter_type": S}), approval=False),
     Tool("check_anomalies", "Check for traffic drops or broken links.", _obj(), approval=False),
+    Tool("check_data_quality", "Scorecard of the whole directory: dead photos, clinics without real photos, unverified languages, generic texts, missing translations.",
+         _obj(), approval=False),
     Tool("check_claims", "List pending clinic claims and submissions.", _obj(), approval=False),
     Tool("newsletter_list", "List newsletter subscribers.", _obj({"limit": I}), approval=False),
 
@@ -79,7 +81,8 @@ ACTION_TOOLS: List[Tool] = [
          card_vi="nhập clinic {clinic_name} từ {url}", card_en="import clinic {clinic_name} from {url}"),
     Tool("enrich_clinics_google", "Add Google Places photos, reviews and rating to existing clinics.", _obj(),
          card_vi="bổ sung ảnh, đánh giá từ Google cho các clinic", card_en="enrich clinics with Google photos and reviews"),
-    Tool("repair_clinic_images", "Repair missing clinic images.", _obj(), card_vi="sửa ảnh clinic bị thiếu", card_en="repair missing clinic images"),
+    Tool("repair_clinic_images", "Repair clinic photos: drop photo links whose file is missing and fetch real photos again from the known Google place. Never creates AI images.",
+         _obj(), card_vi="sửa ảnh clinic bị hỏng (bỏ ảnh mất file, tải lại ảnh thật từ Google)", card_en="repair broken clinic photos (drop dead links, fetch real photos again)"),
     Tool("change_clinic_feature_image", "Change or rotate a clinic's feature image.", _obj({"target": S, "image_url": S}, ["target"]),
          card_vi="đổi ảnh đại diện của clinic {target}", card_en="change the feature image of clinic {target}"),
     Tool("approve_clinic", "Publish one DRAFT clinic so it appears on the website ('all' publishes every draft).", _obj({"target": S}, ["target"]),
