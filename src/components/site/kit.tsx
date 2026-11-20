@@ -4,8 +4,15 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Roll } from './ui';
-import { useEffect, useState } from 'react';
-import { Baby, Bone, Brain, Eye, Flower2, HeartPulse, Smile, Sparkles, Stethoscope, type LucideIcon } from 'lucide-react';
+import { forwardRef, useEffect, useState } from 'react';
+import { Baby, Bone, Brain, Eye, Flower2, HeartPulse, Sparkles, Stethoscope, type LucideIcon, type LucideProps } from 'lucide-react';
+
+const Tooth = forwardRef<SVGSVGElement, LucideProps>((props, ref) => (
+  <svg ref={ref} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M12 3.5c-1.5-1.5-4.7-1.3-6.3.2-2.3 2.2-1.8 6.1-.7 9.1.5 1.4 1.5 5.3 3.1 6.6.7.6 1.5.2 1.8-.8l1.1-3.8c.3-1 1.7-1 2 0l1.1 3.8c.3 1 1.1 1.4 1.8.8 1.6-1.3 2.6-5.2 3.1-6.6 1.1-3 1.6-6.9-.7-9.1-1.6-1.5-4.8-1.7-6.3-.2Z" />
+  </svg>
+));
+Tooth.displayName = 'Tooth';
 import { LanguageSwitcher, useLocale } from '@/lib/i18n/context';
 
 export const HOME = '/';
@@ -17,7 +24,7 @@ export const INK = '#0D1F1C';
 
 export const SPEC_INFO: Record<string, { icon: LucideIcon; blurb: string }> = {
   'Primary Care': { icon: Stethoscope, blurb: 'Check-ups, chronic care, referrals' },
-  Dental: { icon: Smile, blurb: 'Cleanings, fillings, orthodontics' },
+  Dental: { icon: Tooth, blurb: 'Cleanings, fillings, orthodontics' },
   'Mental Health': { icon: Brain, blurb: 'Counseling and psychiatry' },
   'OB/GYN': { icon: Flower2, blurb: 'Pregnancy and women’s health' },
   Pediatrics: { icon: Baby, blurb: 'Babies, kids and teens' },
