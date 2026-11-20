@@ -43,6 +43,7 @@ from jobs import (
     generate_pulse_job,
     enrich_clinics_google_job,
     repair_article_images_job,
+    quality_report_job,
     repair_clinic_images_job,
     repair_article_slugs_job,
     regenerate_article_images_job,
@@ -574,7 +575,8 @@ class TelegramBot:
             "/site_analyze [route] - run deep Playwright UX/speed probe + database conversion funnel analysis\n"
             "/preview [route] - capture live Desktop & Mobile screenshots of a page\n"
             "/enrich_clinics_google - add Google Places photos, rating, reviews, and Maps links to existing clinics\n"
-            "/repair_clinic_images - generate missing clinic directory images\n"
+            "/repair_clinic_images - drop dead photo links and fetch real photos again (never AI images)\n"
+            "/quality - data quality scorecard: photos, languages, missing content\n"
             "/repair_article_images - generate missing article images\n"
             "/repair_article_slugs - convert non-ASCII article slugs to URL-safe ASCII\n"
             "/delete_article <id|slug|title> - delete one article after confirmation\n"
@@ -1182,6 +1184,10 @@ class TelegramBot:
                 ),
                 action_type=action_type,
             )
+        elif action_type == "check_data_quality":
+            self.run_job(chat_id, action.get("name") or "check_data_quality",
+                         lambda: quality_report_job(lang=action.get("lang") or self.chat_lang.get(chat_id, "vi")),
+                         action_type=action_type)
         elif action_type == "repair_clinic_images":
             self.run_job(chat_id, action["name"], repair_clinic_images_job, action_type=action_type)
         elif action_type == "enrich_clinics_google":
@@ -1593,6 +1599,8 @@ class TelegramBot:
                     ),
                     action_type="scrape_clinic_url",
                 )
+        elif command in {"/quality", "/data_quality"}:
+            self.run_job(chat_id, "quality", lambda: quality_report_job(lang=self.chat_lang.get(chat_id, "vi")), action_type="check_data_quality")
         elif command == "/repair_clinic_images":
             self.run_job(chat_id, "repair_clinic_images", repair_clinic_images_job, action_type="repair_clinic_images")
         elif command == "/enrich_clinics_google":

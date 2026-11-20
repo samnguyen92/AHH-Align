@@ -184,6 +184,9 @@ def insert_clinic(clinic_data: dict, status: str = NEW_CLINIC_STATUS):
         "external_sources",
         "languages_verified",
         "languages_evidence",
+        "image_sources",
+        "images_source",
+        "primary_image_source",
     ]
     for field in metadata_fields:
         value = clinic_data.get(field)

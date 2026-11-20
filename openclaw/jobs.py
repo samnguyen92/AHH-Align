@@ -709,6 +709,15 @@ def connect_ga4_job(arg: str = "") -> str:
         return f"❌ Error: {exc}"
 
 
+def quality_report_job(lang: str = "vi") -> str:
+    """The directory scorecard (read-only): photos, languages, content gaps."""
+    from pg_client import create_client
+    from quality_report import build_report, format_report
+
+    rows = create_client().table("clinics").select("id,name,slug,status,description,metadata").execute().data or []
+    return format_report(build_report(rows), lang=lang)
+
+
 def check_anomalies_job(lang: str = "en") -> str:
     from stats_agent import check_anomalies, format_anomalies_report
 

@@ -204,6 +204,20 @@ def _has(value: Any) -> bool:
     return clean_value(value) not in (None, [], {}, "")
 
 
+def _is_generated_image(url: str) -> bool:
+    """Old AI-generated clinic images were saved directly under /generated-clinics/ (not website/ or google-places/)."""
+    return "/generated-clinics/" in url and "/google-places/" not in url and "/website/" not in url
+
+
+def has_real_photos(metadata: Dict[str, Any]) -> bool:
+    images = [u for u in (metadata.get("images") or []) if isinstance(u, str) and u]
+    if not images or metadata.get("images_source") == "none":
+        return False
+    if metadata.get("images_source") in ("website", "google", "mixed"):
+        return True
+    return any(not _is_generated_image(u) for u in images)  # older clinics: no provenance was recorded
+
+
 def compute_quality(data: dict) -> Dict[str, Any]:
     """Score a clinic 0-100 and list missing fields. Used for Telegram reports; never blocks publishing."""
     metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
@@ -224,8 +238,8 @@ def compute_quality(data: dict) -> Dict[str, Any]:
         ("website", 5, _has(pick("website"))),
         ("services", 10, _has(pick("services"))),
         ("working_hours", 5, _has(pick("working_hours"))),
-        ("images", 10, _has(pick("images"))),
-        ("languages (non-default)", 5, bool(explicit_languages)),
+        ("real photos", 10, has_real_photos({**metadata, **{k: v for k, v in data.items() if k in ("images", "images_source")}})),
+        ("verified languages", 5, bool(explicit_languages) and pick("languages_verified") is not False),
         ("insurance", 5, _has(pick("insurance_accepted"))),
         ("team_members", 3, _has(pick("team_members"))),
         ("appointment_url", 2, _has(pick("appointment_url"))),

@@ -8,8 +8,11 @@ site content, enriches the result, and saves new clinic records.
 Filters applied:
   1. Place-type blocklist: rejects spas, salons, massage parlors, restaurants, etc.
      before any scraping happens.
-  2. Language validation gate: after AI extraction, rejects clinics that do not
-     mention the required language(s) anywhere on their website.
+  2. Language evidence: a language is only listed when the clinic's own website says so.
+     A required language the website does not mention is NOT added; the clinic is still
+     saved as a draft, flagged, so a person decides.
+  3. Photos: real photos only (website first, Google to fill gaps, filtered and kept on our
+     server). No photo means no photo: fake (AI-generated) clinic images are never created.
 """
 
 import logging
@@ -28,7 +31,8 @@ load_dotenv(".env.local")
 from db import insert_clinic
 from extractor import extract_clinic_data
 from google_places import get_google_places_key, search_places_by_text, enrich_clinic_with_google_places
-from image_generator import generate_clinic_image
+from clinic_photos import attach_real_photos
+from languages import detect_languages
 from enrich_web import enrich_missing_with_brave, _brave_web_search
 from normalize import compute_quality, merge_deterministic_contacts
 from scraper import scrape_content_from_url
@@ -348,13 +352,17 @@ def run_scout_pipeline(
                 continue
             merge_deterministic_contacts(data, content)
 
-            # ── Filter 2: Language validation gate (Soft match) ───────────────
-            # If the required language is not explicitly found on the website by the AI extractor,
-            # we do NOT skip the clinic (to avoid wasting scrape & LLM credit).
-            # Instead, we still save it, but inject the required language(s) and flag it
-            # in metadata as 'language_verified_on_website': False.
+            # ── Filter 2: language evidence ───────────────────────────────────────────
+            # A language is listed only when the clinic's own website says so. The required language is NEVER
+            # added just because Google or the search query suggested it: that made the directory claim
+            # support that nobody had confirmed. Such a clinic is still saved as a draft, flagged, so a person decides.
             if "google_metadata" not in data:
                 data["google_metadata"] = {}
+
+            evidence = {k: v for k, v in detect_languages(text).items() if k != "English"}
+            data["languages_verified"] = bool(evidence)
+            if evidence:
+                data["languages_evidence"] = [f"{k}: {v}" for k, v in evidence.items()]
 
             if required_languages:
                 extracted_langs = [
@@ -362,30 +370,17 @@ def run_scout_pipeline(
                     for lang in (data.get("languages") or [])
                     if lang and lang.strip()
                 ]
-                matched = [
-                    rl for rl in required_languages
-                    if rl.lower() in extracted_langs
-                ]
+                matched = [rl for rl in required_languages if rl.lower() in extracted_langs]
+                data["google_metadata"]["scout_required_languages"] = required_languages
+                data["google_metadata"]["language_verified_on_website"] = bool(matched)
                 if not matched:
-                    # Inject the required languages so it matches database searches
-                    current_langs = data.get("languages") or []
-                    for rl in required_languages:
-                        normalized_rl = rl.strip().capitalize()
-                        if normalized_rl not in current_langs:
-                            current_langs.append(normalized_rl)
-                    data["languages"] = current_langs
-                    
-                    data["google_metadata"]["language_verified_on_website"] = False
-                    data["google_metadata"]["scout_required_languages"] = required_languages
-                    
-                    langs_found = ", ".join(data.get("languages") or [])
+                    data["languages_verified"] = False
                     _notify(
                         telegram_updater_callback,
-                        f"⚠️ Cảnh báo {name}: website không nhắc đến ngôn ngữ yêu cầu "
-                        f"({', '.join(required_languages)}). Vẫn giữ lại theo kết quả Google Places (Ngôn ngữ gán: {langs_found}).",
+                        f"⚠️ {name}: website không nhắc đến ngôn ngữ yêu cầu ({', '.join(required_languages)}). "
+                        f"KHÔNG gán ngôn ngữ này. Vẫn lưu NHÁP và gắn cờ \"ngôn ngữ chưa xác minh\" để bạn quyết định "
+                        f"(ngôn ngữ hiện có: {', '.join(data.get('languages') or []) or 'không có'}).",
                     )
-                else:
-                    data["google_metadata"]["language_verified_on_website"] = True
 
             data = _merge_place_defaults(data, place, website)
             data["google_metadata"] = {
@@ -396,25 +391,25 @@ def run_scout_pipeline(
                     "included_types": included_types,
                 } if required_languages or included_types else {}),
             }
-            source_images = content.get("images") or []
-            if source_images and not data.get("images"):
-                data["images"] = source_images
+            website_images = content.get("images") or []
+            data.pop("images", None)  # the photos are rebuilt below from real, filtered sources only
             for scrape_key in ["json_ld_schemas", "important_links", "iframe_sources", "appointment_url"]:
                 if content.get(scrape_key) and not data.get(scrape_key):
                     data[scrape_key] = content[scrape_key]
 
             _notify(telegram_updater_callback, f"Đang làm giàu Google Places: {name}...")
-            data = enrich_clinic_with_google_places(data)
+            # Use the exact place the search found (no second, error-prone name search).
+            data = enrich_clinic_with_google_places(data, place_id=place.get("id"), upload_photos=False)
             data = enrich_missing_with_brave(data)
             data = enrich_clinic_with_third_party_profiles(data)
             data["google_metadata"] = {
                 **(data.get("google_metadata") or {}),
                 "scout_query": query,
             }
+            _notify(telegram_updater_callback, f"Đang chọn ảnh thật cho {name} (website trước, Google bù)...")
+            attach_real_photos(data, website_images=website_images, log=lambda m: print(m))
             if not data.get("images"):
-                generated_image = generate_clinic_image(data)
-                if generated_image:
-                    data["images"] = [generated_image]
+                _notify(telegram_updater_callback, f"ℹ️ {name}: không có ảnh thật phù hợp, để trống (không tạo ảnh giả).")
 
             if override_specialty:
                 data["specialty"] = override_specialty

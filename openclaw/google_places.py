@@ -59,6 +59,57 @@ def build_search_query(clinic_data: dict) -> str:
     return " ".join(str(part).strip() for part in parts if part)
 
 
+_GENERIC_NAME_WORDS = {
+    "the", "of", "and", "inc", "llc", "pc", "pllc", "md", "dds", "dmd", "do", "od", "np", "phd",
+    "clinic", "clinics", "center", "centre", "medical", "health", "healthcare", "care", "group", "office", "practice",
+}
+
+
+def _name_tokens(value: str) -> set:
+    return {t for t in re.sub(r"[^a-z0-9\s]", " ", (value or "").lower()).split() if t and t not in _GENERIC_NAME_WORDS}
+
+
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", value or "")[-10:]
+
+
+def _domain(url: str) -> str:
+    host = re.sub(r"^https?://", "", (url or "").strip().lower()).split("/")[0]
+    return host[4:] if host.startswith("www.") else host
+
+
+def place_matches(clinic_data: dict, place: dict) -> tuple:
+    """Is this Google place really THIS clinic? Returns (matches, reason).
+
+    The name must be similar AND something else must agree (website domain, phone, zip code). Without that check
+    the first search hit was used blindly and its photos, reviews and opening hours could belong to another business.
+    """
+    place_name = ((place.get("displayName") or {}).get("text") if isinstance(place.get("displayName"), dict) else place.get("displayName")) or ""
+    ours, theirs = _name_tokens(clinic_data.get("name") or ""), _name_tokens(place_name)
+    if not ours or not theirs:
+        return False, "no comparable name"
+    overlap = len(ours & theirs) / max(1, min(len(ours), len(theirs)))
+    if overlap < 0.6:
+        return False, f"different name ({place_name})"
+
+    evidence = []
+    our_site, their_site = _domain(clinic_data.get("website") or clinic_data.get("source_url") or ""), _domain(place.get("websiteUri") or "")
+    if our_site and their_site and our_site == their_site:
+        evidence.append("website")
+    our_phone, their_phone = _digits(clinic_data.get("phone") or ""), _digits(place.get("nationalPhoneNumber") or "")
+    if len(our_phone) == 10 and our_phone == their_phone:
+        evidence.append("phone")
+    zip_match = re.search(r"\b(\d{5})\b", clinic_data.get("zip_code") or clinic_data.get("address") or "")
+    if zip_match and zip_match.group(1) in (place.get("formattedAddress") or ""):
+        evidence.append("zip")
+    if evidence:
+        return True, "+".join(evidence)
+    # nothing else to compare with: only an almost identical name is acceptable
+    if not (our_site or our_phone or zip_match) and overlap >= 0.99:
+        return True, "name"
+    return False, f"name looks alike ({place_name}) but website/phone/zip do not agree"
+
+
 def text_search_place(clinic_data: dict, api_key: str) -> Optional[dict]:
     query = build_search_query(clinic_data)
     if not query:
@@ -74,11 +125,13 @@ def text_search_place(clinic_data: dict, api_key: str) -> Optional[dict]:
             "places.rating",
             "places.userRatingCount",
             "places.googleMapsUri",
+            "places.websiteUri",
+            "places.nationalPhoneNumber",
         ]
     )
     request = Request(
         url,
-        data=json.dumps({"textQuery": query, "maxResultCount": 1}).encode("utf-8"),
+        data=json.dumps({"textQuery": query, "maxResultCount": 5}).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
             "X-Goog-Api-Key": api_key,
@@ -90,8 +143,16 @@ def text_search_place(clinic_data: dict, api_key: str) -> Optional[dict]:
     try:
         with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
             payload = json.loads(response.read().decode("utf-8"))
-        places = payload.get("places") or []
-        return places[0] if places else None
+        reasons = []
+        for place in payload.get("places") or []:
+            ok, reason = place_matches(clinic_data, place)
+            if ok:
+                print(f"[*] Google Places match accepted ({reason})")
+                return place
+            reasons.append(reason)
+        if reasons:
+            print(f"[!] Google Places returned {len(reasons)} result(s) but none is this clinic: {'; '.join(reasons[:3])}")
+        return None
     except Exception as exc:
         print(f"[!] Google Places text search failed: {exc}")
         return None
@@ -422,6 +483,31 @@ def summarize_reviews_with_ai(
         return fallback
 
 
+def photo_uris(photo_names: List[str], api_key: str, limit: int = 8) -> List[str]:
+    """Direct image addresses for Google photo names (downloaded and filtered later by clinic_photos)."""
+    uris: List[str] = []
+    for name in (photo_names or [])[:limit]:
+        try:
+            uri = get_photo_uri(name, api_key)
+            if uri:
+                uris.append(uri)
+        except Exception as exc:
+            print(f"[!] Could not get a Google photo address: {exc}")
+    return uris
+
+
+def photo_fetcher_for_place(place_id: str):
+    """A callable returning the photo addresses of ONE known Google place (used to refill a clinic's gallery)."""
+    def fetch() -> List[str]:
+        api_key = get_google_places_key()
+        if not api_key or not place_id:
+            return []
+        details = get_place_details(place_id, api_key)
+        return photo_uris([p.get("name") for p in (details.get("photos") or []) if p.get("name")], api_key)
+
+    return fetch
+
+
 def upload_place_photos(details: dict, clinic_data: dict, api_key: str) -> List[str]:
     images = []
     clinic_slug = safe_storage_name(clinic_data.get("name") or details.get("id") or "clinic")
@@ -451,19 +537,28 @@ def split_city_state_zip(formatted_address: str) -> Dict[str, str]:
     return parse_us_address(formatted_address)
 
 
-def enrich_clinic_with_google_places(clinic_data: dict) -> dict:
+def enrich_clinic_with_google_places(clinic_data: dict, place_id: Optional[str] = None, upload_photos: bool = True) -> dict:
+    """Add Google rating, reviews, hours (and photos) to a clinic.
+
+    place_id:       the exact place the scout already found; skips the (error-prone) name search.
+    upload_photos:  False leaves the photos to clinic_photos.build_gallery (website first, filtered, deduplicated):
+                    the names are kept in clinic_data["_google_photo_names"] for it.
+    """
     api_key = get_google_places_key()
     if not api_key:
         print("[*] GOOGLE_PLACES_API_KEY is not set; skipping Google Places enrichment.")
         return clinic_data
 
     try:
-        place = text_search_place(clinic_data, api_key)
-        if not place:
-            print(f"[!] Google Places found no match for: {clinic_data.get('name')}")
-            return clinic_data
+        if not place_id:
+            place = text_search_place(clinic_data, api_key)
+            if not place:
+                print(f"[!] Google Places found no match for: {clinic_data.get('name')}")
+                clinic_data.setdefault("google_metadata", {})["google_match"] = "rejected"
+                return clinic_data
+            place_id = place["id"]
 
-        details = get_place_details(place["id"], api_key)
+        details = get_place_details(place_id, api_key)
         print(f"[*] Google Places match: {details.get('displayName', {}).get('text') or details.get('id')}")
 
         formatted_address = details.get("formattedAddress")
@@ -477,10 +572,13 @@ def enrich_clinic_with_google_places(clinic_data: dict) -> dict:
         if details.get("websiteUri") and not clinic_data.get("website"):
             clinic_data["website"] = details["websiteUri"]
 
-        google_images = upload_place_photos(details, clinic_data, api_key)
-        if google_images:
-            existing_images = clinic_data.get("images") or []
-            clinic_data["images"] = google_images + [img for img in existing_images if img not in google_images]
+        if upload_photos:
+            google_images = upload_place_photos(details, clinic_data, api_key)
+            if google_images:
+                existing_images = clinic_data.get("images") or []
+                clinic_data["images"] = google_images + [img for img in existing_images if img not in google_images]
+        else:
+            clinic_data["_google_photo_names"] = [p.get("name") for p in (details.get("photos") or []) if p.get("name")][:8]
 
         google_reviews = normalize_reviews(details)
         review_ai = summarize_reviews_with_ai(

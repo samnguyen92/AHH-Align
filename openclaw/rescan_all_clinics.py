@@ -42,7 +42,7 @@ from typing import Any, Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from audit_languages import fetch_clinic_site_html  # noqa: E402
-from clinic_photos import build_gallery  # noqa: E402
+from clinic_photos import build_gallery, prune_dead_images  # noqa: E402
 from languages import (  # noqa: E402
     ENTRIES,
     detect_languages,
@@ -436,21 +436,30 @@ def rescan_one_clinic(clinic: dict) -> dict:
     print(f"   [+] Languages after verification & family expansion: {verified_langs}")
 
     # 3. Build photo gallery: Official Website -> Google Places -> Placeholder
+    place_id = meta.get("google_place_id")
+    fetcher = None
+    if place_id:
+        from google_places import photo_fetcher_for_place
+
+        fetcher = photo_fetcher_for_place(place_id)  # lets a rescan fetch Google photos again when none survive
     gallery = build_gallery(
         slug,
         pages,
         ROOT_DIR,
         existing_google_urls=meta.get("images") or [],
-        google_fetcher=None,
+        google_fetcher=fetcher,
     )
     if gallery["images"]:
         meta["images"] = gallery["images"]
         meta["image_sources"] = gallery["sources"]
         meta["images_source"] = gallery["images_source"]
         meta["primary_image_source"] = gallery["primary_image_source"]
-    elif not meta.get("images"):
-        meta["images_source"] = "none"
-        meta["primary_image_source"] = "none"
+    else:
+        # Nothing usable came out. Do NOT keep old addresses: when their files are gone the site shows "404 Not Found"
+        # (this used to leave 5 dead photos in place and report the source as "None").
+        dropped = prune_dead_images(meta, ROOT_DIR)
+        if dropped:
+            print(f"   [!] Dropped {len(dropped)} photo address(es) whose files no longer exist.")
     meta["gallery_images"] = []
 
     # 4. Full-field extraction + Language support + i18n via openai/gpt-6-luna

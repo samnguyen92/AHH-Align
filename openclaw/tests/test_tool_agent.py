@@ -238,7 +238,7 @@ def test_the_pending_tools_are_offered_only_while_something_is_pending():
 
 def test_read_tools_run_at_once_and_every_change_needs_approval():
     reads = {t.name for t in agent_tools.ACTION_TOOLS if not t.approval}
-    assert reads == {"inspect_clinic", "list_drafts", "stats_question", "stats_report", "check_analytics", "check_anomalies", "check_claims", "newsletter_list"}
+    assert reads == {"inspect_clinic", "list_drafts", "stats_question", "stats_report", "check_analytics", "check_anomalies", "check_claims", "newsletter_list", "check_data_quality"}
     for name in ("update_clinic", "delete_clinic", "delete_article", "web_edit", "approve_clinic", "reject_clinic", "newsletter_add", "newsletter_remove", "find_clinics"):
         assert agent_tools.BY_NAME[name].approval, name
 
