@@ -150,6 +150,7 @@ class TelegramBot:
         self.chat_history: dict[int, list] = {}
         self.chat_focus: dict[int, dict] = {}
         self.chat_images: dict[int, tuple] = {}
+        self.last_web_pr: dict[int, int] = {}
         self._memory_lock = threading.RLock()  # RLock: reentrant, safe for nested acquire
         self._pending_lock = threading.Lock()
         self.start_anomaly_checker()
@@ -546,6 +547,7 @@ class TelegramBot:
             "You can chat naturally (Vietnamese or English). The bot will summarize the planned action and only run it after you press Approve (or reply `approve`).\n\n"
             "Commands\n"
             "/status - check env, database counts, and log path\n"
+            "/whoami - your Telegram id and what you may do (use it when you see \"You are not allowed\")\n"
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
             "/find_clinics <query> | [limit] - scout Google Places, scrape websites, extract clinic data, and save new clinics\n"
             "/inspect_clinic <name|slug> - inspect an existing clinic on our website (languages, gallery, sections, i18n)\n"
@@ -651,7 +653,15 @@ class TelegramBot:
             )
             return None
         if not self.is_user_admin(actor_id):
-            self.send_message(chat_id, f"You are not allowed to do this ({what}).")
+            vi = self.chat_lang.get(chat_id) == "vi"
+            self.send_message(
+                chat_id,
+                (f"Bạn chưa có quyền ({what}). Id Telegram của bạn là {actor_id}. Thêm nó vào TELEGRAM_SUPERADMIN_IDS trong openclaw/.env "
+                 f"rồi chạy `docker compose up -d openclaw-bot`. Trong lúc đó bạn vẫn merge được trên GitHub.")
+                if vi else
+                (f"You are not allowed to do this ({what}). Your Telegram id is {actor_id}. Add it to TELEGRAM_SUPERADMIN_IDS in "
+                 f"openclaw/.env and run `docker compose up -d openclaw-bot`. Meanwhile you can still merge on GitHub."),
+            )
             return None
         if actor_id != chat_id:
             self.send_message(chat_id, f"{what} only works in a private chat with the bot.")
@@ -679,32 +689,43 @@ class TelegramBot:
             return
         for path in result.get("screenshots") or []:
             self.send_photo(chat_id, path, caption=f"Preview of Pull Request #{number}")
+        self.last_web_pr[chat_id] = number  # so "publish it" / "merge it" in the next message knows which PR
+        lang = self.chat_lang.get(chat_id, "en")
         if self.is_user_admin(chat_id):
-            with self._pending_lock:
-                self.pending_actions[chat_id] = self._web_merge_action(chat_id, number, result.get("title") or "", result.get("pr_url") or "")
-            self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+            pending = self._web_merge_action(chat_id, number, result.get("title") or "", result.get("pr_url") or "", lang=lang)
+            self.offer_action(chat_id, pending, pending["summary"], chat_id)
         else:
             self.send_message(
                 chat_id,
-                f"Review and merge it on GitHub: {result.get('pr_url')}\n"
-                "(To merge from Telegram, put your id in TELEGRAM_SUPERADMIN_IDS in openclaw/.env.)",
+                (f"Xem và merge trên GitHub: {result.get('pr_url')}\nĐể merge ngay trong Telegram: id của bạn là {chat_id}, thêm vào "
+                 f"TELEGRAM_SUPERADMIN_IDS trong openclaw/.env.")
+                if lang == "vi" else
+                (f"Review and merge it on GitHub: {result.get('pr_url')}\nTo merge from Telegram: your id is {chat_id}; add it to "
+                 f"TELEGRAM_SUPERADMIN_IDS in openclaw/.env."),
             )
 
-    def _web_merge_action(self, actor_id: int, number: int, title: str, url: str, extra: str = "") -> dict:
+    def _web_merge_action(self, actor_id: int, number: int, title: str, url: str, extra: str = "", lang: str = "en") -> dict:
         from deploy import deploy_mode
 
+        vi = lang == "vi"
+        summary = (
+            f"Merge Pull Request #{number} vào main để đưa lên website?\n{title}\n{url}\n{extra}\n"
+            f"Sau khi merge, chế độ cập nhật site: '{deploy_mode()}'. Bấm **Duyệt** trong 30 phút, hoặc **Huỷ** để giữ PR mở "
+            f"(bỏ sau bằng /web_close {number})."
+            if vi else
+            f"Merge Pull Request #{number} into main (publish to the website)?\n{title}\n{url}\n{extra}\n"
+            f"After the merge, live site update mode is '{deploy_mode()}'. Press **Approve** within 30 minutes, or **Cancel** to leave it open "
+            f"(discard it later with /web_close {number})."
+        )
         return {
             "type": "web_pr_merge",
             "name": f"web_merge PR {number}",
-            "summary": (
-                f"Merge Pull Request #{number} into main?\n{title}\n{url}\n{extra}\n"
-                f"After the merge: live site update mode is '{deploy_mode()}'.\n"
-                "Reply `approve` within 30 minutes to merge, or `cancel` to leave it open "
-                f"(discard it later with /web_close {number})."
-            ).replace("\n\n\n", "\n\n"),
+            "summary": summary.replace("\n\n\n", "\n\n"),
             "pr_number": number,
             "actor_id": actor_id,
             "actor": f"telegram:{actor_id}",
+            "lang": lang,
+            "ttl_seconds": PENDING_WEB_MERGE_TTL_SECONDS,
             "expires_at": time.time() + PENDING_WEB_MERGE_TTL_SECONDS,
         }
 
@@ -745,8 +766,8 @@ class TelegramBot:
                 self.send_message(chat_id, f"Pull Request #{number} is not open.")
                 return
             extra = f"{pr.get('changed_files', '?')} file(s), +{pr.get('additions', '?')} -{pr.get('deletions', '?')}"
-            self.pending_actions[chat_id] = self._web_merge_action(actor_id, number, pr.get("title", ""), pr.get("html_url", ""), extra)
-            self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
+            pending = self._web_merge_action(actor_id, number, pr.get("title", ""), pr.get("html_url", ""), extra, lang=self.chat_lang.get(chat_id, "en"))
+            self.offer_action(chat_id, pending, pending["summary"], actor_id)
 
     def run_web_merge(self, chat_id: int, action: dict) -> None:
         """Run an approved merge. Permission is re-checked: the approval may arrive later and from someone else."""
@@ -1304,6 +1325,7 @@ class TelegramBot:
                     required_languages=required_languages or None,
                     included_types=facility_types or None,
                     telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
+                    lang=action.get("lang") or self.chat_lang.get(chat_id, "vi"),
                 ),
                 action_type=action_type,
             )
@@ -1317,6 +1339,7 @@ class TelegramBot:
                     clinic_name,
                     clinic_url,
                     telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
+                    lang=action.get("lang") or self.chat_lang.get(chat_id, "vi"),
                 ),
                 action_type=action_type,
             )
@@ -1404,6 +1427,10 @@ class TelegramBot:
 
         if command in CLINIC_COMMANDS:
             self.handle_clinic_command(chat_id, command, text, user_id)
+            return
+
+        if command == "/whoami":
+            self.handle_whoami(chat_id, user_id)
             return
 
         if command in {"/start", "/help"}:
@@ -1613,6 +1640,7 @@ class TelegramBot:
                         clinic_name,
                         clinic_url,
                         telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
+                        lang=self.chat_lang.get(chat_id, "vi"),
                     ),
                     action_type="scrape_clinic_url",
                 )
@@ -1797,7 +1825,7 @@ class TelegramBot:
         """Remember an action that needs a yes/no and show it with Approve / Cancel buttons."""
         pending = dict(pending)
         pending["id"] = uuid.uuid4().hex[:8]
-        pending["expires_at"] = time.time() + PENDING_ACTION_TTL_SECONDS
+        pending["expires_at"] = time.time() + (pending.get("ttl_seconds") or PENDING_ACTION_TTL_SECONDS)
         pending["requested_by"] = user_id
         with self._pending_lock:
             self.pending_actions[chat_id] = pending
@@ -1967,6 +1995,34 @@ class TelegramBot:
         )
         self.offer_action(chat_id, {"type": "clean_clinic_content", "name": f"clean_clinic_content: {target}", "target": target, "limit": limit, "lang": lang}, msg, user_id)
 
+    def handle_whoami(self, chat_id: int, user_id: Optional[int]) -> None:
+        """Your Telegram id and what it may do: the first thing to check when "You are not allowed" appears."""
+        uid = user_id if user_id is not None else chat_id
+        vi = self.chat_lang.get(chat_id) == "vi"
+        admin = self.is_user_admin(uid)
+        allowed = self.is_allowed(uid)
+        lines = [
+            f"Id Telegram của bạn: `{uid}`" if vi else f"Your Telegram id: `{uid}`",
+            ("Dùng bot: có" if allowed else "Dùng bot: KHÔNG (thêm vào TELEGRAM_ALLOWED_USER_IDS)") if vi else
+            ("Can use the bot: yes" if allowed else "Can use the bot: NO (add it to TELEGRAM_ALLOWED_USER_IDS)"),
+            ("Quản trị (merge web, quản lý user): có" if admin else "Quản trị (merge web, quản lý user): KHÔNG, thêm id vào TELEGRAM_SUPERADMIN_IDS trong openclaw/.env rồi `docker compose up -d openclaw-bot`") if vi else
+            ("Admin (merge website, manage users): yes" if admin else "Admin (merge website, manage users): NO, add the id to TELEGRAM_SUPERADMIN_IDS in openclaw/.env and run `docker compose up -d openclaw-bot`"),
+        ]
+        self.send_message(chat_id, "\n".join(lines))
+
+    WEB_PR_TOOL_COMMANDS = {"merge_web_pr": "/web_merge", "close_web_pr": "/web_close", "revert_web_pr": "/web_revert", "list_web_prs": "/web_prs"}
+
+    def dispatch_web_pr_tool(self, chat_id: int, intent_res, user_id: Optional[int]) -> None:
+        """"approve and publish PR 15" in plain words: same checks and confirmation as /web_merge."""
+        command = self.WEB_PR_TOOL_COMMANDS[intent_res.action]
+        raw = (intent_res.parameters or {}).get("number")
+        number = int(raw) if str(raw or "").lstrip("#").isdigit() else self.last_web_pr.get(chat_id)
+        if command != "/web_prs" and not number:
+            vi = intent_res.lang == "vi"
+            self.send_message(chat_id, "Bạn muốn xử lý Pull Request số mấy? Gõ /web_prs để xem danh sách." if vi else "Which Pull Request number? Type /web_prs to see the list.")
+            return
+        self.handle_web_pr_command(chat_id, command, f"{command} {number or ''}".strip(), user_id)
+
     def handle_review_photos_command(self, chat_id: int, text: str, user_id: Optional[int]) -> None:
         """/review_photos <slug|all> [limit]: costs AI usage, so it shows what it will do and waits for Approve."""
         lang = self.chat_lang.get(chat_id, "en")
@@ -2067,6 +2123,10 @@ class TelegramBot:
         # 2d. Edit one clinic: the bot builds the exact before/after itself (it never trusts the model's wording)
         if intent_res.action == "update_clinic":
             self.plan_clinic_update(chat_id, intent_res, user_id)
+            return
+
+        if intent_res.action in self.WEB_PR_TOOL_COMMANDS:
+            self.dispatch_web_pr_tool(chat_id, intent_res, user_id)
             return
 
         # The tool definition, not the model, decides whether an action needs a human yes (a model can be wrong or tricked).

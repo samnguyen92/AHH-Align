@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 from clinic_photos import is_remote, local_file_exists, project_root
 from grounded_content import has_boilerplate
 from normalize import has_real_photos
+from source_guard import check_source
 
 TRANSLATIONS = ("vi", "ko", "zh")
 
@@ -38,6 +39,10 @@ def analyze_clinic(row: dict, root: Optional[Path] = None, file_exists: Optional
         problems.append("languages_unverified")
     if (meta.get("language_verified_on_website") is False):
         problems.append("scout_language_flag")
+    guard = check_source(url=str(meta.get("source_url") or ""), name=str(row.get("name") or ""))
+    guard_site = check_source(url=str(meta.get("website") or ""))
+    if not guard.ok or not guard_site.ok:
+        problems.append("not_a_clinic")
     texts = [row.get("description"), *(meta.get(k) for k in ("about_highlight", "short_description", "language_note", "cultural_context"))]
     if any(has_boilerplate(t) for t in texts):
         problems.append("generic_content")
@@ -75,7 +80,7 @@ def build_report(rows: List[dict], root: Optional[Path] = None, file_exists: Opt
         if problems:
             per_clinic.append((len(problems), row.get("slug") or row.get("name"), row.get("status"), problems))
     # broken files matter most (the visitor sees an error), then the number of problems
-    per_clinic.sort(key=lambda item: (("broken_photo_file" not in item[3]), -item[0]))
+    per_clinic.sort(key=lambda item: (("not_a_clinic" not in item[3]), ("broken_photo_file" not in item[3]), -item[0]))
     return {
         "total": len(rows),
         "by_status": dict(Counter(r.get("status") or "unknown" for r in rows)),
@@ -87,6 +92,7 @@ def build_report(rows: List[dict], root: Optional[Path] = None, file_exists: Opt
 
 
 LABELS = {
+    "not_a_clinic": ("Trông như trang xếp hạng/danh bạ/mạng xã hội, không phải một phòng khám (nên ẩn)", "Looks like a ranking, directory or social page, not a clinic (hide it)"),
     "broken_photo_file": ("Ảnh có trong DB nhưng file không tồn tại (web báo 404)", "Photos in the database whose file is missing (404 on the site)"),
     "no_real_photo": ("Không có ảnh thật", "No real photo"),
     "photos_not_reviewed": ("Ảnh chưa được model nhìn ảnh kiểm tra (/review_photos)", "Photos not yet checked by the vision review (/review_photos)"),
@@ -108,7 +114,7 @@ def format_report(report: Dict[str, Any], lang: str = "vi") -> str:
     lines = [f"📊 **{'Chất lượng dữ liệu' if vi else 'Data quality'}**: {report['total']} clinic ({status})", ""]
     for code, (label_vi, label_en) in LABELS.items():
         count = report["problems"].get(code, 0)
-        mark = "✅" if count == 0 else ("🔴" if code in ("broken_photo_file", "no_real_photo") else "🟡")
+        mark = "✅" if count == 0 else ("🔴" if code in ("not_a_clinic", "broken_photo_file", "no_real_photo") else "🟡")
         lines.append(f"{mark} {label_vi if vi else label_en}: {count} ({round(count * 100 / total)}%)")
     sources = ", ".join(f"{k}: {v}" for k, v in sorted(report["photo_sources"].items()))
     lines += ["", f"{'Nguồn ảnh' if vi else 'Photo sources'}: {sources}"]
@@ -125,6 +131,8 @@ def format_report(report: Dict[str, Any], lang: str = "vi") -> str:
         lines += ["", f"**{'Cần xử lý trước' if vi else 'Fix first'}**:"]
         for item in report["worst"]:
             lines.append(f"• `{item['slug']}` ({item['status']}): {', '.join(item['problems'][:4])}")
+    if report["problems"].get("not_a_clinic"):
+        lines += ["", "👉 " + ("Ẩn clinic không phải phòng khám: `/reject_clinic <slug>` (khôi phục được)" if vi else "Hide a non-clinic: `/reject_clinic <slug>` (reversible)")]
     if report["problems"].get("broken_photo_file"):
         lines += ["", "👉 " + ("Sửa ảnh hỏng: `/repair_clinic_images`" if vi else "Fix dead photos: `/repair_clinic_images`")]
     return "\n".join(lines)

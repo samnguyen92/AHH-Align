@@ -433,7 +433,8 @@ def test_web_edit_sends_previews_and_asks_before_merging(web_bot):
     assert pending["type"] == "web_pr_merge" and pending["pr_number"] == 7 and pending["actor_id"] == 111
     assert 1500 < pending["expires_at"] - time.time() <= 1800
     summary = web_bot.sent[-1]
-    assert "https://github.test/pull/7" in summary and "approve" in summary and "mode is 'manual'" in summary
+    assert "https://github.test/pull/7" in summary and "Approve" in summary and "mode is 'manual'" in summary
+    assert web_bot.buttons[-1]  # the confirmation has Approve / Cancel buttons
     assert web_bot.merged == []  # nothing merged before the approval
 
 

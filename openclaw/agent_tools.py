@@ -100,6 +100,13 @@ ACTION_TOOLS: List[Tool] = [
     Tool("approve_claim", "Approve a clinic ownership claim.", _obj({"target": S}, ["target"]), card_vi="duyệt yêu cầu nhận clinic {target}", card_en="approve the claim {target}"),
     Tool("reject_claim", "Reject a clinic ownership claim.", _obj({"target": S}, ["target"]), card_vi="từ chối yêu cầu nhận clinic {target}", card_en="reject the claim {target}"),
 
+    # ---- website Pull Requests (the bot checks the sender's rights and asks for confirmation itself)
+    Tool("merge_web_pr", "Publish a website change: merge the Pull Request the bot opened (default: the one just opened in this chat). Use when the user says approve/publish/merge/go live.",
+         _obj({"number": I}), approval=False),
+    Tool("close_web_pr", "Discard a pending website Pull Request the bot opened (it is not published).", _obj({"number": I}), approval=False),
+    Tool("revert_web_pr", "Undo a website change that was already merged (opens a new Pull Request that reverses it).", _obj({"number": I}, ["number"]), approval=False),
+    Tool("list_web_prs", "List the website Pull Requests waiting for review.", _obj(), approval=False),
+
     # ---- website, SEO
     Tool("web_edit", "Change the website's DESIGN or CODE (look, layout, components, site-wide text). NOT for the content of one clinic (use update_clinic).  Opens a GitHub Pull Request with preview screenshots; nothing goes live until it is merged.",
          _obj({"instruction": S}, ["instruction"]), card_vi="sửa website (mở Pull Request để bạn duyệt): {instruction}", card_en="edit the website (opens a Pull Request for review): {instruction}"),

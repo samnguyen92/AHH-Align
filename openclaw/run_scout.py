@@ -30,7 +30,8 @@ load_dotenv(".env.local")
 
 from db import insert_clinic
 from extractor import extract_clinic_data
-from google_places import get_google_places_key, search_places_by_text, enrich_clinic_with_google_places
+from google_places import GooglePlacesError, get_google_places_key, search_places_by_text, enrich_clinic_with_google_places
+from source_guard import check_source, explain
 from clinic_photos import attach_real_photos
 from languages import detect_languages
 from enrich_web import enrich_missing_with_brave, _brave_web_search
@@ -223,6 +224,7 @@ def run_scout_pipeline(
     included_types: Optional[List[str]] = None,
     telegram_updater_callback=None,
     override_specialty: Optional[str] = None,
+    lang: str = "vi",
 ) -> dict:
     """
     Discover, scrape, extract, enrich, and save up to ``limit`` new clinics.
@@ -263,17 +265,48 @@ def run_scout_pipeline(
         + "...",
     )
 
-    places = search_places_by_text(query, api_key, limit=requested_count, included_types=included_types)
+    def _t(vi: str, en: str) -> str:
+        return vi if lang == "vi" else en
+
+    # A web search is NOT a substitute for Google Places: it returns rankings, directories and social pages. It is only
+    # used when OPENCLAW_SCOUT_WEB_FALLBACK=on, and every result still goes through the source guard below.
+    allow_web_fallback = os.environ.get("OPENCLAW_SCOUT_WEB_FALLBACK", "off").strip().lower() in {"on", "1", "true", "yes"}
+    search_error: Optional[GooglePlacesError] = None
+    try:
+        places = search_places_by_text(query, api_key, limit=requested_count, included_types=included_types)
+    except GooglePlacesError as exc:
+        search_error, places = exc, []
+
     if not places:
-        _notify(
-            telegram_updater_callback,
-            "⚠️ Google Places không trả về kết quả (có thể do lỗi 403/Billing). Đang chuyển sang tìm kiếm dự phòng qua Brave Search...",
-        )
-        for item in _brave_web_search(f"{query} clinic official website", count=min(requested_count * 2, 10)):
+        if search_error is not None and not allow_web_fallback:
+            _notify(
+                telegram_updater_callback,
+                _t("⛔ Google Places báo lỗi ", "⛔ Google Places returned an error ") + f"({search_error.status}): {search_error.message[:160]}\n"
+                + search_error.hint(lang) + "\n"
+                + _t("Mình dừng lại, không tìm bằng web vì kết quả web hay là trang xếp hạng/danh bạ.",
+                     "I stopped here instead of searching the web: web results are mostly rankings and directories."),
+            )
+            return {"query": query, "limit": limit, "discovered": 0, "saved": 0, "drafts_created": 0, "skipped": 0, "failed": 0,
+                    "error": f"google_places_{search_error.status}"}
+        if not allow_web_fallback:
+            _notify(telegram_updater_callback, _t("Google Places không có kết quả nào cho từ khoá này. Thử một cụm ngắn hơn, ví dụ “Vietnamese doctor Fairfax VA”.",
+                                                  "Google Places has no results for this query. Try a shorter phrase, e.g. “Vietnamese doctor Fairfax VA”."))
+            return {"query": query, "limit": limit, "discovered": 0, "saved": 0, "drafts_created": 0, "skipped": 0, "failed": 0, "error": "no_results"}
+        _notify(telegram_updater_callback, _t("⚠️ Google Places không có kết quả; dùng tìm kiếm web (đã bật) và lọc trang danh bạ/xếp hạng...",
+                                              "⚠️ Google Places gave nothing; using web search (enabled) and filtering rankings/directories..."))
+        rejected = 0
+        for item in _brave_web_search(f"{query} clinic official website", count=min(requested_count * 3, 15)):
             url = str(item.get("url") or "").strip()
             title = str(item.get("title") or "").split("|")[0].split("—")[0].split("-")[0].strip()
+            verdict = check_source(url=url, name=title, title=str(item.get("title") or ""))
+            if not verdict.ok:
+                rejected += 1
+                continue
             if _is_valid_website(url) and title:
                 places.append({"displayName": {"text": title[:80]}, "websiteUri": url, "types": ["medical_clinic"]})
+        if rejected:
+            _notify(telegram_updater_callback, _t(f"Đã loại {rejected} kết quả web là trang danh bạ/xếp hạng/mạng xã hội.",
+                                                  f"Filtered out {rejected} web result(s) that are rankings, directories or social pages."))
 
     # ── Filter 1: Non-medical place type blocklist ────────────────────────────
     # Reject spas, nail salons, restaurants, gyms, etc. before any scraping.
@@ -290,11 +323,19 @@ def run_scout_pipeline(
         else:
             medical_places.append(place)
 
-    candidates = [
-        place
-        for place in medical_places
-        if _is_valid_website(str(place.get("websiteUri") or ""))
-    ]
+    candidates = []
+    not_own_site = 0
+    for place in medical_places:
+        site = str(place.get("websiteUri") or "")
+        if not _is_valid_website(site):
+            continue
+        if not check_source(url=site).ok:  # e.g. the place only has a Facebook or Yelp page
+            not_own_site += 1
+            continue
+        candidates.append(place)
+    if not_own_site:
+        _notify(telegram_updater_callback, _t(f"Bỏ qua {not_own_site} nơi chỉ có trang Facebook/Yelp/danh bạ thay cho website riêng.",
+                                              f"Skipped {not_own_site} place(s) whose only 'website' is a Facebook/Yelp/directory page."))
     _notify(
         telegram_updater_callback,
         f"Tìm thấy {len(candidates)} cơ sở y tế có website hợp lệ "
@@ -343,6 +384,12 @@ def run_scout_pipeline(
             if not text:
                 skipped += 1
                 _notify(telegram_updater_callback, f"Bỏ qua {name}: không lấy được nội dung website.")
+                continue
+
+            page_check = check_source(url=website, title=str(content.get("page_title") or ""), text=text)
+            if not page_check.ok:
+                skipped += 1
+                _notify(telegram_updater_callback, _t(f"⛔ Bỏ qua {name}: {explain(page_check, 'vi')}.", f"⛔ Skipped {name}: {explain(page_check, 'en')}."))
                 continue
 
             data = extract_clinic_data(name, content)

@@ -124,6 +124,7 @@ def scout_pipeline_job(
     required_languages=None,
     included_types=None,
     telegram_updater_callback=None,
+    lang: str = "vi",
 ) -> str:
     from run_scout import run_scout_pipeline
 
@@ -135,25 +136,28 @@ def scout_pipeline_job(
             required_languages=required_languages,
             included_types=included_types,
             telegram_updater_callback=telegram_updater_callback,
+            lang=lang,
         )),
     )
 
 
-def scrape_clinic_url_job(name: str, url: str, telegram_updater_callback=None) -> str:
-    from run_single_clinic_url import run_single_clinic_url
+def scrape_clinic_url_job(name: str, url: str, telegram_updater_callback=None, lang: str = "vi") -> str:
+    from run_single_clinic_url import SourceRejected, run_single_clinic_url
+    from source_guard import explain
 
-    return _run_with_captured_output(
-        "scrape_clinic_url",
-        lambda: print(
-            {
-                "saved": run_single_clinic_url(
-                    name,
-                    url,
-                    progress_callback=telegram_updater_callback,
-                )
-            }
-        ),
-    )
+    def run() -> None:
+        try:
+            saved = run_single_clinic_url(name, url, progress_callback=telegram_updater_callback)
+            print({"saved": saved})
+        except SourceRejected as exc:
+            reason = explain(exc.verdict, lang)
+            print(
+                f"⛔ Không lưu: {reason}.\nHãy gửi link website riêng của phòng khám."
+                if lang == "vi" else
+                f"⛔ Not saved: {reason}.\nSend the clinic's own website instead."
+            )
+
+    return _run_with_captured_output("scrape_clinic_url", run)
 
 
 def repair_clinic_images_job() -> str:

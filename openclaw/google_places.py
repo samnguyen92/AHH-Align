@@ -4,6 +4,7 @@ import re
 import ssl
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import certifi
@@ -22,6 +23,30 @@ load_dotenv(".env.local")
 PLACES_BASE_URL = "https://places.googleapis.com/v1"
 SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 REVIEW_SUMMARY_MODEL = os.environ.get("OPENCLAW_REVIEW_SUMMARY_MODEL") or os.environ.get("OPENCLAW_TEXT_MODEL", "openai/gpt-6-luna")
+
+
+class GooglePlacesError(Exception):
+    """Google answered with an error (or could not be reached). `status` is the HTTP status, 0 when unreachable."""
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(f"Google Places error {status}: {message}")
+        self.status = status
+        self.message = message
+
+    def hint(self, lang: str = "en") -> str:
+        vi = lang == "vi"
+        if self.status in (401, 403):
+            return ("Kiểm tra trong Google Cloud: Places API (New) đã bật, tài khoản thanh toán còn hoạt động, và khoá API không bị giới hạn "
+                    "theo địa chỉ IP/trang web khác với máy chủ này." if vi else
+                    "Check in Google Cloud: Places API (New) is enabled, billing is active, and the API key is not restricted to an IP/referrer "
+                    "other than this server.")
+        if self.status == 429:
+            return "Đã vượt hạn mức Google Places; thử lại sau." if vi else "Google Places quota exceeded; try again later."
+        if self.status == 400:
+            return "Google từ chối câu tìm kiếm; thử một cụm ngắn hơn." if vi else "Google rejected the query; try a shorter phrase."
+        if self.status == 0:
+            return "Không kết nối được tới Google; kiểm tra mạng của máy chủ." if vi else "Could not reach Google; check the server's network."
+        return "Xem chi tiết lỗi ở trên." if vi else "See the error above."
 
 
 def get_google_places_key() -> Optional[str]:
@@ -244,9 +269,17 @@ def search_places_by_text(
         with urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
             payload = json.loads(response.read().decode("utf-8"))
         return payload.get("places") or []
+    except HTTPError as exc:
+        detail = ""
+        try:
+            detail = (json.loads(exc.read().decode("utf-8")).get("error") or {}).get("message") or ""
+        except Exception:
+            pass
+        print(f"[!] Google Places search failed: HTTP {exc.code} {detail[:200]}")
+        raise GooglePlacesError(exc.code, detail or str(exc.reason))
     except Exception as exc:
-        print(f"[!] Google Places search failed: {exc}. Please ensure Google Cloud Places API (New) is enabled with active billing.")
-        return []
+        print(f"[!] Google Places search failed: {exc}")
+        raise GooglePlacesError(0, str(exc))
 
 
 def get_place_details(place_id: str, api_key: str) -> dict:

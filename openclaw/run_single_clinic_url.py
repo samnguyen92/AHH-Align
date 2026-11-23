@@ -27,9 +27,18 @@ from enrich_web import enrich_missing_with_brave
 from clinic_photos import attach_real_photos
 from normalize import compute_quality, merge_deterministic_contacts
 from scraper import scrape_content_from_url
+from source_guard import Verdict, check_source, explain
 
 
 ProgressCallback = Optional[Callable[[str], None]]
+
+
+class SourceRejected(Exception):
+    """The address or page is a ranking / directory / social page, not one clinic's own website."""
+
+    def __init__(self, verdict: Verdict) -> None:
+        super().__init__(verdict.reason)
+        self.verdict = verdict
 
 
 def _log(message: str, progress_callback: ProgressCallback = None) -> None:
@@ -58,6 +67,10 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
     _log(f"[*] Target clinic: {name}", progress_callback)
     _log(f"[*] Source URL: {url}", progress_callback)
 
+    early = check_source(url=url)
+    if not early.ok:
+        raise SourceRejected(early)  # nothing was fetched
+
     missing = []
     if not os.environ.get("OPENROUTER_API_KEY"):
         missing.append("OPENROUTER_API_KEY")
@@ -71,6 +84,9 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
         _log(f"[!] Website is not usable: {content['dead_reason']}. Aborting.", progress_callback)
         return False
     text = content.get("markdown_content") or content.get("text") or ""
+    page_check = check_source(title=str(content.get("page_title") or ""), text=text)
+    if not page_check.ok:
+        raise SourceRejected(page_check)  # a list of many clinics: nothing is extracted or saved
     _log(
         "[1/5] Scrape summary: "
         f"{len(text)} chars, "
