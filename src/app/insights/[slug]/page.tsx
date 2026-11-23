@@ -178,14 +178,19 @@ export async function generateMetadata({ params, searchParams }: ArticlePageProp
     getSafeArticleImageSrc(imageList[0]) ||
     getSafeArticleImageSrc(getSeoString(selectedView.seoMeta, 'og_image'));
   const isHistoricalVersion = selectedView.version !== currentView.version;
+  const description =
+    slug === 'how-to-find-a-clinic-that-speaks-vietnamese-in-the-us'
+      ? 'Find Vietnamese-speaking clinics in the U.S. Learn how to search by language, check staff details, and confirm language support before booking an appointment.'
+      : selectedView.excerpt || getSeoString(selectedView.seoMeta, 'description') || undefined;
 
   return {
     title: selectedView.title,
-    description: selectedView.excerpt || getSeoString(selectedView.seoMeta, 'description') || undefined,
+    description,
+    alternates: { canonical: absoluteUrl(`/insights/${slug}`) },
     robots: isHistoricalVersion ? { index: false, follow: false } : undefined,
     openGraph: {
       title: selectedView.title,
-      description: selectedView.excerpt || '',
+      description: description || '',
       images: imageSrc ? [{ url: imageSrc }] : [],
     },
   };
