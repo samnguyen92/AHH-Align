@@ -262,6 +262,27 @@ def set_clinic_status(identifier: str, new_status: str) -> None:
     print(f"    {revalidate_clinic(row.get('slug') or '')}")
 
 
+def decide_draft(identifier: str, approve: bool) -> dict:
+    """Approve (publish) or reject (archive) ONE clinic, only if it is still a draft. Returns a result, never prints."""
+    db = create_admin_client()
+    row = find_one_by_identifier(db, "clinics", identifier)
+    if not row:
+        return {"ok": False, "status": None, "name": None}
+    if row.get("status") != "draft":
+        return {"ok": False, "status": row.get("status"), "name": row.get("name")}
+    new_status = "published" if approve else "archived"
+    updated = db.table("clinics").update({"status": new_status}).eq("id", row["id"]).execute()
+    if not updated.data:
+        return {"ok": False, "status": row.get("status"), "name": row.get("name")}
+    try:
+        from revalidate import revalidate_clinic
+
+        revalidate_clinic(row.get("slug") or "")
+    except Exception as exc:
+        print(f"[!] Could not refresh the page: {exc!r}")
+    return {"ok": True, "status": new_status, "name": row.get("name"), "slug": row.get("slug")}
+
+
 def approve_all_draft_clinics() -> None:
     """Publish every clinic that is currently a draft."""
     db = create_admin_client()

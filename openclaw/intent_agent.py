@@ -405,7 +405,7 @@ def run_intent_agent(
 
     if "name" not in parameters:
         target_str = parameters.get("target") or parameters.get("query") or parameters.get("topic") or action
-        parameters["name"] = f"{action}: {str(target_str)[:36]}"
+        parameters["name"] = f"{action}: {__import__('messages').shorten(str(target_str), 48)}"
 
     return IntentResult(
         action=action,

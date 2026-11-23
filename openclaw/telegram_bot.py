@@ -16,6 +16,9 @@ from agent_prompt import OPENCLAW_AGENT_SYSTEM_PROMPT
 import agent_tools
 from tool_agent import run_agent
 from tg_format import markdown_to_html
+from live_status import LiveStatus
+from messages import describe_action as describe_action_text, shorten, tr
+from scout_report import card_text
 from jobs import (
     JobFailed,
     create_user_invite_job,
@@ -151,6 +154,8 @@ class TelegramBot:
         self.chat_focus: dict[int, dict] = {}
         self.chat_images: dict[int, tuple] = {}
         self.last_web_pr: dict[int, int] = {}
+        self.live_jobs: dict[int, LiveStatus] = {}
+        self.card_cache: dict[str, dict] = {}
         self._memory_lock = threading.RLock()  # RLock: reentrant, safe for nested acquire
         self._pending_lock = threading.Lock()
         self.start_anomaly_checker()
@@ -485,28 +490,78 @@ class TelegramBot:
         )
         return response.get("result", [])
 
+    def send_live(self, chat_id: int, text: str) -> Optional[int]:
+        """Send a message and return its id (so it can be edited later)."""
+        payload = {"chat_id": chat_id, "text": markdown_to_html(text), "parse_mode": "HTML", "disable_web_page_preview": "true"}
+        try:
+            response = self.request("sendMessage", payload)
+        except Exception:
+            response = self.request("sendMessage", {"chat_id": chat_id, "text": text})
+        return ((response or {}).get("result") or {}).get("message_id")
+
+    def edit_live(self, chat_id: int, message_id: int, text: str, buttons: Optional[list] = None) -> None:
+        payload = {"chat_id": chat_id, "message_id": message_id, "text": markdown_to_html(text), "parse_mode": "HTML", "disable_web_page_preview": "true"}
+        plain = {"chat_id": chat_id, "message_id": message_id, "text": text}
+        markup = json.dumps({"inline_keyboard": [[{"text": label, "callback_data": data} for label, data in row] for row in (buttons or [])]})
+        payload["reply_markup"] = markup
+        plain["reply_markup"] = markup
+        try:
+            self.request("editMessageText", payload)
+        except Exception as exc:
+            if "not modified" in str(exc).lower():
+                return
+            try:
+                self.request("editMessageText", plain)
+            except Exception as exc2:
+                if "not modified" not in str(exc2).lower():
+                    raise
+
+    def live_update(self, chat_id: int, message: str) -> None:
+        """Progress line of the job running for this chat: edits the one live message (or sends a plain message)."""
+        status = self.live_jobs.get(chat_id)
+        if status is not None:
+            status.update(message)
+        else:
+            self.send_message(chat_id, message)
+
     def run_job(
         self, chat_id: int, name: str, fn: Callable[[], str], action_type: str = "job",
-        on_success: Optional[Callable[[str], None]] = None,
+        on_success: Optional[Callable[[str], None]] = None, live: bool = False,
     ) -> None:
+        """live=True: progress is ONE message that edits itself (long jobs such as the scout); the result is a short summary."""
+        lang = self.chat_lang.get(chat_id, "en")
+        what = self.describe_action(name, lang)
         if name in self.running_jobs and self.running_jobs[name].is_alive():
-            self.send_message(chat_id, f"{name} is already running.")
+            self.send_message(chat_id, tr("job.already", lang, what=what))
             return
 
         def target() -> None:
             from progress import set_progress_callback, clear_progress_callback
-            set_progress_callback(lambda msg: self.send_message(chat_id, msg))
-            try:
-                self.send_message(
-                    chat_id,
-                    f"⏳ Đang thực hiện: {self.describe_action(name, 'vi')}. Xong mình sẽ báo lại."
-                    if self.chat_lang.get(chat_id) == "vi"
-                    else f"Started {name}. I will report back when it finishes.",
+
+            status: Optional[LiveStatus] = None
+            if live:
+                status = LiveStatus(
+                    send=lambda text: self.send_live(chat_id, text),
+                    edit=lambda mid, text: self.edit_live(chat_id, mid, text),
+                    header=tr("job.working", lang, what=what), done_header=tr("job.done", lang, what=what),
                 )
+                self.live_jobs[chat_id] = status
+                set_progress_callback(status.update)
+            else:
+                set_progress_callback(lambda msg: self.send_message(chat_id, msg))
+            try:
+                if status is not None:
+                    status.start()
+                else:
+                    self.send_message(chat_id, tr("job.working", lang, what=what))
                 output = fn()
-                summary = output if output else f"{name} finished with no output."
+                summary = output if output else f"{what} finished with no output."
                 self.remember_job_output(chat_id, name, summary, action_type=action_type)
-                if action_type == "multi_agent_research":
+                if status is not None:
+                    status.finish()
+                if live and not output:
+                    pass  # a live job with nothing to say (its cards come from on_success)
+                elif action_type == "multi_agent_research":
                     self.send_research_result(chat_id, summary)
                 elif action_type in {
                     "generate_insight",
@@ -529,12 +584,19 @@ class TelegramBot:
                         print(f"[!] Follow-up after {name} failed: {hook_exc!r}")
             except JobFailed as exc:
                 print(f"[!] Telegram job failed: {name}")
-                self.send_message(chat_id, f"❌ {name} failed.\n\n{exc.short()}\n\nUse /tail for the full log.")
+                if status is not None:
+                    status.done_header = tr("job.stopped", lang, what=what)
+                    status.finish()
+                self.send_message(chat_id, tr("job.failed", lang, what=what, detail=exc.short()))
             except Exception as exc:
                 print(f"[!] Telegram job thread crashed for {name}: {exc!r}")
-                self.send_message(chat_id, f"❌ {name} crashed: {exc}")
+                if status is not None:
+                    status.done_header = tr("job.stopped", lang, what=what)
+                    status.finish()
+                self.send_message(chat_id, tr("job.crashed", lang, what=what, detail=exc))
             finally:
                 clear_progress_callback()
+                self.live_jobs.pop(chat_id, None)
                 self.running_jobs.pop(name, None)
 
         thread = threading.Thread(target=target, daemon=True)
@@ -678,7 +740,7 @@ class TelegramBot:
             fn = lambda: web_edit_job(instruction, image_path=image_path, progress_callback=progress, result_sink=sink)  # noqa: E731
         label = f"{kind} (vision)" if image_path else kind
         self.run_job(
-            chat_id, f"{label}: {instruction[:36]}", fn, action_type="web_edit",
+            chat_id, f"{label}: {shorten(instruction, 36)}", fn, action_type="web_edit",
             on_success=lambda _summary: self.after_web_pr(chat_id, sink),
         )
 
@@ -945,7 +1007,7 @@ class TelegramBot:
         label = "article/blog/insight" if item_type == "article" else "clinic"
         return {
             "type": action_type,
-            "name": f"{action_type}: {target[:48]}",
+            "name": f"{action_type}: {shorten(target, 48)}",
             "target": target,
             "summary": (
                 f"You want to delete this {label} from the database, correct?\n\n"
@@ -964,7 +1026,7 @@ class TelegramBot:
 
         return {
             "type": "change_clinic_feature_image",
-            "name": f"change_clinic_feature_image: {target[:48]}",
+            "name": f"change_clinic_feature_image: {shorten(target, 48)}",
             "target": target,
             "image_url": image_url,
             "summary": (
@@ -991,7 +1053,7 @@ class TelegramBot:
     def build_newsletter_add_action(self, email: str) -> dict:
         return {
             "type": "newsletter_add",
-            "name": f"newsletter_add: {email[:48]}",
+            "name": f"newsletter_add: {shorten(email, 48)}",
             "email": email,
             "summary": (
                 "You want to manually subscribe an email to the newsletter list, correct?\n\n"
@@ -1004,7 +1066,7 @@ class TelegramBot:
     def build_newsletter_remove_action(self, email: str) -> dict:
         return {
             "type": "newsletter_remove",
-            "name": f"newsletter_remove: {email[:48]}",
+            "name": f"newsletter_remove: {shorten(email, 48)}",
             "email": email,
             "summary": (
                 "You want to remove (unsubscribe) an email from the newsletter list, correct?\n\n"
@@ -1028,7 +1090,7 @@ class TelegramBot:
     def build_approve_claim_action(self, target: str) -> dict:
         return {
             "type": "approve_claim",
-            "name": f"approve_claim: {target[:48]}",
+            "name": f"approve_claim: {shorten(target, 48)}",
             "target": target,
             "summary": (
                 "You want to approve this clinic claim request or submission, correct?\n\n"
@@ -1041,7 +1103,7 @@ class TelegramBot:
     def build_reject_claim_action(self, target: str) -> dict:
         return {
             "type": "reject_claim",
-            "name": f"reject_claim: {target[:48]}",
+            "name": f"reject_claim: {shorten(target, 48)}",
             "target": target,
             "summary": (
                 "You want to reject this clinic claim request or submission, correct?\n\n"
@@ -1054,7 +1116,7 @@ class TelegramBot:
     def build_rewrite_article_action(self, target: str, instruction: str) -> dict:
         return {
             "type": "rewrite_article",
-            "name": f"rewrite_article: {target[:48]}",
+            "name": f"rewrite_article: {shorten(target, 48)}",
             "target": target,
             "instruction": instruction,
             "summary": (
@@ -1316,6 +1378,8 @@ class TelegramBot:
             limit = action.get("limit", 1)
             required_languages = action.get("required_languages") or []
             facility_types = action.get("facility_types") or []
+            lang = action.get("lang") or self.chat_lang.get(chat_id, "vi")
+            sink: dict = {}
             self.run_job(
                 chat_id,
                 action["name"],
@@ -1324,24 +1388,35 @@ class TelegramBot:
                     limit,
                     required_languages=required_languages or None,
                     included_types=facility_types or None,
-                    telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
-                    lang=action.get("lang") or self.chat_lang.get(chat_id, "vi"),
+                    telegram_updater_callback=lambda msg: self.live_update(chat_id, msg),
+                    lang=lang,
+                    min_rating=float(action.get("min_rating") or 0),
+                    min_reviews=int(action.get("min_reviews") or 0),
+                    result_sink=sink,
                 ),
                 action_type=action_type,
+                live=True,
+                on_success=lambda _summary: self.send_clinic_cards(chat_id, sink.get("clinics"), lang),
             )
         elif action_type == "scrape_clinic_url":
             clinic_name = action["clinic_name"]
             clinic_url = action["url"]
+            lang = action.get("lang") or self.chat_lang.get(chat_id, "vi")
+            sink = {}
             self.run_job(
                 chat_id,
                 action["name"],
                 lambda: scrape_clinic_url_job(
                     clinic_name,
                     clinic_url,
-                    telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
-                    lang=action.get("lang") or self.chat_lang.get(chat_id, "vi"),
+                    telegram_updater_callback=lambda msg: self.live_update(chat_id, msg),
+                    lang=lang,
+                    result_sink=sink,
+                    cards_only=True,
                 ),
                 action_type=action_type,
+                live=True,
+                on_success=lambda _summary: self.send_clinic_cards(chat_id, [sink["card"]] if sink.get("card") else None, lang),
             )
         elif action_type == "generate_insight":
             self.run_job(chat_id, action["name"], lambda: generate_insight_job(action.get("topic")), action_type=action_type)
@@ -1588,7 +1663,7 @@ class TelegramBot:
             if not request:
                 self.send_message(chat_id, "Use: /research Hanta virus symptoms and prevention latest")
             else:
-                self.run_job(chat_id, f"multi_agent_research: {request[:48]}", lambda: research_job(request), action_type="multi_agent_research")
+                self.run_job(chat_id, f"multi_agent_research: {shorten(request, 48)}", lambda: research_job(request), action_type="multi_agent_research")
         elif command == "/ask":
             question = text.removeprefix("/ask").strip()
             if not question:
@@ -1619,31 +1694,20 @@ class TelegramBot:
             if not query:
                 self.send_message(chat_id, "Use: /find_clinics Vietnamese dentist in Houston | 3")
             else:
-                self.send_message(chat_id, f"Đã nhận lệnh. Đang trinh sát Google Places cho từ khóa: '{query}'...")
-                self.run_job(
-                    chat_id,
-                    f"find_clinics: {query[:48]}",
-                    lambda: scout_pipeline_job(query, limit, telegram_updater_callback=lambda msg: self.send_message(chat_id, msg)),
-                    action_type="find_clinics",
-                )
+                self.run_pending_action(chat_id, {
+                    "type": "find_clinics", "name": f"find_clinics: {shorten(query, 48)}", "query": query, "limit": limit,
+                    "lang": self.chat_lang.get(chat_id, "vi"),
+                })
         elif command == "/scrape_clinic_url":
             payload = re.sub(r"^/scrape_clinic_url(?:@\w+)?", "", text, count=1).strip()
             clinic_name, clinic_url = self.parse_scrape_clinic_url_payload(payload)
             if not clinic_url:
                 self.send_message(chat_id, "Use: /scrape_clinic_url Dr. Van Tran Family Practice | https://www.drvantran.com/")
             else:
-                self.send_message(chat_id, f"Đã nhận lệnh. Đang scrape clinic từ URL: {clinic_url}")
-                self.run_job(
-                    chat_id,
-                    f"scrape_clinic_url: {clinic_name[:48]}",
-                    lambda: scrape_clinic_url_job(
-                        clinic_name,
-                        clinic_url,
-                        telegram_updater_callback=lambda msg: self.send_message(chat_id, msg),
-                        lang=self.chat_lang.get(chat_id, "vi"),
-                    ),
-                    action_type="scrape_clinic_url",
-                )
+                self.run_pending_action(chat_id, {
+                    "type": "scrape_clinic_url", "name": f"scrape_clinic_url: {shorten(clinic_name, 48)}", "clinic_name": clinic_name,
+                    "url": clinic_url, "lang": self.chat_lang.get(chat_id, "vi"),
+                })
         elif command in {"/quality", "/data_quality"}:
             self.run_job(chat_id, "quality", lambda: quality_report_job(lang=self.chat_lang.get(chat_id, "vi")), action_type="check_data_quality")
         elif command == "/repair_clinic_images":
@@ -1752,11 +1816,11 @@ class TelegramBot:
                     self.send_message(chat_id, self.pending_actions[chat_id]["summary"])
         elif command in {"/generate_insight", "/generate_blog"}:
             topic = re.sub(r"^/(?:generate_insight|generate_blog)(?:@\w+)?", "", text, count=1).strip() or None
-            job_name = "generate_blog" if not topic else f"generate_blog: {topic[:48]}"
+            job_name = "generate_blog" if not topic else f"generate_blog: {shorten(topic, 48)}"
             self.run_job(chat_id, job_name, lambda: generate_insight_job(topic), action_type="generate_insight")
         elif command in {"/generate_pulse", "/generate_newsletter"}:
             topic = re.sub(r"^/(?:generate_pulse|generate_newsletter)(?:@\w+)?", "", text, count=1).strip() or None
-            job_name = "generate_pulse" if not topic else f"generate_pulse: {topic[:48]}"
+            job_name = "generate_pulse" if not topic else f"generate_pulse: {shorten(topic, 48)}"
             self.run_job(chat_id, job_name, lambda: generate_pulse_job(topic), action_type="generate_pulse")
         elif command in {"/generate_insight_from_url", "/generate_blog_from_url"}:
             payload = re.sub(r"^/(?:generate_insight_from_url|generate_blog_from_url)(?:@\w+)?", "", text, count=1).strip()
@@ -1767,7 +1831,7 @@ class TelegramBot:
                 source_url = source_urls[0]
                 self.run_job(
                     chat_id,
-                    f"generate_blog_from_url: {source_url[:48]}",
+                    f"generate_blog_from_url: {shorten(source_url, 48)}",
                     lambda: generate_insight_from_url_job(source_url),
                     action_type="generate_insight_from_url",
                 )
@@ -1780,7 +1844,7 @@ class TelegramBot:
                 )
         elif command == "/generate_guide":
             topic = text.removeprefix("/generate_guide").strip() or None
-            job_name = "generate_guide" if not topic else f"generate_guide: {topic[:48]}"
+            job_name = "generate_guide" if not topic else f"generate_guide: {shorten(topic, 48)}"
             self.run_job(chat_id, job_name, lambda: generate_guide_job(topic), action_type="generate_guide")
         elif command == "/generate_guide_from_url":
             source_urls = self.extract_urls(text.removeprefix("/generate_guide_from_url").strip())
@@ -1790,7 +1854,7 @@ class TelegramBot:
                 source_url = source_urls[0]
                 self.run_job(
                     chat_id,
-                    f"generate_guide_from_url: {source_url[:48]}",
+                    f"generate_guide_from_url: {shorten(source_url, 48)}",
                     lambda: generate_guide_from_url_job(source_url),
                     action_type="generate_guide_from_url",
                 )
@@ -1812,14 +1876,8 @@ class TelegramBot:
 
     @staticmethod
     def describe_action(name: str, lang: str) -> str:
-        """'rescan_clinic: Anchor Dental' -> 'quét lại clinic Anchor Dental' (Vietnamese); unchanged otherwise."""
-        if lang != "vi" or not name:
-            return name
-        kind, _, rest = name.partition(":")
-        label = ACTION_LABELS_VI.get(kind.strip())
-        if not label:
-            return name
-        return f"{label} {rest.strip()}".strip()
+        """'find_clinics: Vietnamese doctor Virginia' -> 'search for new clinics: Vietnamese doctor Virginia' (never the raw id)."""
+        return describe_action_text(name, lang)
 
     def offer_action(self, chat_id: int, pending: dict, message: str, user_id: Optional[int] = None) -> None:
         """Remember an action that needs a yes/no and show it with Approve / Cancel buttons."""
@@ -1832,6 +1890,42 @@ class TelegramBot:
         vi = pending.get("lang") == "vi"
         buttons = [[("✅ Duyệt" if vi else "✅ Approve", f"ok:{pending['id']}"), ("❌ Huỷ" if vi else "❌ Cancel", f"no:{pending['id']}")]]
         self.send_message(chat_id, message, buttons=buttons)
+
+    def send_clinic_cards(self, chat_id: int, cards: Optional[list], lang: str) -> None:
+        """One short card per clinic the scout/import saved, with Approve / Reject for the drafts."""
+        import hashlib
+
+        for card in cards or []:
+            buttons = None
+            if card.get("created") and card.get("slug"):
+                token = hashlib.md5(str(card["slug"]).encode()).hexdigest()[:10]
+                self.card_cache[token] = {**card, "lang": lang}
+                vi = lang == "vi"
+                buttons = [[("✅ Duyệt" if vi else "✅ Approve", f"dr:ok:{token}"), ("❌ Từ chối" if vi else "❌ Reject", f"dr:no:{token}")]]
+            self.send_message(chat_id, card_text(card, lang), buttons=buttons)
+
+    def handle_card_callback(self, callback: dict, answer, chat_id: int, message: dict) -> None:
+        """Approve / Reject pressed on a clinic card."""
+        _, verdict, token = (callback.get("data") or "").split(":", 2)
+        card = self.card_cache.get(token)
+        lang = (card or {}).get("lang") or self.chat_lang.get(chat_id, "en")
+        if not card:
+            answer(tr("card.expired", lang))
+            return
+        from admin_actions import decide_draft
+
+        result = decide_draft(card["slug"], approve=(verdict == "ok"))
+        if not result.get("ok"):
+            answer(tr("card.already", lang, status=result.get("status") or "?"))
+        else:
+            answer("✅" if verdict == "ok" else "❌")
+        line = tr("card.approved" if verdict == "ok" else "card.rejected", lang) if result.get("ok") else tr("card.already", lang, status=result.get("status") or "?")
+        self.card_cache.pop(token, None)
+        try:
+            self.edit_live(chat_id, message.get("message_id"), card_text({**card, "created": False, "status": result.get("status")}, lang).rsplit("\n", 1)[0] + "\n" + line)
+        except Exception as exc:
+            print(f"[!] Could not update the clinic card: {exc!r}")
+            self.send_message(chat_id, line)
 
     def send_typing(self, chat_id: int) -> None:
         """Show "typing…" while the AI thinks (best effort)."""
@@ -1881,6 +1975,9 @@ class TelegramBot:
 
         if not chat_id or not user_id or not self.is_allowed(user_id):
             answer("You are not allowed to use this bot.")
+            return
+        if data.startswith("dr:"):
+            self.handle_card_callback(callback, answer, chat_id, message)
             return
         verdict, _, pending_id = data.partition(":")
         with self._pending_lock:
@@ -2072,23 +2169,15 @@ class TelegramBot:
             with self._pending_lock:
                 action = self.pending_actions.pop(chat_id, None)
             if not action:
-                self.send_message(chat_id, "Không có thao tác nào đang chờ duyệt." if vi else "There is no pending action waiting for approval.")
+                self.send_message(chat_id, tr("no_pending", intent_res.lang))
                 return
 
             if action.get("expires_at") and time.time() > action["expires_at"]:
-                self.send_message(
-                    chat_id,
-                    f"Yêu cầu đó đã hết hạn ({self.describe_action(action.get('name') or action.get('type'), 'vi')}). Chưa có gì bị thay đổi, bạn gửi lại giúp mình nhé."
-                    if vi else
-                    f"That request expired ({action.get('name') or action.get('type')}). Nothing was changed; send the command again.",
-                )
+                self.send_message(chat_id, tr("expired", intent_res.lang, what=self.describe_action(action.get("name") or action.get("type"), intent_res.lang)))
                 return
 
             action_name = action.get("name") or action.get("type", "job")
-            self.send_message(
-                chat_id,
-                f"Đã xác nhận. Bắt đầu: {self.describe_action(action_name, 'vi')}" if vi else f"Approval received. Starting: {action_name}",
-            )
+            self.send_message(chat_id, tr("approved", intent_res.lang, what=self.describe_action(action_name, intent_res.lang)))
             self.run_pending_action(chat_id, action)
             return
 
@@ -2098,9 +2187,9 @@ class TelegramBot:
                 action = self.pending_actions.pop(chat_id, None)
             if action:
                 action_name = action.get("name") or action.get("type", "job")
-                self.send_message(chat_id, f"Đã hủy: {self.describe_action(action_name, 'vi')}" if vi else f"Pending action canceled: {action_name}")
+                self.send_message(chat_id, tr("canceled", intent_res.lang, what=self.describe_action(action_name, intent_res.lang)))
             else:
-                self.send_message(chat_id, "Không có thao tác nào đang chờ để hủy." if vi else "There is no pending action to cancel.")
+                self.send_message(chat_id, tr("no_pending_cancel", intent_res.lang))
             return
 
         # 2b. Immediate read-only action: inspect_clinic (does not require approval)

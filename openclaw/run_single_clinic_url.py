@@ -55,8 +55,37 @@ def infer_clinic_name_from_url(url: str) -> str:
     return f"Clinic from {host}" if host else "Clinic from URL"
 
 
-def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallback = None) -> bool:
+_STEP_TEXT = {
+    "1": ("Đang đọc website...", "Reading the website..."),
+    "2": ("Đang trích xuất thông tin phòng khám...", "Extracting the clinic's details..."),
+    "3": ("Đang gắn nguồn và ảnh từ website...", "Attaching the source and website photos..."),
+    "4": ("Đang bổ sung đánh giá, giờ và ảnh thật...", "Adding reviews, hours and real photos..."),
+    "5": ("Đang lưu...", "Saving..."),
+}
+
+
+class _StepForwarder:
+    """Only the five step headings reach the chat (once each, in the user's language); the scraper's own log stays in /tail."""
+
+    def __init__(self, callback: ProgressCallback, lang: str) -> None:
+        self.callback, self.lang, self.sent = callback, lang, set()
+
+    def __call__(self, message: str) -> None:
+        import re
+
+        match = re.match(r"^\[(\d)/5\]", message or "")
+        if not self.callback or not match or match.group(1) in self.sent:
+            return
+        self.sent.add(match.group(1))
+        vi, en = _STEP_TEXT.get(match.group(1), ("", ""))
+        self.callback(f"({match.group(1)}/5) " + (vi if self.lang == "vi" else en))
+
+
+def run_single_clinic_url(
+    name: str, url: str, progress_callback: ProgressCallback = None, lang: str = "vi", result_sink: Optional[dict] = None,
+) -> bool:
     name = (name or "").strip() or infer_clinic_name_from_url(url)
+    progress_callback = _StepForwarder(progress_callback, lang) if progress_callback else None
     url = (url or "").strip()
     started_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
@@ -144,6 +173,10 @@ def run_single_clinic_url(name: str, url: str, progress_callback: ProgressCallba
     missing_str = f" (missing: {', '.join(q['missing'])})" if q["missing"] else ""
     _log(f"[+] Saved clinic: {data.get('name')} — Quality score: {q['score']}/100{missing_str}", progress_callback)
     saved_info = data.get("_saved") or {}
+    if result_sink is not None:
+        from scout_report import build_card
+
+        result_sink["card"] = build_card(data, q, saved_info)
     if saved_info.get("created"):
         _log(
             "[📝] Saved as a DRAFT: it is not visible on the website yet. "

@@ -31,6 +31,8 @@ load_dotenv(".env.local")
 from db import insert_clinic
 from extractor import extract_clinic_data
 from google_places import GooglePlacesError, get_google_places_key, search_places_by_text, enrich_clinic_with_google_places
+from messages import shorten_query, tr
+from scout_report import build_card
 from source_guard import check_source, explain
 from clinic_photos import attach_real_photos
 from languages import detect_languages
@@ -217,6 +219,13 @@ def _merge_place_defaults(data: dict, place: dict, website: str) -> dict:
     return data
 
 
+def _rank_score(place: dict) -> float:
+    """rating x log10(1 + reviews): trust a rating only as much as the number of people behind it."""
+    import math
+
+    return float(place.get("rating") or 0) * math.log10(1 + int(place.get("userRatingCount") or 0))
+
+
 def run_scout_pipeline(
     query: str,
     limit: int = 1,
@@ -225,6 +234,8 @@ def run_scout_pipeline(
     telegram_updater_callback=None,
     override_specialty: Optional[str] = None,
     lang: str = "vi",
+    min_rating: float = 0.0,
+    min_reviews: int = 0,
 ) -> dict:
     """
     Discover, scrape, extract, enrich, and save up to ``limit`` new clinics.
@@ -253,17 +264,13 @@ def run_scout_pipeline(
     if not api_key:
         raise RuntimeError("Missing GOOGLE_PLACES_API_KEY or GOOGLE_MAPS_API_KEY.")
 
-    # Since we are using a soft gate for language validation (not skipping, but tagging),
-    # we don't need a huge pool. Just request a few more than the limit in case of page load errors.
-    requested_count = limit + 2
+    query = shorten_query(query)  # a search phrase, never a whole sentence (ratings go in min_rating / min_reviews)
+    min_rating = max(0.0, float(min_rating or 0))
+    min_reviews = max(0, int(min_reviews or 0))
+    # Rank by rating AND number of reviews, so the pool must be larger than `limit`: the best `limit` are taken from it.
+    requested_count = min(20, max(limit * 4, limit + 2))
 
-    _notify(
-        telegram_updater_callback,
-        f"Đang tìm Google Places cho từ khóa: '{query}'"  
-        + (f" (loại: {', '.join(included_types)})" if included_types else "")
-        + (f" (ngôn ngữ yêu cầu: {', '.join(required_languages)})" if required_languages else "")
-        + "...",
-    )
+    _notify(telegram_updater_callback, tr("scout.searching", lang, query=query))
 
     def _t(vi: str, en: str) -> str:
         return vi if lang == "vi" else en
@@ -279,19 +286,19 @@ def run_scout_pipeline(
 
     if not places:
         if search_error is not None and not allow_web_fallback:
-            _notify(
-                telegram_updater_callback,
+            text = (
                 _t("⛔ Google Places báo lỗi ", "⛔ Google Places returned an error ") + f"({search_error.status}): {search_error.message[:160]}\n"
                 + search_error.hint(lang) + "\n"
                 + _t("Mình dừng lại, không tìm bằng web vì kết quả web hay là trang xếp hạng/danh bạ.",
-                     "I stopped here instead of searching the web: web results are mostly rankings and directories."),
+                     "I stopped here instead of searching the web: web results are mostly rankings and directories.")
             )
             return {"query": query, "limit": limit, "discovered": 0, "saved": 0, "drafts_created": 0, "skipped": 0, "failed": 0,
-                    "error": f"google_places_{search_error.status}"}
+                    "error": f"google_places_{search_error.status}", "error_text": text, "clinics": [], "skipped_items": []}
         if not allow_web_fallback:
-            _notify(telegram_updater_callback, _t("Google Places không có kết quả nào cho từ khoá này. Thử một cụm ngắn hơn, ví dụ “Vietnamese doctor Fairfax VA”.",
-                                                  "Google Places has no results for this query. Try a shorter phrase, e.g. “Vietnamese doctor Fairfax VA”."))
-            return {"query": query, "limit": limit, "discovered": 0, "saved": 0, "drafts_created": 0, "skipped": 0, "failed": 0, "error": "no_results"}
+            text = _t("Google Places không có kết quả nào cho từ khoá này. Thử một cụm ngắn hơn, ví dụ “Vietnamese doctor Fairfax VA”.",
+                      "Google Places has no results for this query. Try a shorter phrase, e.g. “Vietnamese doctor Fairfax VA”.")
+            return {"query": query, "limit": limit, "discovered": 0, "saved": 0, "drafts_created": 0, "skipped": 0, "failed": 0,
+                    "error": "no_results", "error_text": text, "clinics": [], "skipped_items": []}
         _notify(telegram_updater_callback, _t("⚠️ Google Places không có kết quả; dùng tìm kiếm web (đã bật) và lọc trang danh bạ/xếp hạng...",
                                               "⚠️ Google Places gave nothing; using web search (enabled) and filtering rankings/directories..."))
         rejected = 0
@@ -311,15 +318,10 @@ def run_scout_pipeline(
     # ── Filter 1: Non-medical place type blocklist ────────────────────────────
     # Reject spas, nail salons, restaurants, gyms, etc. before any scraping.
     medical_places = []
+    skipped_items: list = []  # [{"name", "reason"}] — one line each in the final summary
     for place in places:
         if _is_non_medical(place):
-            place_name = _place_name(place)
-            place_types = place.get("types") or []
-            blocked = NON_MEDICAL_BLOCKED_TYPES.intersection(place_types)
-            _notify(
-                telegram_updater_callback,
-                f"⛔ Bỏ qua (không phải cơ sở y tế): {place_name} — types: {', '.join(blocked)}",
-            )
+            skipped_items.append({"name": _place_name(place), "reason": "not_medical"})
         else:
             medical_places.append(place)
 
@@ -331,16 +333,9 @@ def run_scout_pipeline(
             continue
         if not check_source(url=site).ok:  # e.g. the place only has a Facebook or Yelp page
             not_own_site += 1
+            skipped_items.append({"name": _place_name(place), "reason": "own_site"})
             continue
         candidates.append(place)
-    if not_own_site:
-        _notify(telegram_updater_callback, _t(f"Bỏ qua {not_own_site} nơi chỉ có trang Facebook/Yelp/danh bạ thay cho website riêng.",
-                                              f"Skipped {not_own_site} place(s) whose only 'website' is a Facebook/Yelp/directory page."))
-    _notify(
-        telegram_updater_callback,
-        f"Tìm thấy {len(candidates)} cơ sở y tế có website hợp lệ "
-        f"(đã lọc {len(places) - len(medical_places)} nơi không phải y tế).",
-    )
 
     existing_names, existing_websites = _load_existing_clinic_keys()
     new_places = []
@@ -352,18 +347,29 @@ def run_scout_pipeline(
         if not name or not normalized_website:
             continue
         if name.lower() in existing_names or normalized_website in existing_websites or normalized_website in seen_websites:
-            _notify(telegram_updater_callback, f"Bỏ qua đã tồn tại: {name}")
+            skipped_items.append({"name": name, "reason": "exists"})
+            continue
+        rating = float(place.get("rating") or 0)
+        reviews = int(place.get("userRatingCount") or 0)
+        if min_rating and rating < min_rating:
+            skipped_items.append({"name": name, "reason": "low_rating"})
+            continue
+        if min_reviews and reviews < min_reviews:
+            skipped_items.append({"name": name, "reason": "few_reviews"})
             continue
         seen_websites.add(normalized_website)
         new_places.append(place)
 
-    _notify(telegram_updater_callback, f"Có {len(new_places)} cơ sở mới. Bắt đầu scrape...")
+    # Best first: a 4.9 with 300 reviews beats a 5.0 with 2.
+    new_places.sort(key=_rank_score, reverse=True)
+    _notify(telegram_updater_callback, tr("scout.found", lang, n=len(candidates), new=len(new_places)))
 
     saved = 0
     drafts_created = 0
     failed = 0
     skipped = 0
     processed = 0
+    cards: list = []
 
     for place in new_places:
         if saved >= limit:
@@ -374,28 +380,28 @@ def run_scout_pipeline(
         processed += 1
 
         try:
-            _notify(telegram_updater_callback, f"Đang cào dữ liệu: {name}...")
+            _notify(telegram_updater_callback, tr("scout.scraping", lang, i=processed, n=min(len(new_places), limit + 2), name=name))
             content = scrape_content_from_url(website)
             if content.get("dead_reason"):
                 skipped += 1
-                _notify(telegram_updater_callback, f"Bỏ qua {name}: website không hợp lệ ({content['dead_reason']}).")
+                skipped_items.append({"name": name, "reason": "dead"})
                 continue
             text = content.get("markdown_content") or content.get("text") or ""
             if not text:
                 skipped += 1
-                _notify(telegram_updater_callback, f"Bỏ qua {name}: không lấy được nội dung website.")
+                skipped_items.append({"name": name, "reason": "no_content"})
                 continue
 
             page_check = check_source(url=website, title=str(content.get("page_title") or ""), text=text)
             if not page_check.ok:
                 skipped += 1
-                _notify(telegram_updater_callback, _t(f"⛔ Bỏ qua {name}: {explain(page_check, 'vi')}.", f"⛔ Skipped {name}: {explain(page_check, 'en')}."))
+                skipped_items.append({"name": name, "reason": "directory"})
                 continue
 
             data = extract_clinic_data(name, content)
             if not data:
                 skipped += 1
-                _notify(telegram_updater_callback, f"Bỏ qua {name}: AI không trích xuất được dữ liệu đủ tin cậy.")
+                skipped_items.append({"name": name, "reason": "ai"})
                 continue
             merge_deterministic_contacts(data, content)
 
@@ -421,13 +427,7 @@ def run_scout_pipeline(
                 data["google_metadata"]["scout_required_languages"] = required_languages
                 data["google_metadata"]["language_verified_on_website"] = bool(matched)
                 if not matched:
-                    data["languages_verified"] = False
-                    _notify(
-                        telegram_updater_callback,
-                        f"⚠️ {name}: website không nhắc đến ngôn ngữ yêu cầu ({', '.join(required_languages)}). "
-                        f"KHÔNG gán ngôn ngữ này. Vẫn lưu NHÁP và gắn cờ \"ngôn ngữ chưa xác minh\" để bạn quyết định "
-                        f"(ngôn ngữ hiện có: {', '.join(data.get('languages') or []) or 'không có'}).",
-                    )
+                    data["languages_verified"] = False  # flagged on the card; the required language is NOT added
 
             data = _merge_place_defaults(data, place, website)
             data["google_metadata"] = {
@@ -444,7 +444,7 @@ def run_scout_pipeline(
                 if content.get(scrape_key) and not data.get(scrape_key):
                     data[scrape_key] = content[scrape_key]
 
-            _notify(telegram_updater_callback, f"Đang làm giàu Google Places: {name}...")
+            _notify(telegram_updater_callback, tr("scout.enriching", lang, name=name))
             # Use the exact place the search found (no second, error-prone name search).
             data = enrich_clinic_with_google_places(data, place_id=place.get("id"), upload_photos=False)
             data = enrich_missing_with_brave(data)
@@ -453,39 +453,33 @@ def run_scout_pipeline(
                 **(data.get("google_metadata") or {}),
                 "scout_query": query,
             }
-            _notify(telegram_updater_callback, f"Đang chọn ảnh thật cho {name} (website trước, Google bù)...")
+            _notify(telegram_updater_callback, tr("scout.photos", lang, name=name))
             attach_real_photos(data, website_images=website_images, log=lambda m: print(m))
-            if not data.get("images"):
-                _notify(telegram_updater_callback, f"ℹ️ {name}: không có ảnh thật phù hợp, để trống (không tạo ảnh giả).")
 
             if override_specialty:
                 data["specialty"] = override_specialty
 
             if insert_clinic(data):
                 saved += 1
-                if (data.get("_saved") or {}).get("created"):
-                    drafts_created += 1
-                q = compute_quality(data)
-                missing_str = f" (thiếu: {', '.join(q['missing'])})" if q["missing"] else ""
                 saved_info = data.get("_saved") or {}
                 if saved_info.get("created"):
-                    status_text = "📝 Đã lưu NHÁP (chưa hiện trên web, chờ bạn duyệt)"
-                else:
-                    status_text = f"🔄 Đã cập nhật (giữ nguyên trạng thái: {saved_info.get('status') or 'không đổi'})"
-                _notify(telegram_updater_callback, f"{status_text}: {data.get('name') or name} — Điểm chất lượng: {q['score']}/100{missing_str}")
+                    drafts_created += 1
+                cards.append(build_card(data, compute_quality(data), saved_info))
             else:
                 failed += 1
-                _notify(telegram_updater_callback, f"Lưu thất bại: {name}")
+                skipped_items.append({"name": name, "reason": "failed"})
         except Exception as exc:
             failed += 1
             logger.exception("Scout failed for %s (%s)", name, website)
-            _notify(telegram_updater_callback, f"Lỗi khi xử lý {name}: {exc}. Tiếp tục mục tiếp theo...")
+            skipped_items.append({"name": name, "reason": "failed"})
 
     summary = {
         "query": query,
         "limit": limit,
         "required_languages": required_languages or [],
         "included_types": included_types or [],
+        "min_rating": min_rating,
+        "min_reviews": min_reviews,
         "discovered": len(places),
         "non_medical_filtered": len(places) - len(medical_places),
         "with_website": len(candidates),
@@ -495,14 +489,10 @@ def run_scout_pipeline(
         "drafts_created": drafts_created,
         "skipped": skipped,
         "failed": failed,
+        "clinics": cards,
+        "skipped_items": skipped_items,
     }
-    _notify(telegram_updater_callback, f"Hoàn tất! Đã lưu {saved}/{limit} phòng khám.")
-    if drafts_created:
-        _notify(
-            telegram_updater_callback,
-            f"📝 {drafts_created} phòng khám mới đang ở trạng thái NHÁP. Xem và duyệt bằng /drafts, "
-            f"duyệt từng cái bằng /approve_clinic <slug>, hoặc tất cả bằng /approve_clinic all.",
-        )
+    _notify(telegram_updater_callback, tr("scout.done", lang))
     return summary
 
 

@@ -112,6 +112,14 @@ def _run_with_captured_output(name: str, fn: Callable[[], None]) -> str:
     return output
 
 
+def _run_for_summary(name: str, fn: Callable[[], str]) -> str:
+    """Like _run_with_captured_output (the full log still goes to /tail) but returns only what `fn` returns:
+    a short result for the chat instead of the scraper's whole log."""
+    box: dict = {}
+    _run_with_captured_output(name, lambda: box.update(text=fn()))
+    return box.get("text") or ""
+
+
 def run_batch_job() -> str:
     from run_batch import main
 
@@ -125,39 +133,51 @@ def scout_pipeline_job(
     included_types=None,
     telegram_updater_callback=None,
     lang: str = "vi",
+    min_rating: float = 0.0,
+    min_reviews: int = 0,
+    result_sink: Optional[dict] = None,
 ) -> str:
     from run_scout import run_scout_pipeline
+    from scout_report import summary_text
 
-    return _run_with_captured_output(
-        "find_clinics",
-        lambda: print(run_scout_pipeline(
+    def run() -> str:
+        summary = run_scout_pipeline(
             query,
             limit=limit,
             required_languages=required_languages,
             included_types=included_types,
             telegram_updater_callback=telegram_updater_callback,
             lang=lang,
-        )),
-    )
+            min_rating=min_rating,
+            min_reviews=min_reviews,
+        )
+        if result_sink is not None:
+            result_sink.update(summary)
+        return summary_text(summary, lang)
+
+    return _run_for_summary("find_clinics", run)
 
 
-def scrape_clinic_url_job(name: str, url: str, telegram_updater_callback=None, lang: str = "vi") -> str:
+def scrape_clinic_url_job(
+    name: str, url: str, telegram_updater_callback=None, lang: str = "vi", result_sink: Optional[dict] = None, cards_only: bool = False,
+) -> str:
     from run_single_clinic_url import SourceRejected, run_single_clinic_url
+    from scout_report import card_text
     from source_guard import explain
 
-    def run() -> None:
+    def run() -> str:
         try:
-            saved = run_single_clinic_url(name, url, progress_callback=telegram_updater_callback)
-            print({"saved": saved})
+            saved = run_single_clinic_url(name, url, progress_callback=telegram_updater_callback, lang=lang, result_sink=result_sink)
         except SourceRejected as exc:
             reason = explain(exc.verdict, lang)
-            print(
-                f"⛔ Không lưu: {reason}.\nHãy gửi link website riêng của phòng khám."
-                if lang == "vi" else
-                f"⛔ Not saved: {reason}.\nSend the clinic's own website instead."
-            )
+            return (f"⛔ Không lưu: {reason}.\nHãy gửi link website riêng của phòng khám." if lang == "vi"
+                    else f"⛔ Not saved: {reason}.\nSend the clinic's own website instead.")
+        card = (result_sink or {}).get("card")
+        if saved and card:
+            return "" if cards_only else card_text(card, lang)  # cards_only: the bot sends the card with its buttons itself
+        return "❌ Không lưu được clinic này (xem /tail để biết lý do)." if lang == "vi" else "❌ This clinic could not be saved (see /tail for why)."
 
-    return _run_with_captured_output("scrape_clinic_url", run)
+    return _run_for_summary("scrape_clinic_url", run)
 
 
 def repair_clinic_images_job() -> str:
