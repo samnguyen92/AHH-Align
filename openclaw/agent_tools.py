@@ -76,6 +76,12 @@ ACTION_TOOLS: List[Tool] = [
     Tool("review_clinic_photos", "Have a vision model check the photos clinics ALREADY have (removes logos, text graphics, food, patients' faces, other businesses' signs; puts the best photo first). Costs a little AI usage.",
          _obj({"target": S, "limit": I}),
          card_vi="chấm lại ảnh của clinic {target} bằng model nhìn ảnh (có tốn chi phí AI)", card_en="review the photos of {target} with a vision model (uses AI credit)"),
+    Tool("list_clinic_photos", "Show the photos of ONE clinic as a numbered album with a remove button under each number. Use when the user wants to see or review a clinic's photos.",
+         _obj({"target": S}, ["target"]), approval=False),
+    Tool("remove_clinic_photo", "Remove one or more photos from ONE clinic's gallery (irrelevant, wrong or low-quality). Give image_url (the photo's address, as the user pasted it) "
+         "or positions (1 = the cover photo, as on the clinic page). The file is kept for 30 days so it can be undone with /clinic_undo.",
+         _obj({"target": S, "image_url": S, "positions": {"type": "array", "items": I}}, ["target"]),
+         card_vi="xoá ảnh khỏi clinic {target}", card_en="remove photo(s) from clinic {target}"),
     Tool("rescan_clinic", "Re-scrape the clinic's own website and re-extract ALL its data, photos and VI/KO/ZH translations. Slow; only when the user wants a refresh from the web.",
          _obj({"target": S}, ["target"]), card_vi="quét lại toàn bộ dữ liệu clinic {target} từ website của họ", card_en="rescan clinic {target} from its website"),
     Tool("rescan_all_clinics", "Rescan every clinic (limit 0 = all, or a sample of N).", _obj({"limit": I}),

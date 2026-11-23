@@ -98,8 +98,8 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 MAX_MESSAGE_LENGTH = 3900
 # Slash commands that manage user accounts. They are explicit commands on purpose: a language model must never
 # decide WHICH user to change.
-CLINIC_COMMANDS = {"/clinic_undo", "/review_photos", "/clean_content"}
-CLINIC_TARGET_ACTIONS = {"inspect_clinic", "rescan_clinic", "update_clinic", "undo_clinic_edit", "approve_clinic", "reject_clinic", "delete_clinic"}
+CLINIC_COMMANDS = {"/clinic_undo", "/review_photos", "/clean_content", "/photos"}
+CLINIC_TARGET_ACTIONS = {"list_clinic_photos", "remove_clinic_photo", "inspect_clinic", "rescan_clinic", "update_clinic", "undo_clinic_edit", "approve_clinic", "reject_clinic", "delete_clinic"}
 ACTION_LABELS_VI = {
     "inspect_clinic": "kiểm tra clinic", "rescan_clinic": "quét lại clinic", "update_clinic": "sửa thông tin clinic",
     "undo_clinic_edit": "hoàn tác thay đổi clinic", "approve_clinic": "duyệt clinic", "reject_clinic": "ẩn clinic",
@@ -156,6 +156,7 @@ class TelegramBot:
         self.last_web_pr: dict[int, int] = {}
         self.live_jobs: dict[int, LiveStatus] = {}
         self.card_cache: dict[str, dict] = {}
+        self.photo_cache: dict[str, dict] = {}
         self._memory_lock = threading.RLock()  # RLock: reentrant, safe for nested acquire
         self._pending_lock = threading.Lock()
         self.start_anomaly_checker()
@@ -613,7 +614,8 @@ class TelegramBot:
             "/run_batch - search, scrape, extract, save configured clinic targets\n"
             "/find_clinics <query> | [limit] - scout Google Places, scrape websites, extract clinic data, and save new clinics\n"
             "/inspect_clinic <name|slug> - inspect an existing clinic on our website (languages, gallery, sections, i18n)\n"
-            "/clinic_undo <name|slug> - undo the latest bot edit of a clinic (30 days). To edit a clinic just say it, e.g. \"add Vietnamese to anchor-dental\"\n"
+            "/photos <name|slug> - numbered album of a clinic's photos with a remove button under each (undoable)\n"
+            "/clinic_undo <name|slug> - undo the latest bot edit or photo removal of a clinic (30 days). To edit a clinic just say it, e.g. \"add Vietnamese to anchor-dental\"\n"
             "/rescan_clinic <name|slug> - deep re-scan & re-extract all fields/photos/i18n of an existing clinic via gpt-6-luna\n"
             "/rescan_all_clinics [limit] - rescan & enrich all clinics in the directory\n"
             "/scrape_clinic_url <clinic name> | <url> - scrape one known clinic website and save/update it\n"
@@ -1213,7 +1215,9 @@ class TelegramBot:
     def run_pending_action(self, chat_id: int, action: dict) -> None:
         action_type = action["type"]
 
-        if action_type == "check_anomalies":
+        if action_type == "remove_clinic_photo":
+            self.run_photo_removal(chat_id, action)
+        elif action_type == "check_anomalies":
             self.run_job(chat_id, action.get("name") or "check_anomalies",
                          lambda: check_anomalies_job(lang=action.get("lang") or self.chat_lang.get(chat_id, "en")),
                          action_type=action_type)
@@ -1979,6 +1983,9 @@ class TelegramBot:
         if data.startswith("dr:"):
             self.handle_card_callback(callback, answer, chat_id, message)
             return
+        if data.startswith("ph:rm:"):
+            self.handle_photo_callback(callback, answer, chat_id, user_id)
+            return
         verdict, _, pending_id = data.partition(":")
         with self._pending_lock:
             current = self.pending_actions.get(chat_id)
@@ -2052,6 +2059,14 @@ class TelegramBot:
         return True
 
     def handle_clinic_command(self, chat_id: int, command: str, text: str, user_id: Optional[int]) -> None:
+        if command == "/photos":
+            args = text.split()[1:]
+            target = args[0] if args else str((self.chat_focus.get(chat_id) or {}).get("clinic") or "")
+            if not target:
+                self.send_message(chat_id, "Dùng: /photos <slug hoặc tên clinic>" if self.chat_lang.get(chat_id) == "vi" else "Usage: /photos <clinic slug or name>")
+            else:
+                self.send_clinic_photos(chat_id, target, self.chat_lang.get(chat_id, "en"))
+            return
         if command == "/review_photos":
             self.handle_review_photos_command(chat_id, text, user_id)
             return
@@ -2119,6 +2134,138 @@ class TelegramBot:
             self.send_message(chat_id, "Bạn muốn xử lý Pull Request số mấy? Gõ /web_prs để xem danh sách." if vi else "Which Pull Request number? Type /web_prs to see the list.")
             return
         self.handle_web_pr_command(chat_id, command, f"{command} {number or ''}".strip(), user_id)
+
+    # ------------------------------------------------------------------ clinic photos: see them, remove one
+
+    @staticmethod
+    def _photo_source(url: str):
+        """('file', path) for a photo we store, ('url', address) for a remote one."""
+        from clinic_photos import project_root
+
+        if url.startswith(("http://", "https://")):
+            return "url", url
+        return "file", str(project_root() / "public" / url.lstrip("/"))
+
+    def send_photo_album(self, chat_id: int, items: list) -> None:
+        """items: [(photo address, caption)]. Up to 10 per Telegram album; any failure falls back to one by one."""
+        import requests
+
+        for start in range(0, len(items), 10):
+            chunk = items[start:start + 10]
+            sources = [(self._photo_source(url), caption) for url, caption in chunk]
+            try:
+                if len(sources) == 1:
+                    (kind, where), caption = sources[0]
+                    if kind == "file":
+                        self.send_photo(chat_id, where, caption=caption)
+                    else:
+                        self.request("sendPhoto", {"chat_id": chat_id, "photo": where, "caption": caption})
+                    continue
+                media, files, handles = [], {}, []
+                for index, ((kind, where), caption) in enumerate(sources):
+                    if kind == "file":
+                        handle = open(where, "rb")
+                        handles.append(handle)
+                        files[f"photo{index}"] = handle
+                        media.append({"type": "photo", "media": f"attach://photo{index}", "caption": caption})
+                    else:
+                        media.append({"type": "photo", "media": where, "caption": caption})
+                try:
+                    response = requests.post(TELEGRAM_API.format(token=self.token, method="sendMediaGroup"),
+                                             data={"chat_id": str(chat_id), "media": json.dumps(media)}, files=files, timeout=90)
+                    response.raise_for_status()
+                finally:
+                    for handle in handles:
+                        handle.close()
+            except Exception as exc:
+                print(f"[!] Could not send the photo album, sending one by one: {exc!r}")
+                for (kind, where), caption in sources:
+                    try:
+                        if kind == "file":
+                            self.send_photo(chat_id, where, caption=caption)
+                    except Exception:
+                        pass
+
+    def send_clinic_photos(self, chat_id: int, target: str, lang: str) -> None:
+        """A numbered album of the clinic's photos, then 🗑 buttons (one per photo)."""
+        import hashlib
+
+        from clinic_edit import ClinicEditError
+        from photo_admin import photos_of, resolve_one
+
+        try:
+            row = resolve_one(target, lang)
+        except ClinicEditError as exc:
+            self.send_message(chat_id, f"⚠️ {exc.text(lang)}")
+            return
+        urls = photos_of(row)
+        self.chat_focus[chat_id] = {"clinic": row.get("slug") or target}
+        if not urls:
+            self.send_message(chat_id, tr("photos.none", lang))
+            return
+        self.send_photo_album(chat_id, [(url, f"{n}") for n, url in enumerate(urls, start=1)])
+        token = hashlib.md5(str(row["slug"]).encode()).hexdigest()[:10]
+        self.photo_cache[token] = {"slug": row["slug"], "urls": {hashlib.md5(u.encode()).hexdigest()[:8]: u for u in urls}}
+        buttons = []
+        for start in range(0, len(urls), 5):
+            buttons.append([(f"🗑 {n}", f"ph:rm:{token}:{hashlib.md5(urls[n - 1].encode()).hexdigest()[:8]}") for n in range(start + 1, min(start + 5, len(urls)) + 1)])
+        self.send_message(chat_id, f"**{row['name']}** · {len(urls)} · " + tr("photos.tap", lang), buttons=buttons)
+
+    def plan_photo_removal(self, chat_id: int, target: str, urls: list, positions: list, lang: str, user_id: Optional[int]) -> None:
+        """Show WHICH photos would go (the pictures themselves) and ask for confirmation."""
+        from clinic_edit import ClinicEditError
+        from photo_admin import plan_removal
+
+        target = target or str((self.chat_focus.get(chat_id) or {}).get("clinic") or "")
+        if not target:
+            self.send_message(chat_id, "Bạn muốn xoá ảnh của clinic nào?" if lang == "vi" else "Which clinic should I remove the photo from?")
+            return
+        try:
+            plan = plan_removal(target, urls, positions, lang)
+        except ClinicEditError as exc:
+            self.send_message(chat_id, f"⚠️ {exc.text(lang)}")
+            return
+        self.chat_focus[chat_id] = {"clinic": plan.slug or plan.name}
+        self.send_photo_album(chat_id, [(s["url"], f"🗑 {s['position']}") for s in plan.selected])
+        count = len(plan.selected)
+        left = plan.total - count
+        text = (
+            f"Bạn muốn xoá {count} ảnh khỏi **{plan.name}** (còn {left} ảnh)? Ảnh được giữ 30 ngày, hoàn tác bằng /clinic_undo."
+            if lang == "vi" else
+            f"Remove {count} photo(s) from **{plan.name}** ({left} left)? The files are kept for 30 days; undo with /clinic_undo."
+        )
+        self.offer_action(chat_id, {
+            "type": "remove_clinic_photo", "name": f"remove_clinic_photo: {plan.name}", "lang": lang,
+            "plan": {"clinic_id": plan.clinic_id, "slug": plan.slug, "name": plan.name, "selected": plan.selected, "total": plan.total},
+        }, text, user_id)
+
+    def run_photo_removal(self, chat_id: int, action: dict) -> None:
+        from clinic_edit import ClinicEditError
+        from photo_admin import PhotoPlan, apply_removal
+
+        actor = f"telegram:{action.get('requested_by') or 'unknown'}"
+        lang = action.get("lang") or self.chat_lang.get(chat_id, "en")
+        plan = PhotoPlan(**action["plan"])
+
+        def job() -> str:
+            try:
+                return apply_removal(plan, actor, lang)
+            except ClinicEditError as exc:
+                return f"⚠️ {exc.text(lang)}"
+
+        self.run_job(chat_id, action["name"], job, action_type="remove_clinic_photo")
+
+    def handle_photo_callback(self, callback: dict, answer, chat_id: int, user_id: int) -> None:
+        """🗑 pressed under the album: the exact photo (not a position that may have moved) goes to the confirmation."""
+        _, _, token, photo_hash = (callback.get("data") or "").split(":", 3)
+        lang = self.chat_lang.get(chat_id, "en")
+        entry = self.photo_cache.get(token)
+        url = (entry or {}).get("urls", {}).get(photo_hash)
+        if not entry or not url:
+            answer(tr("photos.expired", lang))
+            return
+        answer()
+        self.plan_photo_removal(chat_id, entry["slug"], [url], [], lang, user_id)
 
     def handle_review_photos_command(self, chat_id: int, text: str, user_id: Optional[int]) -> None:
         """/review_photos <slug|all> [limit]: costs AI usage, so it shows what it will do and waits for Approve."""
@@ -2216,6 +2363,13 @@ class TelegramBot:
 
         if intent_res.action in self.WEB_PR_TOOL_COMMANDS:
             self.dispatch_web_pr_tool(chat_id, intent_res, user_id)
+            return
+        if intent_res.action == "list_clinic_photos":
+            self.send_clinic_photos(chat_id, str(params.get("target") or (self.chat_focus.get(chat_id) or {}).get("clinic") or ""), intent_res.lang)
+            return
+        if intent_res.action == "remove_clinic_photo":
+            urls = [params["image_url"]] if params.get("image_url") else []
+            self.plan_photo_removal(chat_id, str(params.get("target") or ""), urls, params.get("positions") or [], intent_res.lang, user_id)
             return
 
         # The tool definition, not the model, decides whether an action needs a human yes (a model can be wrong or tricked).
