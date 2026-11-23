@@ -342,7 +342,7 @@ def undo_clinic_edit(target: str, actor: str, lang: str = "en") -> str:
     with db.transaction() as tx:
         locked = tx.query("SELECT * FROM public.clinics WHERE id = %s FOR UPDATE", (str(clinic["id"]),))[0]
         logs = tx.query(
-            "SELECT id, details FROM public.audit_log WHERE action = 'clinic.edit' AND target_type = 'clinic' "
+            "SELECT id, action, details FROM public.audit_log WHERE action IN ('clinic.edit', 'clinic.photo.remove') AND target_type = 'clinic' "
             "AND target_id = %s AND created_at > now() - make_interval(days => %s) ORDER BY id DESC LIMIT 1",
             (str(clinic["id"]), UNDO_WINDOW_DAYS),
         )
@@ -353,6 +353,19 @@ def undo_clinic_edit(target: str, actor: str, lang: str = "en") -> str:
             )
         details = logs[0]["details"]
         details = json.loads(details) if isinstance(details, str) else details
+        if logs[0]["action"] == "clinic.photo.remove":
+            from photo_admin import undo_removal
+
+            count = undo_removal(tx, locked, logs[0], details)
+            tx.query("UPDATE public.audit_log SET action = 'clinic.photo.remove.undone' WHERE id = %s", (logs[0]["id"],))
+            tx.query(
+                "INSERT INTO public.audit_log (actor, action, target_type, target_id, target_label, details) VALUES (%s, 'clinic.undo', 'clinic', %s, %s, %s)",
+                (actor, str(clinic["id"]), clinic.get("slug"), Json({"restored_photos": count})),
+            )
+            from revalidate import revalidate_clinic
+
+            note = f"Đã khôi phục {count} ảnh của {clinic['name']}." if vi else f"Restored {count} photo(s) of {clinic['name']}."
+            return "\n".join(filter(None, [f"↩️ {note}", revalidate_clinic(clinic.get('slug') or '')]))
         for key, new in details["after"].items():
             now = _current_value(locked, key)
             if key == "languages":
