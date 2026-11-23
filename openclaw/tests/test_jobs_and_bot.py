@@ -107,7 +107,7 @@ def test_crashing_job_also_tells_the_user(bot):
         raise KeyError("missing")
 
     bot.run_job(1, "weird_job", crash)
-    assert _wait_for(bot, lambda s: any("crashed" in m for m in s))
+    assert _wait_for(bot, lambda s: any("Error during weird_job" in m and "missing" in m for m in s))
 
 
 def test_successful_job_reports_output_not_failure(bot):

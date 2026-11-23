@@ -132,14 +132,13 @@ def test_google_403_stops_the_scout_with_the_reason_and_no_web_search(scout, mon
     summary = run(scout, lang="en")
     assert summary["error"] == "google_places_403" and summary["saved"] == 0
     assert scout["brave"] == 0 and scout["scraped"] == [] and scout["saved"] == []  # nothing was searched, scraped or saved
-    text = "\n".join(scout["messages"])
+    text = summary["error_text"]
     assert "403" in text and "billing disabled" in text and "IP" in text and "stopped" in text
 
 
 def test_the_reason_comes_in_the_users_language(scout, monkeypatch):
     monkeypatch.setattr(run_scout, "search_places_by_text", lambda *a, **k: (_ for _ in ()).throw(google_places.GooglePlacesError(403, "x")))
-    run(scout, lang="vi")
-    assert "Mình dừng lại" in "\n".join(scout["messages"])
+    assert "Mình dừng lại" in run(scout, lang="vi")["error_text"]
 
 
 def test_no_results_is_reported_without_falling_back_to_the_web(scout, monkeypatch):
@@ -165,9 +164,9 @@ def test_a_place_whose_only_website_is_a_social_page_is_skipped(scout, monkeypat
     monkeypatch.setattr(run_scout, "search_places_by_text", lambda *a, **k: [
         {"id": "1", "displayName": {"text": "Facebook Only Clinic"}, "websiteUri": "https://www.facebook.com/onlyclinic", "types": ["doctor"]},
         {"id": "2", "displayName": {"text": "Anchor Dental"}, "websiteUri": "https://anchordental.com", "types": ["dentist"]}])
-    run(scout, lang="en")
+    summary = run(scout, lang="en")
     assert scout["scraped"] == ["https://anchordental.com"] and scout["saved"] == ["Anchor Dental"]
-    assert any("Facebook/Yelp" in m for m in scout["messages"])
+    assert {"name": "Facebook Only Clinic", "reason": "own_site"} in summary["skipped_items"]
 
 
 def test_a_page_that_turns_out_to_be_a_directory_is_not_saved(scout, monkeypatch):
@@ -175,7 +174,7 @@ def test_a_page_that_turns_out_to_be_a_directory_is_not_saved(scout, monkeypatch
         {"id": "1", "displayName": {"text": "Houston Health Listings"}, "websiteUri": "https://houstonlistings.example", "types": ["doctor"]}])
     scout["page"] = {"markdown_content": " ".join(f"Dr. Alpha{chr(97 + i)} Beta{chr(97 + i)} call ({300 + i}) 555-01{i:02d}" for i in range(15)), "images": [], "page_title": "Directory"}
     summary = run(scout, lang="en")
-    assert scout["saved"] == [] and summary["skipped"] == 1 and any("Skipped" in m for m in scout["messages"])
+    assert scout["saved"] == [] and summary["skipped"] == 1 and summary["skipped_items"] == [{"name": "Houston Health Listings", "reason": "directory"}]
 
 
 # --------------------------------------------------------------------------- last line of defence + other entry points

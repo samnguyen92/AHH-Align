@@ -265,6 +265,7 @@ def insert_clinic(clinic_data: dict, status: str = NEW_CLINIC_STATUS):
             response = db.table("clinics").upsert(db_payload).execute()
             clinic_data["_saved"] = {
                 "id": db_payload["id"],
+                "slug": db_payload.get("slug"),
                 "created": False,
                 "status": (response.data[0].get("status") if response.data else None),
             }
@@ -275,6 +276,7 @@ def insert_clinic(clinic_data: dict, status: str = NEW_CLINIC_STATUS):
             response = db.table("clinics").insert(db_payload).execute()
             clinic_data["_saved"] = {
                 "id": db_payload["id"],
+                "slug": db_payload.get("slug"),
                 "created": True,
                 "status": status,
             }

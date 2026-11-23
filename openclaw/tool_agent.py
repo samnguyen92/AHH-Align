@@ -170,7 +170,9 @@ def _to_result(decision: dict, text: str, lang: str, pending: Optional[dict]) ->
                else f"I still need: {', '.join(missing)}. Could you tell me?")
         return IntentResult(action="chat", lang=lang, requires_approval=False, is_direct_chat=True, direct_reply=ask)
     label = params.get("target") or params.get("query") or params.get("topic") or params.get("instruction") or ""
-    params["name"] = f"{name}: {str(label)[:36]}".rstrip(": ")
+    from messages import shorten
+
+    params["name"] = f"{name}: {shorten(str(label), 48)}".rstrip(": ")
     return IntentResult(
         action=name, lang=lang, parameters=params, requires_approval=tool.approval,
         confirmation_message=agent_tools.confirmation_card(name, params, lang) if tool.approval else "",

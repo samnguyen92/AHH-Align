@@ -80,9 +80,13 @@ ACTION_TOOLS: List[Tool] = [
          _obj({"target": S}, ["target"]), card_vi="quét lại toàn bộ dữ liệu clinic {target} từ website của họ", card_en="rescan clinic {target} from its website"),
     Tool("rescan_all_clinics", "Rescan every clinic (limit 0 = all, or a sample of N).", _obj({"limit": I}),
          card_vi="quét lại {limit} clinic (0 = tất cả)", card_en="rescan {limit} clinics (0 = all)"),
-    Tool("find_clinics", "Search Google Places to discover and import NEW clinics (they start as drafts). Never use for checking a clinic we already have.",
-         _obj({"query": S, "limit": I, "required_languages": {"type": "array", "items": S}, "facility_types": {"type": "array", "items": S}}, ["query"]),
-         card_vi="tìm clinic mới trên Google Places: “{query}” (tối đa {limit})", card_en="search Google Places for new clinics: “{query}” (up to {limit})"),
+    Tool("find_clinics", "Search Google Places to discover and import NEW clinics (they start as drafts, best-rated first). Never use for checking a clinic we already have. "
+         "query must be a SHORT search phrase such as 'Vietnamese Korean Chinese speaking doctor Virginia', never a sentence; put quality wishes in min_rating / min_reviews "
+         "(e.g. 'highest ratings' -> min_rating 4.5, min_reviews 20).",
+         _obj({"query": S, "limit": I, "min_rating": {"type": "number"}, "min_reviews": I,
+               "required_languages": {"type": "array", "items": S}, "facility_types": {"type": "array", "items": S}}, ["query"]),
+         card_vi="tìm clinic mới trên Google Places: “{query}” (tối đa {limit}{criteria})",
+         card_en="search Google Places for new clinics: “{query}” (up to {limit}{criteria})"),
     Tool("scrape_clinic_url", "Scrape and import one clinic website URL (starts as a draft).", _obj({"clinic_name": S, "url": S}, ["url"]),
          card_vi="nhập clinic {clinic_name} từ {url}", card_en="import clinic {clinic_name} from {url}"),
     Tool("enrich_clinics_google", "Add Google Places photos, reviews and rating to existing clinics.", _obj(),
@@ -169,6 +173,13 @@ def confirmation_card(name: str, params: Dict[str, Any], lang: str) -> str:
     if not template:
         template = name.replace("_", " ")
     shown = _Blank({k: (", ".join(map(str, v)) if isinstance(v, (list, tuple)) else v) for k, v in params.items() if v not in (None, "")})
+    if name == "find_clinics":
+        vi = lang == "vi"
+        shown.setdefault("limit", 1)
+        shown["criteria"] = "".join([
+            (f", đánh giá từ {params['min_rating']}⭐" if vi else f", rating from {params['min_rating']}⭐") if params.get("min_rating") else "",
+            (f", từ {params['min_reviews']} lượt đánh giá" if vi else f", from {params['min_reviews']} reviews") if params.get("min_reviews") else "",
+        ])
     try:
         what = template.format_map(shown)
     except (ValueError, IndexError):
@@ -193,6 +204,16 @@ def clean_params(name: str, params: Any) -> Dict[str, Any]:
         elif isinstance(value, list):
             value = value[:30]
         out[key] = value
+    if name == "find_clinics":
+        from messages import shorten_query
+
+        out["query"] = shorten_query(out.get("query") or "")
+        for key, caster, ceiling in (("min_rating", float, 5.0), ("min_reviews", int, 5000)):
+            if key in out:
+                try:
+                    out[key] = max(0, min(caster(out[key]), ceiling))
+                except (TypeError, ValueError):
+                    out.pop(key)
     if "limit" in out:
         try:
             out["limit"] = max(0, min(int(out["limit"]), 200))

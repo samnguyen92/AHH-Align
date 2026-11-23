@@ -227,8 +227,8 @@ def test_pressing_approve_runs_the_pending_action_once(bot, monkeypatch):
 
 
 def test_status_messages_speak_vietnamese_in_a_vietnamese_chat(bot):
-    assert bot.describe_action("rescan_clinic: Anchor Dental", "vi") == "quét lại clinic Anchor Dental"
-    assert bot.describe_action("rescan_clinic: Anchor Dental", "en") == "rescan_clinic: Anchor Dental"
+    assert bot.describe_action("rescan_clinic: Anchor Dental", "vi") == "quét lại clinic: Anchor Dental"
+    assert bot.describe_action("rescan_clinic: Anchor Dental", "en") == "rescan clinic: Anchor Dental"  # never the raw internal id
     assert bot.describe_action("mystery: x", "vi") == "mystery: x"
 
 
