@@ -16,9 +16,14 @@ const KEYS: (keyof DirectoryParams)[] = [
 ];
 const wrap = 'w-full px-3 md:px-5';
 
-/** the current search with some keys changed (undefined removes a key); back to page 1 unless page is set */
+/** the current search with some keys changed (undefined removes a key); filter changes always return to page 1 */
 function hrefWith(params: DirectoryParams, updates: Partial<DirectoryParams>) {
-  const merged: DirectoryParams = { ...params, page: undefined, ...updates };
+  const pageOnlyUpdate = Object.keys(updates).every((key) => key === 'page');
+  const merged: DirectoryParams = {
+    ...params,
+    ...updates,
+    page: pageOnlyUpdate ? updates.page : undefined,
+  };
   const sp = new URLSearchParams();
   for (const k of [...KEYS, 'page' as const]) {
     const v = merged[k];
