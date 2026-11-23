@@ -4,6 +4,7 @@
  */
 
 import { cache } from 'react';
+import { memoizeAsync } from '@/lib/memo';
 import { createServerAnonClient } from './supabase-server';
 import type {
   Clinic,
@@ -797,14 +798,29 @@ export async function getClinicSitemapEntries(limit = 50000): Promise<ClinicSite
   }
 }
 
+// The three scans below read the whole clinics table. They are shared and kept for a few minutes (see lib/memo.ts):
+// computing them again for every page made 8 simultaneous page renders exhaust the database pool (HTTP 500).
+const DIRECTORY_CACHE_TTL_MS = 5 * 60 * 1000;
+
 export async function getTopCityCombos(limit = 200): Promise<CitySeoCombo[]> {
+  try {
+    return await cachedTopCityCombos(limit);
+  } catch (err) {
+    console.error('[clinic-service] getTopCityCombos error:', err);
+    return [];
+  }
+}
+
+const cachedTopCityCombos = memoizeAsync(loadTopCityCombos, { ttlMs: DIRECTORY_CACHE_TTL_MS, key: (limit) => String(limit) });
+
+async function loadTopCityCombos(limit: number): Promise<CitySeoCombo[]> {
   const supabase = createServerAnonClient();
 
   if (!supabase) {
     return [];
   }
 
-  try {
+  {
     const { data, error } = await onlyPublic(
       supabase
         .from('clinics')
@@ -841,20 +857,28 @@ export async function getTopCityCombos(limit = 200): Promise<CitySeoCombo[]> {
     return [...counts.values()]
       .sort((a, b) => b.clinicCount - a.clinicCount)
       .slice(0, limit);
-  } catch (err) {
-    console.error('[clinic-service] getTopCityCombos error:', err);
-    return [];
   }
 }
 
 export async function getTopSpecialtyCombos(limit = 1000): Promise<SpecialtySeoCombo[]> {
+  try {
+    return await cachedTopSpecialtyCombos(limit);
+  } catch (err) {
+    console.error('[clinic-service] getTopSpecialtyCombos error:', err);
+    return [];
+  }
+}
+
+const cachedTopSpecialtyCombos = memoizeAsync(loadTopSpecialtyCombos, { ttlMs: DIRECTORY_CACHE_TTL_MS, key: (limit) => String(limit) });
+
+async function loadTopSpecialtyCombos(limit: number): Promise<SpecialtySeoCombo[]> {
   const supabase = createServerAnonClient();
 
   if (!supabase) {
     return [];
   }
 
-  try {
+  {
     const { data, error } = await onlyPublic(
       supabase
         .from('clinics')
@@ -894,9 +918,6 @@ export async function getTopSpecialtyCombos(limit = 1000): Promise<SpecialtySeoC
     return [...counts.values()]
       .sort((a, b) => b.clinicCount - a.clinicCount)
       .slice(0, limit);
-  } catch (err) {
-    console.error('[clinic-service] getTopSpecialtyCombos error:', err);
-    return [];
   }
 }
 
@@ -922,18 +943,43 @@ export interface SearchFilterOptions {
   priceTiers: FilterOption[];
 }
 
+const EMPTY_FILTER_OPTIONS: SearchFilterOptions = { specialties: [], languages: [], cities: [], states: [], insurances: [], priceTiers: [] };
+
 export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
+  try {
+    return await cachedFilterOptions();
+  } catch (err) {
+    console.error('[clinic-service] getSearchFilterOptions error:', err);
+    return EMPTY_FILTER_OPTIONS;
+  }
+}
+
+/** Forget the shared directory lists (called when the bot publishes, hides or edits a clinic). */
+export function clearDirectoryCaches(): void {
+  cachedFilterOptions.clear();
+  cachedTopCityCombos.clear();
+  cachedTopSpecialtyCombos.clear();
+}
+
+const cachedFilterOptions = memoizeAsync(loadSearchFilterOptions, { ttlMs: DIRECTORY_CACHE_TTL_MS });
+
+async function loadSearchFilterOptions(): Promise<SearchFilterOptions> {
   const supabase = createServerAnonClient();
 
   if (!supabase) {
-    return { specialties: [], languages: [], cities: [], states: [], insurances: [], priceTiers: [] };
+    return EMPTY_FILTER_OPTIONS;
   }
 
-  try {
+  {
+    // NOT the whole metadata (translations, reviews, FAQs: tens of KB per clinic): only the four values the filters use.
     const { data, error } = await onlyPublic(
       supabase
         .from('clinics')
-        .select('specialty, languages, city, state, metadata, status')
+        .select(
+          "specialty, languages, city, state, status, metadata->'insurance_accepted' AS insurance_accepted, " +
+            "metadata->'insurance'->'accepts_medicare' AS accepts_medicare, metadata->'insurance'->'accepts_medicaid' AS accepts_medicaid, " +
+            "metadata->>'price_tier' AS price_tier"
+        )
     );
 
     if (error) {
@@ -977,24 +1023,23 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
         cityCounts[key].count += 1;
       }
 
-      // 4. Insurance & Price Tier from metadata
-      const meta = (clinic.metadata ?? {}) as ClinicMetadata;
+      // 4. Insurance & Price Tier (the few metadata values selected above)
       const acceptedIns = new Set<string>();
-      if (Array.isArray(meta.insurance_accepted)) {
-        meta.insurance_accepted.forEach((ins) => {
+      if (Array.isArray(clinic.insurance_accepted)) {
+        (clinic.insurance_accepted as unknown[]).forEach((ins) => {
           if (ins && typeof ins === 'string' && ins.length <= 40 && !ins.toLowerCase().includes('parked domain')) {
             acceptedIns.add(ins.trim());
           }
         });
       }
-      if (meta.insurance?.accepts_medicare) acceptedIns.add('Medicare');
-      if (meta.insurance?.accepts_medicaid) acceptedIns.add('Medicaid');
+      if (clinic.accepts_medicare) acceptedIns.add('Medicare');
+      if (clinic.accepts_medicaid) acceptedIns.add('Medicaid');
       acceptedIns.forEach((ins) => {
         insuranceCounts[ins] = (insuranceCounts[ins] || 0) + 1;
       });
 
-      if (meta.price_tier && typeof meta.price_tier === 'string') {
-        const pt = meta.price_tier.trim();
+      if (clinic.price_tier && typeof clinic.price_tier === 'string') {
+        const pt = clinic.price_tier.trim();
         priceTierCounts[pt] = (priceTierCounts[pt] || 0) + 1;
       }
     });
@@ -1029,9 +1074,6 @@ export async function getSearchFilterOptions(): Promise<SearchFilterOptions> {
       .sort((a, b) => (tierOrder[a.value] || 9) - (tierOrder[b.value] || 9));
 
     return { specialties, languages, cities, states, insurances, priceTiers };
-  } catch (err) {
-    console.error('[clinic-service] getSearchFilterOptions error:', err);
-    return { specialties: [], languages: [], cities: [], states: [], insurances: [], priceTiers: [] };
   }
 }
 

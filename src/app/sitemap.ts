@@ -19,9 +19,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     headers(),
   ]);
 
+  // The configured public address wins: building URLs from the request's Host header listed the address the visitor (or the
+  // bot's audit, "http://web:3000") happened to use instead of the real site. The header is only a fallback.
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   const host = headersList.get('x-forwarded-host') || headersList.get('host') || 'localhost:3000';
   const proto = headersList.get('x-forwarded-proto') || 'http';
-  const siteUrl = `${proto}://${host}`.replace(/\/$/, '');
+  const siteUrl = (configured || `${proto}://${host}`).replace(/\/$/, '');
 
   const dynamicUrl = (path = '/') => {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;

@@ -80,3 +80,33 @@ def test_the_alert_says_why_each_page_failed(monkeypatch):
     })
     message = [a["message"] for a in stats_agent.check_anomalies("en")["anomalies"] if a["scope"] == "seo"][0]
     assert "/a (404)" in message and "/b (no response: Read timed out)" in message and "/c (500)" in message
+
+
+def test_the_audit_checks_few_pages_at_a_time_so_it_does_not_cause_the_errors_it_reports(monkeypatch):
+    """It used 8 at once; 8 simultaneous page renders were enough to make heavy pages answer 500."""
+    seen = {}
+
+    class Recorder:
+        def __init__(self, max_workers=None):
+            seen["workers"] = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def map(self, fn, items):
+            return [fn(i) for i in items]
+
+    class Response:
+        status_code = 200
+        text = "<urlset><url><loc>https://x.test/a</loc></url><url><loc>https://x.test/b</loc></url></urlset>"
+
+    monkeypatch.setattr(stats_metrics, "ThreadPoolExecutor", Recorder)
+    monkeypatch.setattr(stats_metrics, "_find_base", lambda: "http://web:3000")
+    monkeypatch.setattr(stats_metrics, "_http_get", lambda url, timeout=15: Response())
+    monkeypatch.setattr(stats_metrics, "_audit_page", lambda base, path: {"path": path, "status": 200, "issues": [], "ms": 5})
+    monkeypatch.setattr(stats_metrics, "_sb", lambda: (_ for _ in ()).throw(RuntimeError("no db")))
+    result = stats_metrics.metric_seo_internal(sample=2)
+    assert result["ok"] and seen["workers"] <= 3
