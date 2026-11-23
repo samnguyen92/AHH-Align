@@ -150,7 +150,8 @@ export function ClinicPage({ data }: { data: ClinicPageData }) {
     clean(m.cultural_context);
 
   const website = m.website || m.google_website_url || m.appointment?.appointment_url || m.appointment_url;
-  const phoneHref = c.phone ? `tel:${c.phone.replace(/[^0-9+]/g, '')}` : null;
+  const phone = c.phone?.trim();
+  const phoneHref = phone && /\d/.test(phone) ? `tel:${phone.replace(/[^0-9+]/g, '')}` : null;
   const directions =
     m.google_maps_uri ||
     m.google_maps_url ||
@@ -271,8 +272,8 @@ export function ClinicPage({ data }: { data: ClinicPageData }) {
             </div>
             <div className="flex flex-wrap gap-2">
               {phoneHref && (
-                <a href={phoneHref} className={`inline-flex min-h-12 items-center gap-2 whitespace-nowrap rounded-full bg-[#024E44] px-6 text-sm font-bold text-white btn-fx ${focusRing}`}>
-                  <Phone className="h-4 w-4" aria-hidden="true" /> <Roll>{`${t.clinic.callPrefix} ${c.phone}`}</Roll>
+                <a href={phoneHref} className={`inline-flex min-h-14 w-full items-center justify-center gap-2 whitespace-nowrap rounded-full bg-[#024E44] px-6 text-sm font-bold text-white btn-fx md:min-h-12 md:w-auto ${focusRing}`}>
+                  <Phone className="h-4 w-4" aria-hidden="true" /> <Roll>{`${t.clinic.callPrefix} ${phone}`}</Roll>
                 </a>
               )}
               {website && (
