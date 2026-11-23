@@ -224,7 +224,7 @@ def test_every_tool_can_actually_be_run_by_the_bot():
     """A tool the bot cannot execute would approve fine and then answer 'I do not know how to run this'."""
     source = open(os.path.join(os.path.dirname(__file__), "..", "telegram_bot.py"), encoding="utf-8").read()
     runnable = set(re.findall(r'action_type == "([a-z_]+)"', source[source.index("def run_pending_action"):]))
-    runnable |= {"list_drafts"}  # handled directly in handle_chat
+    runnable |= {"list_drafts", "merge_web_pr", "close_web_pr", "revert_web_pr", "list_web_prs"}  # handled directly in handle_chat
     missing = [t.name for t in agent_tools.ACTION_TOOLS if t.name not in runnable]
     assert missing == []
 
@@ -238,7 +238,8 @@ def test_the_pending_tools_are_offered_only_while_something_is_pending():
 
 def test_read_tools_run_at_once_and_every_change_needs_approval():
     reads = {t.name for t in agent_tools.ACTION_TOOLS if not t.approval}
-    assert reads == {"inspect_clinic", "list_drafts", "stats_question", "stats_report", "check_analytics", "check_anomalies", "check_claims", "newsletter_list", "check_data_quality"}
+    assert reads == {"inspect_clinic", "list_drafts", "stats_question", "stats_report", "check_analytics", "check_anomalies", "check_claims", "newsletter_list", "check_data_quality",
+                     "merge_web_pr", "close_web_pr", "revert_web_pr", "list_web_prs"}  # the web PR tools ask for the sender's rights + a confirmation themselves
     for name in ("update_clinic", "delete_clinic", "delete_article", "web_edit", "approve_clinic", "reject_clinic", "newsletter_add", "newsletter_remove", "find_clinics"):
         assert agent_tools.BY_NAME[name].approval, name
 

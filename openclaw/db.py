@@ -141,8 +141,15 @@ def insert_clinic(clinic_data: dict, status: str = NEW_CLINIC_STATUS):
 
     On success `clinic_data["_saved"]` describes what happened: {"id", "created", "status"}.
     """
+    from source_guard import check_source
+
+    guard = check_source(url=clinic_data.get("website") or clinic_data.get("source_url") or "", name=clinic_data.get("name") or "")
+    if not guard.ok:
+        print(f"[!] Not saving '{clinic_data.get('name')}': {guard.reason}")
+        return False
+
     db = create_client()
-    
+
     # Construct DB payload
     slug = generate_slug(clinic_data.get("name", ""))
     incoming_metadata = {}

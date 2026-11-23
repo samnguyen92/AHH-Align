@@ -27,6 +27,7 @@ from db import generate_slug, insert_clinic
 from extractor import extract_clinic_data
 from google_places import enrich_clinic_with_google_places
 from clinic_photos import attach_real_photos
+from source_guard import check_source
 from scraper import scrape_content_from_url
 from searcher import search_hospital_url
 from third_party_profiles import enrich_clinic_with_third_party_profiles
@@ -121,6 +122,11 @@ def _process_target(target: dict) -> bool:
     text = content.get("markdown_content") or content.get("text") or ""
     if not text:
         print(f"[!] Scraping returned no useful text for {url}. Skipping.")
+        return False
+
+    guard = check_source(url=url, title=str(content.get("page_title") or ""), text=text)
+    if not guard.ok:
+        print(f"[!] Skipping '{name}': {guard.reason}")
         return False
 
     # ── 3. Extract ─────────────────────────────────────────────────────────────

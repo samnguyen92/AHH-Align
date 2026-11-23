@@ -188,6 +188,26 @@ def _query_for_provider(clinic_data: dict, provider: str) -> str:
     return f'{base} site:{PROVIDERS[provider]}'
 
 
+# A profile page belongs to ONE provider or practice. Search results are often LIST pages ("primary care doctors in
+# Fairfax"): their content describes many other doctors and must never be merged into a clinic.
+_PROFILE_PATH = {
+    "zocdoc": re.compile(r"^/(?:practice|dentist|doctor|provider)/[a-z0-9-]+-[a-z0-9]{4,}", re.IGNORECASE),
+    "healthgrades": re.compile(r"^/(?:physician/dr-[a-z0-9-]+|group-directory/[a-z-]+/[a-z-]+/[a-z0-9-]+)", re.IGNORECASE),
+    "webmd": re.compile(r"^/(?:doctor|practice)/[a-z0-9-]+", re.IGNORECASE),
+    "vitals": re.compile(r"^/(?:doctors/Dr_|clinics/)[A-Za-z0-9_-]+", re.IGNORECASE),
+}
+
+
+def is_profile_url(provider: str, url: str) -> bool:
+    from urllib.parse import urlparse
+
+    path = urlparse(url).path or "/"
+    if re.search(r"(?:^|[/-])(?:directory|specialty|specialties|search|best|top)(?:[/-]|$)", path, re.IGNORECASE) and provider != "healthgrades":
+        return False
+    pattern = _PROFILE_PATH.get(provider)
+    return bool(pattern.search(path)) if pattern else False
+
+
 def find_provider_profile(clinic_data: dict, provider: str) -> Optional[dict]:
     query = _query_for_provider(clinic_data, provider)
     print(f"[*] Third-party search ({provider}): {query}")
@@ -204,7 +224,11 @@ def find_provider_profile(clinic_data: dict, provider: str) -> Optional[dict]:
         if candidates:
             break
 
-    return candidates[0] if candidates else None
+    for candidate in candidates:
+        if is_profile_url(provider, candidate["url"]):
+            return candidate
+        print(f"[!] Skipping {provider} result that is a list/search page, not one profile: {candidate['url']}")
+    return None
 
 
 def fetch_profile_markdown(url: str) -> str:
