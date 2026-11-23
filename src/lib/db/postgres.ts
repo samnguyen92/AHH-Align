@@ -56,7 +56,7 @@ export function getPool(): Pool {
       connectionString: getDatabaseUrl(),
       max: 20,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 15000,
     });
     pool.on('error', (err) => {
       console.error('[pg] Unexpected idle client error:', err);

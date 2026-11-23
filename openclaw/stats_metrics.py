@@ -654,7 +654,8 @@ def metric_seo_internal(sample: int = 40) -> Dict[str, Any]:
         result["coverage"] = None
 
     targets = _sample_paths(paths or ["/", "/search", "/insights", "/claim"], sample)
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    # 3 at a time: the audit must not be the load that makes the pages it checks fail (it used 8 and caused 500s itself)
+    with ThreadPoolExecutor(max_workers=3) as pool:
         pages = list(pool.map(lambda p: _audit_page(base, p), targets))
 
     issue_counts: Counter = Counter()
