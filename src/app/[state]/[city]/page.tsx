@@ -5,20 +5,12 @@ import { getDirectoryData } from '@/lib/site-data';
 import { JsonLd } from '@/lib/json-ld';
 import { absoluteUrl, SITE_NAME } from '@/lib/site';
 import { cityRoute, stateSlugToCode, unslugifySegment } from '@/lib/local-seo';
-import { getTopCityCombos, getTopSpecialtyCombos, resolveCityCombo } from '@/services/clinic-service';
+import { getTopSpecialtyCombos, resolveCityCombo } from '@/services/clinic-service';
 
-export const revalidate = 86400;
+export const dynamic = 'force-dynamic';
 
 interface CityPageProps {
   params: Promise<{ state: string; city: string }>;
-}
-
-export async function generateStaticParams() {
-  const cities = await getTopCityCombos(200);
-  return cities.map((combo) => ({
-    state: combo.stateSlug,
-    city: combo.citySlug,
-  }));
 }
 
 export async function generateMetadata({ params }: CityPageProps): Promise<Metadata> {

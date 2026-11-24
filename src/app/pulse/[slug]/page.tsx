@@ -57,16 +57,7 @@ function getStaticIssue(slug: string) {
   return pulseIssues.find((issue) => issue.slug === slug);
 }
 
-export async function generateStaticParams() {
-  const staticSlugs = pulseIssues.map((issue) => ({ slug: issue.slug }));
-  try {
-    const { data: dbArticles } = await getPublishedArticles('pulse', 1, 100);
-    const dbSlugs = (dbArticles || []).map((art) => ({ slug: art.slug }));
-    return [...staticSlugs, ...dbSlugs];
-  } catch (err) {
-    return staticSlugs;
-  }
-}
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({
   params,

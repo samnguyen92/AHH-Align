@@ -9,21 +9,12 @@ import {
   stateSlugToCode,
   unslugifySegment,
 } from '@/lib/local-seo';
-import { getTopSpecialtyCombos, resolveSpecialtyCombo } from '@/services/clinic-service';
+import { resolveSpecialtyCombo } from '@/services/clinic-service';
 
-export const revalidate = 86400;
+export const dynamic = 'force-dynamic';
 
 interface SpecialtyPageProps {
   params: Promise<{ state: string; city: string; specialty: string }>;
-}
-
-export async function generateStaticParams() {
-  const combos = await getTopSpecialtyCombos(1000);
-  return combos.map((combo) => ({
-    state: combo.stateSlug,
-    city: combo.citySlug,
-    specialty: combo.specialtySlug,
-  }));
 }
 
 export async function generateMetadata({ params }: SpecialtyPageProps): Promise<Metadata> {
