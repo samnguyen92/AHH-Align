@@ -5,9 +5,15 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from admin_actions import normalize_article_identifier
 from pg_client import create_client
 from pg_client import PGClient as Client
-from storage import upload_image_value
+from storage import (
+    convert_image_to_webp,
+    safe_storage_name,
+    upload_image_bytes,
+    upload_image_value,
+)
 
 load_dotenv(".env")
 load_dotenv("../.env.local")
@@ -81,8 +87,9 @@ def generate_article_image(client: OpenAI, article: dict, image_index: int = 1, 
 
 
 def article_matches(article: dict, identifier: str) -> bool:
-    target = (identifier or "").strip().lower()
-    if not target:
+    raw_target = (identifier or "").strip().lower()
+    norm_target = normalize_article_identifier(identifier).strip().lower()
+    if not norm_target and not raw_target:
         return False
 
     candidates = [
@@ -94,7 +101,8 @@ def article_matches(article: dict, identifier: str) -> bool:
     candidates.extend(str(slug) for slug in (seo_meta.get("legacy_slugs") or []) if slug)
 
     normalized_candidates = [candidate.strip().lower() for candidate in candidates if candidate]
-    return any(target == candidate or target in candidate for candidate in normalized_candidates)
+    targets = [t for t in dict.fromkeys([norm_target, raw_target]) if t]
+    return any(t == candidate or t in candidate for t in targets for candidate in normalized_candidates)
 
 
 def find_article(articles: list[dict], identifier: str) -> dict:
@@ -102,12 +110,15 @@ def find_article(articles: list[dict], identifier: str) -> dict:
     if not matches:
         raise ValueError(f"No article found for target: {identifier}")
     if len(matches) > 1:
+        norm_lower = normalize_article_identifier(identifier).strip().lower()
+        raw_lower = (identifier or "").strip().lower()
         exact = [
             article for article in matches
-            if identifier.strip().lower() in {
+            if {norm_lower, raw_lower} & {
                 str(article.get("id") or "").strip().lower(),
                 str(article.get("slug") or "").strip().lower(),
                 str(article.get("title") or "").strip().lower(),
+                *(str(s).strip().lower() for s in ((article.get("seo_meta") or {}).get("legacy_slugs") or []) if s),
             }
         ]
         if len(exact) == 1:
@@ -117,7 +128,25 @@ def find_article(articles: list[dict], identifier: str) -> dict:
     return matches[0]
 
 
-def regenerate_article_images(identifier: str, image_count: int = 3) -> None:
+def _article_url_path(article: dict) -> str:
+    slug = article.get("slug") or ""
+    category = (article.get("category") or "").strip().lower()
+    prefix = "/pulse" if category == "pulse" else "/insights"
+    return f"{prefix}/{slug}"
+
+
+def _backup_previous_images(seo_meta: dict) -> None:
+    previous_images = list(seo_meta.get("previous_images") or [])
+    if isinstance(seo_meta.get("og_image"), str) and seo_meta["og_image"]:
+        previous_images.insert(0, seo_meta["og_image"])
+    for img in (seo_meta.get("images") or []):
+        if isinstance(img, str) and img:
+            previous_images.append(img)
+    if previous_images:
+        seo_meta["previous_images"] = list(dict.fromkeys(previous_images))[:12]
+
+
+def regenerate_article_images(identifier: str, image_count: Optional[int] = None, scope: str = "all") -> None:
     openrouter_key = os.environ.get("OPENROUTER_API_KEY")
 
     if not openrouter_key:
@@ -127,9 +156,14 @@ def regenerate_article_images(identifier: str, image_count: int = 3) -> None:
     db = create_client()
     articles = db.table("articles").select("id, slug, title, excerpt, category, seo_meta").execute().data
     article = find_article(articles, identifier)
-    count = max(1, min(int(image_count or 3), 5))
 
-    print(f"[*] Force regenerating {count} image(s) for article: {article['title']}")
+    is_pulse = (article.get("category") or "").strip().lower() == "pulse"
+    clean_scope = (scope or "all").strip().lower()
+    cover_only = is_pulse or clean_scope == "cover"
+    count = 1 if cover_only else max(1, min(int(image_count or 3), 5))
+    url_path = _article_url_path(article)
+
+    print(f"[*] Force regenerating {count} image(s) (scope={'cover' if cover_only else 'all'}) for {url_path}: {article['title']}")
     image_urls = []
     run_id = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     for image_number in range(1, count + 1):
@@ -140,19 +174,83 @@ def regenerate_article_images(identifier: str, image_count: int = 3) -> None:
     if not image_urls:
         raise RuntimeError(f"No usable images returned for: {article['title']}")
 
-    seo_meta = article.get("seo_meta") or {}
-    previous_images = []
-    if isinstance(seo_meta.get("og_image"), str):
-        previous_images.append(seo_meta["og_image"])
-    previous_images.extend(image for image in (seo_meta.get("images") or []) if isinstance(image, str))
-    if previous_images:
-        seo_meta["previous_images"] = list(dict.fromkeys(previous_images))[:10]
+    seo_meta = dict(article.get("seo_meta") or {})
+    _backup_previous_images(seo_meta)
 
-    seo_meta["og_image"] = image_urls[0]
-    seo_meta["images"] = image_urls[:5]
+    if cover_only:
+        new_cover = image_urls[0]
+        seo_meta["og_image"] = new_cover
+        if is_pulse:
+            seo_meta["images"] = [new_cover]
+        else:
+            existing_images = [img for img in (seo_meta.get("images") or []) if isinstance(img, str) and img]
+            if existing_images:
+                existing_images[0] = new_cover
+                seo_meta["images"] = existing_images[:5]
+            else:
+                seo_meta["images"] = [new_cover]
+    else:
+        seo_meta["og_image"] = image_urls[0]
+        seo_meta["images"] = image_urls[:5]
+
     db.table("articles").update({"seo_meta": seo_meta}).eq("id", article["id"]).execute()
-    print(f"[+] Replaced article images: {len(image_urls)} image(s)")
-    print(f"[*] og_image: {image_urls[0]}")
+    print(f"[+] Replaced image(s) for {url_path}: {len(image_urls)} new image(s)")
+    print(f"[*] og_image: {seo_meta['og_image']}")
+
+
+def replace_article_image_from_file(identifier: str, local_image_path: str, image_index: int = 0) -> None:
+    """Upload a user-provided image file (e.g. from Telegram) and set it on an Insight or Pulse article."""
+    if not local_image_path or not os.path.isfile(local_image_path):
+        raise ValueError(f"Uploaded image file not found: {local_image_path}")
+
+    db = create_client()
+    articles = db.table("articles").select("id, slug, title, excerpt, category, seo_meta").execute().data
+    article = find_article(articles, identifier)
+
+    with open(local_image_path, "rb") as fh:
+        raw_bytes = fh.read()
+    if not raw_bytes:
+        raise ValueError("Uploaded image file is empty.")
+
+    converted = convert_image_to_webp(raw_bytes)
+    if converted:
+        out_bytes, content_type, ext = converted
+    else:
+        out_bytes = raw_bytes
+        ext = os.path.splitext(local_image_path)[1].lstrip(".").lower() or "jpg"
+        content_type = f"image/{'jpeg' if ext == 'jpg' else ext}"
+
+    run_id = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    safe_slug = safe_storage_name(article.get("slug") or "article")
+    storage_path = f"generated-insights/{safe_slug}-custom-{run_id}.{ext}"
+    uploaded_url = upload_image_bytes(out_bytes, storage_path, content_type)
+    if not uploaded_url:
+        raise RuntimeError(f"Failed to save uploaded image to storage: {storage_path}")
+
+    seo_meta = dict(article.get("seo_meta") or {})
+    _backup_previous_images(seo_meta)
+
+    is_pulse = (article.get("category") or "").strip().lower() == "pulse"
+    idx = max(0, int(image_index or 0))
+    if is_pulse or idx == 0:
+        seo_meta["og_image"] = uploaded_url
+
+    if is_pulse:
+        seo_meta["images"] = [uploaded_url]
+    else:
+        existing_images = [img for img in (seo_meta.get("images") or []) if isinstance(img, str) and img]
+        if idx < len(existing_images):
+            existing_images[idx] = uploaded_url
+        elif idx == 0:
+            existing_images = [uploaded_url]
+        else:
+            existing_images.append(uploaded_url)
+        seo_meta["images"] = existing_images[:5]
+
+    db.table("articles").update({"seo_meta": seo_meta}).eq("id", article["id"]).execute()
+    url_path = _article_url_path(article)
+    print(f"[+] Uploaded custom image for {url_path}: {uploaded_url}")
+    print(f"[*] og_image: {seo_meta.get('og_image')}")
 
 
 def main():

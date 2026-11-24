@@ -172,8 +172,10 @@ ALLOWED ACTIONS:
   parameters: {}
 - repair_article_images: Repair missing article images.
   parameters: {}
-- regenerate_article_images: Regenerate images for a specific article.
-  parameters: {"target": str}
+- regenerate_article_images: Generate NEW AI image(s) to replace existing image(s) on an Insight, Guide, or Pulse article (e.g. "replace this image on the article: <url>", "replace this image on the pulse: <url>", "đổi ảnh khác cho bài viết <url>"). Use scope="cover" when the user says singular "this image"/"the cover"/"ảnh bìa" OR when the target is a Pulse (/pulse/...). Use scope="all" only when the user explicitly asks to regenerate all images.
+  parameters: {"target": str (clean slug or URL), "scope": "cover" | "all", "image_count": int (optional, 1 for cover/pulse, 3 for all)}
+- replace_article_image: Upload and use the EXACT photo the user just attached in Telegram as the cover/feature image of an Insight, Guide, or Pulse article (ONLY when the user explicitly wants to USE/UPLOAD their attached photo, e.g. "use this image on the article", "upload this photo to the pulse", "thay bằng ảnh này", "dùng ảnh này làm ảnh bìa"). If the user says "replace this image" with a screenshot of the current bad image, use `regenerate_article_images` instead.
+  parameters: {"target": str (clean slug or URL), "image_index": int (default 0 for cover)}
 - repair_article_slugs: Convert non-ASCII article slugs to ASCII safe slugs.
   parameters: {}
 - delete_article: Delete one article from the database.
@@ -182,7 +184,15 @@ ALLOWED ACTIONS:
   parameters: {"target": str}
 - change_clinic_feature_image: Change or rotate feature image of a clinic.
   parameters: {"target": str, "image_url": str or null}
-- rewrite_article: Rewrite an existing article and save as next version.
+- edit_article_exact: Apply an EXACT, verbatim text edit to an existing Insight, Guide, or Pulse article WITHOUT rewriting the rest of the article or regenerating images. ALWAYS choose this (NEVER `rewrite_article`) when the user provides the exact text to add, prepend, append, or replace (e.g. "add the introduction on the top of this article: <url>. Here is the content: '...'", "in the pulse: <url>, change the introduction text to: '...'").
+  Rules for operation & target_field:
+  - On a Pulse (/pulse/...), "introduction text" / "intro" / "summary" is stored in `excerpt` -> use operation="set_excerpt", target_field="excerpt".
+  - On an Insight/Guide (/insights/...), "add the introduction on the top" -> use operation="prepend_content", target_field="content".
+  - Adding at the bottom -> operation="append_content", target_field="content".
+  - Changing title -> operation="set_title", target_field="title".
+  - Replacing a specific sentence/phrase -> operation="replace_text", find_text="<old text>", text="<new text>".
+  parameters: {"target": str (clean slug or URL), "operation": "prepend_content" | "append_content" | "set_excerpt" | "set_title" | "replace_text", "target_field": "content" | "excerpt" | "title", "text": str (exact verbatim text from user), "find_text": str or null}
+- rewrite_article: Ask AI to freely rewrite, expand, or restructure an existing article and save as next version (ONLY when the user does NOT supply exact verbatim text to insert/replace).
   parameters: {"target": str, "instruction": str}
 - generate_insight: Generate one SEO insight article (1200-1500 words).
   parameters: {"topic": str or null}

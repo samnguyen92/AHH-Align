@@ -134,13 +134,49 @@ ACTION_TOOLS: List[Tool] = [
          card_vi="viết bài insight từ {urls}", card_en="write an insight from {urls}"),
     Tool("generate_guide_from_urls", "Write a guide from reference URLs.", _obj({"urls": {"type": "array", "items": S}}, ["urls"]),
          card_vi="viết guide từ {urls}", card_en="write a guide from {urls}"),
-    Tool("rewrite_article", "Rewrite an existing article and save it as the next version.", _obj({"target": S, "instruction": S}, ["target"]),
+    Tool(
+        "edit_article_exact",
+        "Apply an EXACT, verbatim text edit to an existing Insight, Guide, or Pulse article WITHOUT rewriting the rest of the article or regenerating images. "
+        "ALWAYS use this (never rewrite_article) when the user supplies exact text to add, prepend, append, or replace. "
+        "Rules: On a Pulse (/pulse/...), changing 'introduction text'/'intro'/'summary' updates target_field='excerpt' with operation='set_excerpt'. "
+        "On an Insight (/insights/...), 'add the introduction on the top' uses operation='prepend_content' and target_field='content'. "
+        "For replacing a specific phrase, use operation='replace_text' with find_text and text.",
+        _obj(
+            {
+                "target": S,
+                "operation": {"type": "string", "enum": ["prepend_content", "append_content", "set_excerpt", "set_title", "replace_text"]},
+                "target_field": {"type": "string", "enum": ["content", "excerpt", "title"]},
+                "text": S,
+                "find_text": S,
+            },
+            ["target", "operation", "text"],
+        ),
+        card_vi="sửa nguyên văn ({operation} → {target_field}) bài {target}",
+        card_en="apply exact edit ({operation} → {target_field}) to {target}",
+    ),
+    Tool("rewrite_article", "Ask AI to freely rewrite, expand, or restructure an existing article and save it as the next version (ONLY when the user does NOT supply exact verbatim text).", _obj({"target": S, "instruction": S}, ["target"]),
          card_vi="viết lại bài {target}: {instruction}", card_en="rewrite article {target}: {instruction}"),
     Tool("multi_agent_research", "Run the multi-agent research pipeline on a topic.", _obj({"request": S}, ["request"]),
          card_vi="nghiên cứu chuyên sâu: {request}", card_en="run deep research on: {request}"),
     Tool("repair_article_images", "Repair missing article images.", _obj(), card_vi="sửa ảnh bài viết bị thiếu", card_en="repair missing article images"),
-    Tool("regenerate_article_images", "Regenerate the images of one article.", _obj({"target": S}, ["target"]),
-         card_vi="tạo lại ảnh cho bài {target}", card_en="regenerate images for article {target}"),
+    Tool(
+        "regenerate_article_images",
+        "Generate NEW AI image(s) to replace existing image(s) on an Insight, Guide, or Pulse article (e.g. 'replace this image on the article/pulse'). "
+        "Set scope='cover' when the user asks to replace one image ('this image', 'the cover', 'ảnh bìa') OR when the target is a Pulse (/pulse/...). "
+        "Set scope='all' only when the user asks to regenerate all images.",
+        _obj({"target": S, "scope": {"type": "string", "enum": ["cover", "all"]}, "image_count": I}, ["target"]),
+        card_vi="tạo ảnh AI mới ({scope}) cho bài {target}",
+        card_en="generate new AI image(s) ({scope}) for {target}",
+    ),
+    Tool(
+        "replace_article_image",
+        "Upload and set the EXACT photo the user just attached in Telegram as the cover/feature image of an Insight, Guide, or Pulse article "
+        "(ONLY when the user asks to USE/UPLOAD their attached photo, e.g. 'use this image', 'upload this photo', 'thay bằng ảnh này', 'dùng ảnh này'). "
+        "If the user says 'replace this image' with a screenshot of the current bad image, use regenerate_article_images instead.",
+        _obj({"target": S, "image_index": I}, ["target"]),
+        card_vi="upload ảnh bạn vừa gửi làm ảnh bài {target}",
+        card_en="upload your attached photo as the image for {target}",
+    ),
     Tool("repair_article_slugs", "Convert non-ASCII article slugs to safe ASCII slugs.", _obj(), card_vi="chuẩn hoá slug bài viết", card_en="normalise article slugs"),
     Tool("delete_article", "Permanently delete one article.", _obj({"target": S}, ["target"]), card_vi="XOÁ bài {target}", card_en="DELETE article {target}"),
     Tool("newsletter_add", "Add a newsletter subscriber.", _obj({"email": S}, ["email"]), card_vi="thêm {email} vào newsletter", card_en="add {email} to the newsletter"),

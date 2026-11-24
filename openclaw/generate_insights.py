@@ -2040,8 +2040,7 @@ def rewrite_article(identifier: str, instruction: str) -> None:
     client, db = create_clients()
     article = find_one_by_identifier(db, "articles", identifier)
     if not article:
-        print(f"[!] Article not found: {identifier}")
-        return
+        raise ValueError(f"Article not found for target: {identifier}")
 
     seo_meta = article.get("seo_meta") or {}
     mode = seo_meta.get("content_mode") or article.get("category") or "insight"
@@ -2090,19 +2089,23 @@ def rewrite_article(identifier: str, instruction: str) -> None:
         updated_seo_meta["og_image"] = image_urls[0]
         updated_seo_meta["images"] = image_urls
 
+    original_category = (article.get("category") or "").strip().lower()
+    final_category = "pulse" if original_category == "pulse" else (data.get("category") or article.get("category"))
+    url_prefix = "/pulse" if final_category == "pulse" else "/insights"
+
     db.table("articles").update(
         {
             "title": data.get("title") or article.get("title"),
             "excerpt": data.get("excerpt") or article.get("excerpt"),
             "content": data["content"],
-            "category": data.get("category") or article.get("category"),
+            "category": final_category,
             "tags": data.get("tags") or article.get("tags") or [],
             "seo_meta": updated_seo_meta,
             "updated_at": rewritten_at,
         }
     ).eq("id", article["id"]).execute()
 
-    print(f"[+] Article rewritten successfully: /insights/{article.get('slug')}")
+    print(f"[+] Article rewritten successfully: {url_prefix}/{article.get('slug')}")
     print(f"[*] Version saved: v{updated_seo_meta['current_version']}")
     print(f"[*] Previous versions available in seo_meta.{ARTICLE_VERSIONS_KEY}: {len(updated_seo_meta[ARTICLE_VERSIONS_KEY])}")
     if image_urls:

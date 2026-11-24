@@ -52,6 +52,8 @@ from jobs import (
     repair_clinic_images_job,
     repair_article_slugs_job,
     regenerate_article_images_job,
+    replace_article_image_job,
+    edit_article_exact_job,
     research_job,
     rewrite_article_job,
     run_batch_job,
@@ -1299,10 +1301,23 @@ class TelegramBot:
         elif action_type == "repair_article_images":
             self.run_job(chat_id, action["name"], repair_article_images_job, action_type=action_type)
         elif action_type == "regenerate_article_images":
+            target = action["target"]
+            scope = action.get("scope") or ("cover" if "/pulse/" in str(target).lower() else "all")
+            image_count = action.get("image_count")
             self.run_job(
                 chat_id,
                 action["name"],
-                lambda: regenerate_article_images_job(action["target"], action.get("image_count", 3)),
+                lambda: regenerate_article_images_job(target, image_count=image_count, scope=scope),
+                action_type=action_type,
+            )
+        elif action_type == "replace_article_image":
+            target = action["target"]
+            image_path = action.get("image_path") or ""
+            image_index = int(action.get("image_index") or 0)
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: replace_article_image_job(target, image_path, image_index=image_index),
                 action_type=action_type,
             )
         elif action_type == "repair_article_slugs":
@@ -1366,6 +1381,24 @@ class TelegramBot:
                 chat_id,
                 action["name"],
                 lambda: reject_claim_job(action["target"]),
+                action_type=action_type,
+            )
+        elif action_type == "edit_article_exact":
+            target = action["target"]
+            operation = action.get("operation") or "prepend_content"
+            new_text = action.get("text") or ""
+            target_field = action.get("target_field")
+            find_text = action.get("find_text")
+            self.run_job(
+                chat_id,
+                action["name"],
+                lambda: edit_article_exact_job(
+                    target,
+                    operation=operation,
+                    text=new_text,
+                    target_field=target_field,
+                    find_text=find_text,
+                ),
                 action_type=action_type,
             )
         elif action_type == "rewrite_article":
@@ -2394,8 +2427,16 @@ class TelegramBot:
             )
             pending = intent_res.to_pending_dict()
             recent_image = self.chat_images.get(chat_id)
-            if intent_res.action == "web_edit" and recent_image and time.time() - recent_image[1] < 900:
+            if intent_res.action in {"web_edit", "replace_article_image"} and recent_image and time.time() - recent_image[1] < 900:
                 pending["image_path"] = recent_image[0]
+            if intent_res.action == "replace_article_image" and not pending.get("image_path"):
+                self.send_message(
+                    chat_id,
+                    "Bạn hãy gửi kèm ảnh mới (photo) cùng với lời nhắn chứa link bài viết/Pulse để mình upload thay nhé."
+                    if vi else
+                    "Please attach the new photo along with the article/Pulse URL in the caption so I can upload it.",
+                )
+                return
             self.offer_action(chat_id, pending, message, user_id)
             return
 

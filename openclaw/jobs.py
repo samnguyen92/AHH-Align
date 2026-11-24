@@ -198,12 +198,42 @@ def repair_article_images_job() -> str:
     return _run_with_captured_output("repair_article_images", main)
 
 
-def regenerate_article_images_job(identifier: str, image_count: int = 3) -> str:
+def regenerate_article_images_job(identifier: str, image_count: Optional[int] = None, scope: str = "all") -> str:
     from repair_article_images import regenerate_article_images
 
     return _run_with_captured_output(
         "regenerate_article_images",
-        lambda: regenerate_article_images(identifier, image_count=image_count),
+        lambda: regenerate_article_images(identifier, image_count=image_count, scope=scope),
+    )
+
+
+def replace_article_image_job(identifier: str, local_image_path: str, image_index: int = 0) -> str:
+    from repair_article_images import replace_article_image_from_file
+
+    return _run_with_captured_output(
+        "replace_article_image",
+        lambda: replace_article_image_from_file(identifier, local_image_path, image_index=image_index),
+    )
+
+
+def edit_article_exact_job(
+    identifier: str,
+    operation: str,
+    text: str,
+    target_field: Optional[str] = None,
+    find_text: Optional[str] = None,
+) -> str:
+    from article_editor import edit_article_exact
+
+    return _run_with_captured_output(
+        "edit_article_exact",
+        lambda: edit_article_exact(
+            identifier=identifier,
+            operation=operation,
+            text=text,
+            target_field=target_field,
+            find_text=find_text,
+        ),
     )
 
 

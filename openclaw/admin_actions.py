@@ -3,6 +3,7 @@ import re
 import unicodedata
 from datetime import datetime, timedelta
 from typing import Optional
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from pg_client import create_client
@@ -71,32 +72,93 @@ def repair_article_slugs() -> None:
     print(f"[+] Repaired {repaired} article slugs.")
 
 
+def normalize_article_identifier(raw: str) -> str:
+    """
+    Extract a clean slug/id/title from a raw user target such as:
+    - 'https://asianhealthhub.com/insights/how-to-find-a-clinic'
+    - '/insights/how-to-find-a-clinic/'
+    - 'https://asianhealthhub.com/pulse/ahh-pulse-15-...'
+    - '"/pulse/ahh-pulse-15-..."'
+    - 'how-to-find-a-clinic'
+    - 'How to Find a Clinic'
+    """
+    value = (raw or "").strip()
+    if not value:
+        return ""
+
+    # Strip surrounding quotes, backticks, angle brackets, and trailing punctuation
+    value = value.strip(" \t\r\n\"'`<>")
+    value = re.sub(r"[.,;:!?]+$", "", value).strip(" \"'`<>")
+
+    # If it looks like a full URL, parse the path
+    if re.match(r"^https?://", value, flags=re.IGNORECASE):
+        parsed = urlparse(value)
+        path = (parsed.path or "").strip("/")
+        if path:
+            parts = [p for p in path.split("/") if p]
+            if len(parts) >= 2 and parts[0].lower() in {"insights", "pulse", "clinics", "blog", "guides", "articles"}:
+                return parts[-1].strip()
+            return parts[-1].strip()
+
+    # If it looks like a site-relative path (/insights/<slug>, /pulse/<slug>, /clinics/<slug>)
+    path_match = re.match(
+        r"^/?(?:insights|pulse|clinics|blog|guides|articles)/([^/?#\s]+)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if path_match:
+        return path_match.group(1).strip().rstrip("/")
+
+    return value
+
+
 def find_one_by_identifier(db: Client, table: str, identifier: str) -> Optional[dict]:
-    identifier = identifier.strip()
-    if not identifier:
+    raw_identifier = (identifier or "").strip()
+    if not raw_identifier:
         return None
 
-    for column in ["id", "slug", "title" if table == "articles" else "name"]:
+    normalized = normalize_article_identifier(raw_identifier)
+    search_terms = [normalized] if normalized == raw_identifier else [normalized, raw_identifier]
+
+    for term in search_terms:
+        if not term:
+            continue
+        for column in ["id", "slug", "title" if table == "articles" else "name"]:
+            try:
+                result = db.table(table).select("*").eq(column, term).limit(2).execute()
+                if result.data:
+                    if len(result.data) > 1:
+                        raise RuntimeError(f"Multiple {table} rows matched {column}={term}. Use id or slug.")
+                    return result.data[0]
+            except Exception:
+                if column == "id":
+                    continue
+                raise
+
+    # Check legacy_slugs for articles before falling back to fuzzy title ilike
+    if table == "articles" and normalized:
         try:
-            result = db.table(table).select("*").eq(column, identifier).limit(2).execute()
-            if result.data:
-                if len(result.data) > 1:
-                    raise RuntimeError(f"Multiple {table} rows matched {column}={identifier}. Use id or slug.")
-                return result.data[0]
+            all_articles = db.table("articles").select("*").execute().data or []
+            norm_lower = normalized.lower()
+            for row in all_articles:
+                legacy = (row.get("seo_meta") or {}).get("legacy_slugs") or []
+                if any(str(s).strip().lower() == norm_lower for s in legacy if s):
+                    return row
         except Exception:
-            if column == "id":
-                continue
-            raise
+            pass
 
     name_column = "title" if table == "articles" else "name"
-    result = db.table(table).select("*").ilike(name_column, f"%{identifier}%").limit(3).execute()
-    if not result.data:
-        return None
-    if len(result.data) > 1:
-        matches = ", ".join(f"{row.get(name_column)} ({row.get('slug')})" for row in result.data)
-        raise RuntimeError(f"Multiple {table} rows matched '{identifier}': {matches}. Use id or slug.")
+    for term in search_terms:
+        if not term:
+            continue
+        result = db.table(table).select("*").ilike(name_column, f"%{term}%").limit(3).execute()
+        if result.data:
+            if len(result.data) > 1:
+                matches = ", ".join(f"{row.get(name_column)} ({row.get('slug')})" for row in result.data)
+                raise RuntimeError(f"Multiple {table} rows matched '{term}': {matches}. Use id or slug.")
+            return result.data[0]
 
-    return result.data[0]
+    return None
 
 
 def delete_article(identifier: str) -> None:
