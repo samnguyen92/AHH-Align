@@ -116,6 +116,7 @@ function MaskedCard({
   natural,
   focalX,
   focalY = 0.5,
+  anchor,
   className = '',
   style,
   cardRef,
@@ -127,6 +128,9 @@ function MaskedCard({
   natural: NaturalSize;
   focalX: number;
   focalY?: number;
+  /** Keep a point of the photo (imgX, 0..1 of its width) at secX (0..1 of the section width),
+   *  zooming in just enough to get it there - e.g. so a face never falls in the gap between cards. */
+  anchor?: { imgX: number; secX: number };
   className?: string;
   style?: CSSProperties;
   cardRef: (el: HTMLElement | null) => void;
@@ -135,10 +139,13 @@ function MaskedCard({
 }) {
   const p = position ?? { x: 0, y: 0, sw: 0, sh: 0 };
   // "cover" the whole section with one photo, then show each card's slice of it.
-  const scale = natural && p.sw && p.sh ? Math.max(p.sw / natural.w, p.sh / natural.h) : 0;
+  const cover = natural && p.sw && p.sh ? Math.max(p.sw / natural.w, p.sh / natural.h) : 0;
+  const scale = cover && anchor ? Math.max(cover, (p.sw * (1 - anchor.secX)) / (1 - anchor.imgX) / natural!.w) : cover;
   const bw = natural ? natural.w * scale : 0;
   const bh = natural ? natural.h * scale : 0;
-  const ox = (bw - p.sw) * focalX;
+  const ox = anchor
+    ? Math.min(Math.max(anchor.imgX * bw - anchor.secX * p.sw, 0), bw - p.sw)
+    : (bw - p.sw) * focalX;
   const oy = (bh - p.sh) * focalY;
   const bg: CSSProperties = {
     backgroundColor: '#E3F1EC',
@@ -258,6 +265,9 @@ export function HomePage({ data }: { data: HomeData }) {
   const s2Img = useImageSize(SECTION2_IMAGE);
   const s2Reveal = useStaggeredReveal();
   const s2Focal = isMobile ? 0.65 : 0.8;
+  // On desktop the two columns meet in the middle of the photo, right where the doctor's face is:
+  // keep the right edge of her hair (58% across the photo) inside the left column.
+  const s2Anchor = isMobile ? undefined : { imgX: 0.58, secX: 0.44 };
 
   const sClinics = useStaggeredReveal();
   const sSpecs = useStaggeredReveal();
@@ -364,6 +374,7 @@ export function HomePage({ data }: { data: HomeData }) {
               position={s2Pos[0]}
               natural={s2Img}
               focalX={s2Focal}
+              anchor={s2Anchor}
               cardRef={(el) => (s2Cards.current[0] = el)}
               className={`${card} min-h-[11.25rem] md:min-h-0`}
               style={s2Reveal.getAnimStyle(0)}
@@ -381,6 +392,7 @@ export function HomePage({ data }: { data: HomeData }) {
               position={s2Pos[1]}
               natural={s2Img}
               focalX={s2Focal}
+              anchor={s2Anchor}
               cardRef={(el) => (s2Cards.current[1] = el)}
               className={`${card} min-h-[15rem] md:row-span-2 md:min-h-0`}
               style={s2Reveal.getAnimStyle(1)}
@@ -404,6 +416,7 @@ export function HomePage({ data }: { data: HomeData }) {
               position={s2Pos[2]}
               natural={s2Img}
               focalX={s2Focal}
+              anchor={s2Anchor}
               cardRef={(el) => (s2Cards.current[2] = el)}
               className={`${card} min-h-[11.875rem] md:min-h-0`}
               style={s2Reveal.getAnimStyle(2)}
@@ -580,8 +593,14 @@ export function HomePage({ data }: { data: HomeData }) {
         </section>
 
         {/* ================= 6. States ================= */}
-        <section ref={(el) => sCities.attach(el)} className={`${section} md:h-screen`}>
-          <div className="grid h-full grid-cols-2 gap-2 md:grid-cols-4 md:grid-rows-4 md:gap-3">
+        <section
+          ref={(el) => sCities.attach(el)}
+          className={`${section} md:h-[calc(100vh*var(--state-rows)/4)]`}
+          // the heading takes two rows with two state cards beside it; only add rows that have states,
+          // so a short list doesn't leave an empty band before the next section
+          style={{ '--state-rows': 2 + Math.ceil(Math.max(0, data.states.length - 4) / 4) } as CSSProperties}
+        >
+          <div className="grid h-full grid-cols-2 gap-2 md:grid-cols-4 md:grid-rows-[repeat(var(--state-rows),minmax(0,1fr))] md:gap-3">
             <div
               className="col-span-2 flex min-h-[10rem] flex-col justify-between rounded-xl bg-[#0D1F1C] p-5 text-white md:row-span-2 md:rounded-2xl md:p-7"
               style={sCities.getAnimStyle(0)}
